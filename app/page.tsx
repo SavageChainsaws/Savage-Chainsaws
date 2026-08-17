@@ -1,12 +1,16 @@
-import { supabase } from '../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 import InactivityRedirect from './components/InactivityRedirect'
 import LastViewedBanner from './components/LastViewedBanner'
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 async function addUnit(formData: FormData) {
   'use server'
-
   const serial = formData.get('serial') as string
   const model = formData.get('model') as string
   const problemType = formData.get('problem_type') as string
@@ -14,126 +18,77 @@ async function addUnit(formData: FormData) {
   const customerId = formData.get('customer_id') as string
   const checkInDate = formData.get('check_in_date') as string
 
-  const { error } = await supabase.from('units').insert({
+  await supabase.from('units').insert({
     serial_number: serial,
     model: model || null,
-    status: 'Diagnosing',
     problem_type: problemType || null,
     notes: customerNotes || null,
     customer_id: customerId,
+    status: 'Diagnosing',
     decision_seen: true,
-    created_at: checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString()
+    created_at: checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString(),
   })
-
-  if (error) {
-    console.error('Error adding unit:', error.message)
-    throw new Error(error.message)
-  }
 
   revalidatePath('/')
 }
 
 async function updateStatus(formData: FormData) {
   'use server'
-
   const id = formData.get('id') as string
   const status = formData.get('status') as string
   const notes = formData.get('notes') as string
   const file = formData.get('invoice') as File
 
-const updateData: any = { 
-  status,
-  notes: notes || null
-}
+  const updateData: any = {
+    status,
+    notes: notes || null,
+  }
 
   if (file && file.size > 0) {
     const fileName = `${id}-${Date.now()}-${file.name}`
-    
-    const { error: uploadError } = await supabase.storage
-      .from('invoices')
-      .upload(fileName, file)
-
-    if (!uploadError) {
-      const { data: { publicUrl } } = supabase.storage
-        .from('invoices')
-        .getPublicUrl(fileName)
-      
-      updateData.invoice_url = publicUrl
-    }
+    await supabase.storage.from('invoices').upload(fileName, file)
+    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+    updateData.invoice_url = publicUrl
   }
 
-  const { error } = await supabase
-    .from('units')
-    .update(updateData)
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error updating status:', error.message)
-    throw new Error(error.message)
-  }
-
+  await supabase.from('units').update(updateData).eq('id', id)
   revalidatePath('/')
 }
 
 async function markDecisionSeen(formData: FormData) {
   'use server'
-
   const id = formData.get('id') as string
-
-  const { error } = await supabase
-    .from('units')
-    .update({ decision_seen: true })
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error marking seen:', error.message)
-    throw new Error(error.message)
-  }
-
+  await supabase.from('units').update({ decision_seen: true }).eq('id', id)
   revalidatePath('/')
 }
 
 async function snoozeUnit(formData: FormData) {
   'use server'
-
   const id = formData.get('id') as string
   const days = Number(formData.get('days') || 7)
-
   const snoozeUntil = new Date()
   snoozeUntil.setDate(snoozeUntil.getDate() + days)
 
-  const { error } = await supabase
+  await supabase
     .from('units')
-    .update({ 
-      snoozed_until: snoozeUntil.toISOString(),
-      decision_seen: true
-    })
+    .update({ snoozed_until: snoozeUntil.toISOString(), decision_seen: true })
     .eq('id', id)
-
-  if (error) {
-    console.error('Error snoozing:', error.message)
-    throw new Error(error.message)
-  }
 
   revalidatePath('/')
 }
 
 async function updateNotes(formData: FormData) {
   'use server'
-
   const id = formData.get('id') as string
   const notes = formData.get('notes') as string
+  await supabase.from('units').update({ notes: notes || null }).eq('id', id)
+  revalidatePath('/')
+}
 
-  const { error } = await supabase
-    .from('units')
-    .update({ notes })
-    .eq('id', id)
-
-  if (error) {
-    console.error('Error updating notes:', error.message)
-    throw new Error(error.message)
-  }
-
+async function markMessageRead(formData: FormData) {
+  'use server'
+  const id = formData.get('id') as string
+  await supabase.from('messages').update({ is_read: true }).eq('id', id)
   revalidatePath('/')
 }
 
@@ -150,193 +105,160 @@ export default async function Home({
     .select('*')
     .order('name')
 
-  let unitsQuery = supabase
-    .from('units')
-    .select('*, customers(name)')
-    .order('created_at', { ascending: false })
-
+  let unitsQuery = supabase.from('units').select('*').order('created_at', { ascending: false })
   if (selectedCustomerId) {
     unitsQuery = unitsQuery.eq('customer_id', selectedCustomerId)
   }
-
   const { data: units } = await unitsQuery
+
+  const { data: messages } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('is_read', false)
+    .order('created_at', { ascending: false })
 
   const diagnosing = units?.filter(u => u.status === 'Diagnosing').length || 0
   const needsApproval = units?.filter(u => u.status === 'Needs Approval').length || 0
   const inRepair = units?.filter(u => u.status === 'In Repair').length || 0
   const completed = units?.filter(u => u.status === 'Completed').length || 0
+  const repairRequested = units?.filter(u => u.status === 'Repair Requested').length || 0
 
   const currentCustomer = customers?.find(c => c.id === selectedCustomerId)
-
   const now = new Date()
   const isSnoozed = (u: any) => u.snoozed_until && new Date(u.snoozed_until) > now
 
-  // ===== PRIORITY 1: Stale units (over 7 days, still Diagnosing) =====
-  const staleUnits = (units?.filter(u => 
-    u.status === 'Diagnosing' && !isSnoozed(u)
-  ) || [])
-    .map(u => {
-      const daysSinceCheckIn = Math.floor(
-        (Date.now() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24)
-      )
-      return { ...u, daysSinceCheckIn }
-    })
-    .filter(u => u.daysSinceCheckIn >= 7)
-    .sort((a, b) => b.daysSinceCheckIn - a.daysSinceCheckIn)
+  const staleUnits = (units?.filter(u => {
+    if (isSnoozed(u)) return false
+    if (u.status === 'Completed' || u.status === 'Registered') return false
+    const days = Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24))
+    return days >= 7
+  }) || []).map(u => ({
+    ...u,
+    daysSinceCheckIn: Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24)),
+  }))
 
-  // ===== PRIORITY 2: Customer Decisions =====
-const approvedDecisions = units?.filter(u => 
-  !u.decision_seen && 
-  !isSnoozed(u) &&
-  u.status !== 'Needs Approval' &&
-  u.notes && 
-  u.notes.includes('Approved by:') &&
-  !u.notes.includes('Denied')
-) || []
+  const approvedDecisions = units?.filter(u =>
+    !u.decision_seen &&
+    u.notes?.includes('Approved by')
+  ) || []
 
-const deniedDecisions = units?.filter(u => 
-  !u.decision_seen && 
-  !isSnoozed(u) &&
-  u.status !== 'Needs Approval' &&
-  u.notes && 
-  u.notes.includes('Denied')
-) || []
-  // ===== PRIORITY 3: Waiting on Customer =====
-  const waitingOnCustomer = units?.filter(u => 
+  const deniedDecisions = units?.filter(u =>
+    !u.decision_seen &&
+    u.notes?.includes('Denied by')
+  ) || []
+
+  const waitingOnCustomer = units?.filter(u =>
     u.status === 'Needs Approval' && !isSnoozed(u)
   ) || []
 
-  // ===== PRIORITY 4: Recent Diagnosing (under 7 days) =====
-  const recentNoAction = (units?.filter(u => 
-    u.status === 'Diagnosing' && !isSnoozed(u)
-  ) || [])
-    .map(u => {
-      const daysSinceCheckIn = Math.floor(
-        (Date.now() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24)
-      )
-      return { ...u, daysSinceCheckIn }
-    })
-    .filter(u => u.daysSinceCheckIn < 7)
-    .sort((a, b) => b.daysSinceCheckIn - a.daysSinceCheckIn)
+  const repairRequestedUnits = units?.filter(u =>
+    u.status === 'Repair Requested' && !isSnoozed(u)
+  ) || []
+
+  const recentNoAction = units?.filter(u => {
+    if (isSnoozed(u) || u.status === 'Completed' || u.status === 'Registered') return false
+    const days = Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24))
+    return days < 7 && u.status === 'Diagnosing'
+  }) || []
 
   function formatDate(dateString: string | null) {
     if (!dateString) return '—'
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
       hour: 'numeric',
-      minute: '2-digit'
+      minute: '2-digit',
     })
   }
 
-function ActionCard({ 
-  unit, 
-  borderColor,
-  children 
-}: { 
-  unit: any, 
-  borderColor: string,
-  children: React.ReactNode 
-}) {
-  return (
-    <div className={`px-6 py-5 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
-      <div className="flex flex-col gap-3">
+  function ActionCard({
+    unit,
+    borderColor,
+    children,
+  }: {
+    unit: any
+    borderColor: string
+    children?: React.ReactNode
+  }) {
+    return (
+      <div className={`px-6 py-5 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
           <div className="space-y-1">
             <p className="text-sm text-gray-400">
               <span className="text-orange-400 font-medium">
-                {unit.customers?.name || 'Unknown Customer'}
+                {customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'}
               </span>
             </p>
             <div className="flex items-center gap-3">
               <p className="text-xl font-semibold">{unit.serial_number}</p>
               <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                unit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400' :
-                unit.status === 'Completed' ? 'bg-green-500/20 text-green-400' :
-                unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400' :
-                'bg-orange-500/20 text-orange-400'
+                unit.status === 'Needs Approval' || unit.status === 'Repair Requested'
+                  ? 'bg-yellow-500/20 text-yellow-400'
+                  : unit.status === 'Completed'
+                  ? 'bg-green-500/20 text-green-400'
+                  : unit.status === 'In Repair'
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'bg-orange-500/20 text-orange-400'
               }`}>
                 {unit.status}
               </span>
             </div>
             {children}
-              <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-2">
-                <span>Checked in: {formatDate(unit.created_at)}</span>
-                {unit.updated_at && unit.updated_at !== unit.created_at && (
-                  <span>Updated: {formatDate(unit.updated_at)}</span>
-                )}
-                {unit.model && <span>Model: {unit.model}</span>}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href={`/?customer=${unit.customer_id}`}
-                className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap"
-              >
-                Go to Unit →
-              </Link>
-
-              <form action={snoozeUnit}>
-                <input type="hidden" name="id" value={unit.id} />
-                <input type="hidden" name="days" value="7" />
-                <button
-                  type="submit"
-                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap"
-                >
-                  Delay 7 Days
-                </button>
-              </form>
-
-              {(unit.notes?.includes('Approved by:') || unit.notes?.includes('Denied')) && (
-                <form action={markDecisionSeen}>
-                  <input type="hidden" name="id" value={unit.id} />
-                  <button
-                    type="submit"
-                    className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap"
-                  >
-                    Mark as Seen
-                  </button>
-                </form>
-              )}
+            <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-2">
+              <span>Checked in: {formatDate(unit.created_at)}</span>
+              {unit.model && <span>Model: {unit.model}</span>}
             </div>
           </div>
-
-          <form action={updateNotes} className="mt-1">
-            <input type="hidden" name="id" value={unit.id} />
-            <textarea
-              name="notes"
-              defaultValue={unit.notes || ''}
-              rows={2}
-              placeholder="Add internal notes..."
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-            />
-            <button
-              type="submit"
-              className="mt-2 text-xs text-orange-400 hover:text-orange-300"
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/?customer=${unit.customer_id}`}
+              className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap"
             >
-              Save Notes
-            </button>
-          </form>
+              Go to Unit →
+            </Link>
+            <form action={snoozeUnit}>
+              <input type="hidden" name="id" value={unit.id} />
+              <input type="hidden" name="days" value="7" />
+              <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap">
+                Delay 7 Days
+              </button>
+            </form>
+            {(approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)) && (
+              <form action={markDecisionSeen}>
+                <input type="hidden" name="id" value={unit.id} />
+                <button type="submit" className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap">
+                  Mark Seen
+                </button>
+              </form>
+            )}
+          </div>
         </div>
+        <form action={updateNotes} className="mt-3">
+          <input type="hidden" name="id" value={unit.id} />
+          <textarea
+            name="notes"
+            defaultValue={unit.notes || ''}
+            rows={2}
+            placeholder="Add internal notes..."
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+          />
+          <button type="submit" className="mt-2 text-xs text-orange-400 hover:text-orange-300">
+            Save Notes
+          </button>
+        </form>
       </div>
     )
   }
 
   return (
     <main className="min-h-screen bg-black text-white p-6 md:p-10">
-    <InactivityRedirect />
+      <InactivityRedirect />
       <div className="max-w-6xl mx-auto">
-
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
           <div className="flex items-center gap-4">
-            <img 
-              src="/images/logo.png" 
-              alt="Savage Chainsaws" 
-              className="h-14 w-14 object-contain"
-            />
+            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-14 w-14 object-contain" />
             <div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
                 SAVAGE <span className="text-orange-500">CHAINSAWS</span>
@@ -344,7 +266,6 @@ function ActionCard({
               <p className="text-gray-400 mt-1 text-sm">Unit Tracking Dashboard</p>
             </div>
           </div>
-
           <form className="flex items-center gap-3">
             <select
               name="customer"
@@ -352,27 +273,21 @@ function ActionCard({
               className="bg-zinc-900 border border-zinc-700 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-orange-500"
             >
               <option value="">All Customers (Action Center)</option>
-              {customers?.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
+              {customers?.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <button
-              type="submit"
-              className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-            >
+            <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
               Switch
             </button>
           </form>
         </div>
 
+        <LastViewedBanner customers={customers || []} />
+
         {currentCustomer && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-8 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Current Customer</p>
-              <p className="text-xl font-semibold text-orange-400">{currentCustomer.name}</p>
-            </div>
+          <div className="mb-6">
+            <p className="text-xl font-semibold text-orange-400">{currentCustomer.name}</p>
             <p className="text-sm text-gray-400">
               Total Units: <span className="text-white font-medium">{units?.length || 0}</span>
             </p>
@@ -380,41 +295,91 @@ function ActionCard({
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Diagnosing</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Diagnosing</p>
             <p className="text-3xl font-bold text-orange-400">{diagnosing}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Needs Approval</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Needs Approval</p>
             <p className="text-3xl font-bold text-yellow-400">{needsApproval}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">In Repair</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Repair Requested</p>
+            <p className="text-3xl font-bold text-blue-300">{repairRequested}</p>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+            <p className="text-xs text-gray-500 uppercase tracking-wider">In Repair</p>
             <p className="text-3xl font-bold text-blue-400">{inRepair}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Completed</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Completed</p>
             <p className="text-3xl font-bold text-green-400">{completed}</p>
           </div>
         </div>
 
-        {/* ==================== ACTION CENTER ==================== */}
-        {!selectedCustomerId && (
-          <div className="space-y-8 mb-10">
-    <LastViewedBanner customers={customers || []} />
+        {/* ===== MESSAGES ===== */}
+        {messages && messages.length > 0 && (
+          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl overflow-hidden mb-8">
+            <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-orange-400">
+                New Messages ({messages.length})
+              </h2>
+              <p className="text-xs text-gray-500">Customer inquiries</p>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {messages.map((msg: any) => (
+                <div key={msg.id} className="px-6 py-4 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-orange-400 font-medium">{msg.customer_name}</p>
+                    <p className="text-sm text-gray-300 mt-1">{msg.message}</p>
+                    <p className="text-xs text-gray-500 mt-2">{formatDate(msg.created_at)}</p>
+                  </div>
+                  <form action={markMessageRead}>
+                    <input type="hidden" name="id" value={msg.id} />
+                    <button type="submit" className="text-xs text-gray-400 hover:text-white whitespace-nowrap">
+                      Mark Read
+                    </button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-            {/* 1. STALE UNITS (RED) - TOP PRIORITY */}
+        {/* Action Center sections only show when viewing All Customers */}
+        {!selectedCustomerId && (
+          <>
+            {/* Repair Requested */}
+            {repairRequestedUnits.length > 0 && (
+              <div className="bg-zinc-900 border border-blue-500/30 rounded-xl overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-blue-300">
+                    Repair Requested ({repairRequestedUnits.length})
+                  </h2>
+                  <p className="text-xs text-blue-200/70">Heads up — unit is on its way</p>
+                </div>
+                <div className="divide-y divide-zinc-800">
+                  {repairRequestedUnits.map(unit => (
+                    <ActionCard key={unit.id} unit={unit} borderColor="border-blue-400">
+                      <p className="text-sm text-blue-300">{unit.notes || 'Customer requested repair'}</p>
+                    </ActionCard>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stagnant */}
             {staleUnits.length > 0 && (
-              <div className="bg-zinc-900 border border-red-500/40 rounded-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-red-500/10">
+              <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-red-400">
-                    ⚠ Stagnant Units ({staleUnits.length})
+                    Stagnant Units ({staleUnits.length})
                   </h2>
                   <p className="text-xs text-red-300/80">Over 7 days with no action</p>
                 </div>
                 <div className="divide-y divide-zinc-800">
-                  {staleUnits.map((unit) => (
+                  {staleUnits.map(unit => (
                     <ActionCard key={unit.id} unit={unit} borderColor="border-red-500">
                       <p className="text-sm text-red-400 font-medium">
                         No action for {unit.daysSinceCheckIn} days
@@ -425,17 +390,17 @@ function ActionCard({
               </div>
             )}
 
-            {/* 2. CUSTOMER APPROVED (GREEN) */}
+            {/* Approved */}
             {approvedDecisions.length > 0 && (
-              <div className="bg-zinc-900 border border-green-500/40 rounded-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-green-500/10">
+              <div className="bg-zinc-900 border border-green-500/30 rounded-xl overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-green-400">
                     Customer Approved ({approvedDecisions.length})
                   </h2>
-                  <p className="text-xs text-green-300/80">Money — ready to work</p>
+                  <p className="text-xs text-green-300/80">Ready to work</p>
                 </div>
                 <div className="divide-y divide-zinc-800">
-                  {approvedDecisions.map((unit) => (
+                  {approvedDecisions.map(unit => (
                     <ActionCard key={unit.id} unit={unit} borderColor="border-green-500">
                       <p className="text-sm text-green-300 font-medium">{unit.notes}</p>
                     </ActionCard>
@@ -444,17 +409,16 @@ function ActionCard({
               </div>
             )}
 
-            {/* 3. CUSTOMER DENIED (RED) */}
+            {/* Denied */}
             {deniedDecisions.length > 0 && (
-              <div className="bg-zinc-900 border border-red-500/40 rounded-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-red-500/10">
+              <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-red-400">
                     Customer Denied ({deniedDecisions.length})
                   </h2>
-                  <p className="text-xs text-red-300/80">Diagnosis fee applies</p>
                 </div>
                 <div className="divide-y divide-zinc-800">
-                  {deniedDecisions.map((unit) => (
+                  {deniedDecisions.map(unit => (
                     <ActionCard key={unit.id} unit={unit} borderColor="border-red-500">
                       <p className="text-sm text-red-300 font-medium">{unit.notes}</p>
                     </ActionCard>
@@ -463,221 +427,135 @@ function ActionCard({
               </div>
             )}
 
-            {/* 4. WAITING ON CUSTOMER (YELLOW) */}
-            <div className="bg-zinc-900 border border-yellow-500/30 rounded-xl overflow-hidden">
+            {/* Waiting on Customer */}
+            <div className="bg-zinc-900 border border-yellow-500/30 rounded-xl overflow-hidden mb-8">
               <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-yellow-400">
                   Waiting on Customer ({waitingOnCustomer.length})
                 </h2>
-                <p className="text-xs text-gray-500">Needs Approval</p>
+                <p className="text-xs text-yellow-300/80">Needs Approval</p>
               </div>
               {waitingOnCustomer.length === 0 ? (
                 <p className="px-6 py-8 text-gray-500 text-sm">No units currently waiting on customer approval.</p>
               ) : (
                 <div className="divide-y divide-zinc-800">
-                  {waitingOnCustomer.map((unit) => (
+                  {waitingOnCustomer.map(unit => (
                     <ActionCard key={unit.id} unit={unit} borderColor="border-yellow-500">
                       <p className="text-sm text-yellow-300">Waiting for customer decision</p>
-                      {unit.invoice_url && (
-                        <a 
-                          href={unit.invoice_url} 
-                          target="_blank" 
-                          className="inline-block mt-1 text-sm text-orange-400 hover:underline"
-                        >
-                          View Invoice →
-                        </a>
-                      )}
                     </ActionCard>
                   ))}
                 </div>
               )}
             </div>
+          </>
+        )}
 
-            {/* 5. RECENT NO ACTION (ORANGE) */}
-            <div className="bg-zinc-900 border border-orange-500/30 rounded-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-orange-400">
-                  Recently Checked In ({recentNoAction.length})
-                </h2>
-                <p className="text-xs text-gray-500">Still Diagnosing</p>
-              </div>
-              {recentNoAction.length === 0 ? (
-                <p className="px-6 py-8 text-gray-500 text-sm">No recent units waiting for diagnosis.</p>
-              ) : (
-                <div className="divide-y divide-zinc-800">
-                  {recentNoAction.map((unit) => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-orange-500">
-                      <p className="text-sm text-orange-300">
-                        ○ Still diagnosing — {unit.daysSinceCheckIn} day{unit.daysSinceCheckIn !== 1 ? 's' : ''} old
-                      </p>
-                    </ActionCard>
-                  ))}
+        {/* Customer view: unit list + add form */}
+        {selectedCustomerId && (
+          <>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-8">
+              <h2 className="text-lg font-semibold mb-4 text-orange-400">Add New Unit</h2>
+              <form action={addUnit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input type="hidden" name="customer_id" value={selectedCustomerId} />
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
+                  <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
                 </div>
-              )}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Model</label>
+                  <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Problem Type</label>
+                  <input name="problem_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Check-in Date</label>
+                  <input type="datetime-local" name="check_in_date" defaultValue={new Date().toISOString().slice(0, 16)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Customer Notes (optional)</label>
+                  <textarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                </div>
+                <div className="md:col-span-2">
+                  <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white font-medium px-6 py-2.5 rounded-lg transition">
+                    Add Unit
+                  </button>
+                </div>
+              </form>
             </div>
-          </div>
-        )}
 
-        {/* ==================== ADD NEW UNIT ==================== */}
-        {selectedCustomerId && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-8">
-            <h2 className="text-lg font-semibold mb-4 text-orange-400">Add New Unit</h2>
-            
-            <form action={addUnit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                <input 
-                  name="serial" 
-                  required 
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" 
-                />
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-zinc-800">
+                <h2 className="font-semibold text-orange-400">All Units</h2>
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Model</label>
-                <input 
-                  name="model" 
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" 
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Problem Type</label>
-                <input 
-                  name="problem_type" 
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" 
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Check-in Date</label>
-                <input 
-                  type="datetime-local"
-                  name="check_in_date"
-                  defaultValue={new Date().toISOString().slice(0, 16)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" 
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Customer Notes (optional)</label>
-                <textarea 
-                  name="customer_notes" 
-                  rows={2} 
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" 
-                />
-              </div>
-
-              <input type="hidden" name="customer_id" value={selectedCustomerId} />
-
-              <div className="md:col-span-2">
-                <button 
-                  type="submit" 
-                  className="bg-orange-600 hover:bg-orange-500 text-white font-medium px-6 py-2.5 rounded-lg transition"
-                >
-                  Add Unit
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* ==================== ALL UNITS (specific customer) ==================== */}
-        {selectedCustomerId && (
-          <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden" open>
-            <summary className="px-6 py-4 cursor-pointer font-semibold text-orange-400 hover:bg-zinc-800/50 transition">
-              All Units ({units?.length || 0})
-            </summary>
-
-            <div className="px-6 pb-6 space-y-4">
-              {units?.length === 0 ? (
-                <p className="text-gray-500 text-sm">No units yet.</p>
-              ) : (
-                units?.map((unit) => (
-                  <div key={unit.id} className="bg-zinc-800/60 border border-zinc-700/50 rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium text-lg">{unit.serial_number}</p>
-                        <p className="text-sm text-gray-400">
-                          {unit.model || 'No model'} • {unit.problem_type || 'No problem listed'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Checked in: {formatDate(unit.created_at)}
-                        </p>
-                      </div>
-                      <span className={`text-xs px-3 py-1 rounded-full font-medium ${
-                        unit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400' :
-                        unit.status === 'Completed' ? 'bg-green-500/20 text-green-400' :
-                        unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400' :
-                        'bg-orange-500/20 text-orange-400'
-                      }`}>
-                        {unit.status}
-                      </span>
-                    </div>
-
-                    <form action={updateStatus} className="mt-4 space-y-3">
-                      <input type="hidden" name="id" value={unit.id} />
-                      
+              <div className="divide-y divide-zinc-800">
+                {units?.length === 0 && (
+                  <p className="px-6 py-8 text-gray-500 text-sm">No units for this customer yet.</p>
+                )}
+                {units?.map(unit => (
+                  <details key={unit.id} className="group">
+                    <summary className="px-6 py-4 cursor-pointer font-semibold hover:bg-zinc-800/50 transition flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <select
-                          key={unit.id + unit.status}
-                          name="status"
-                          defaultValue={unit.status}
-                          className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
-                        >
-                          <option value="Diagnosing">Diagnosing</option>
-                          <option value="Needs Approval">Needs Approval</option>
-                          <option value="In Repair">In Repair</option>
-                          <option value="Completed">Completed</option>
-                        </select>
-                        <button 
-                          type="submit" 
-                          className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg transition"
-                        >
-                          Update
-                        </button>
+                        <p className="font-medium text-lg">{unit.serial_number}</p>
+                        <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                          unit.status === 'Needs Approval' || unit.status === 'Repair Requested'
+                            ? 'bg-yellow-500/20 text-yellow-400'
+                            : unit.status === 'Completed'
+                            ? 'bg-green-500/20 text-green-400'
+                            : unit.status === 'In Repair'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : unit.status === 'Registered'
+                            ? 'bg-zinc-700 text-gray-300'
+                            : 'bg-orange-500/20 text-orange-400'
+                        }`}>
+                          {unit.status}
+                        </span>
                       </div>
-
-                      {(unit.status === 'Diagnosing' || unit.status === 'Needs Approval' || unit.status === 'Completed') && (
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Notes</label>
-                          <textarea
-                            name="notes"
-                            defaultValue={unit.notes || ''}
-                            rows={2}
-                            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                            placeholder="Add notes..."
-                          />
+                    </summary>
+                    <div className="px-6 pb-5">
+                      <form action={updateStatus} className="mt-2 space-y-3">
+                        <input type="hidden" name="id" value={unit.id} />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <select
+                            name="status"
+                            defaultValue={unit.status}
+                            key={unit.id + unit.status}
+                            className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
+                          >
+                            <option value="Registered">Registered</option>
+                            <option value="Repair Requested">Repair Requested</option>
+                            <option value="Diagnosing">Diagnosing</option>
+                            <option value="Needs Approval">Needs Approval</option>
+                            <option value="In Repair">In Repair</option>
+                            <option value="Completed">Completed</option>
+                          </select>
+                          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg transition">
+                            Update
+                          </button>
                         </div>
-                      )}
-
-                      {(unit.status === 'Needs Approval' || unit.status === 'Completed') && (
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">
-                            {unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Completion Photo'}
-                          </label>
-                          <input
-                            type="file"
-                            name="invoice"
-                            accept="image/*,.pdf"
-                            className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500"
-                          />
-                        </div>
-                      )}
-                    </form>
-
-                    {unit.invoice_url && (
-                      <div className="mt-3">
-                        <a 
-                          href={unit.invoice_url} 
-                          target="_blank" 
-                          className="text-sm text-orange-400 hover:underline"
-                        >
-                          View uploaded file →
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
+                        <textarea
+                          name="notes"
+                          defaultValue={unit.notes || ''}
+                          rows={2}
+                          placeholder="Notes..."
+                          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                        />
+                        {(unit.status === 'Needs Approval' || unit.status === 'Completed') && (
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">
+                              {unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Completion Photo'}
+                            </label>
+                            <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500" />
+                          </div>
+                        )}
+                      </form>
+                    </div>
+                  </details>
+                ))}
+              </div>
             </div>
-          </details>
+          </>
         )}
       </div>
     </main>

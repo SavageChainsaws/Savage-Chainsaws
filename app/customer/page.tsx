@@ -15,12 +15,18 @@ export default function CustomerPortal() {
   const [customer, setCustomer] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showMessageForm, setShowMessageForm] = useState(false)
 
-  // Add Unit form state
+  // Add Unit form
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
   const [notes, setNotes] = useState('')
   const [adding, setAdding] = useState(false)
+
+  // Message form
+  const [messageText, setMessageText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [messageSent, setMessageSent] = useState(false)
 
   useEffect(() => {
     checkUser()
@@ -110,6 +116,27 @@ export default function CustomerPortal() {
     checkUser()
   }
 
+  async function handleSendMessage(e: React.FormEvent) {
+    e.preventDefault()
+    if (!customer || !messageText.trim()) return
+    setSending(true)
+
+    await supabase.from('messages').insert({
+      customer_id: customer.id,
+      customer_name: customer.name,
+      message: messageText.trim(),
+      is_read: false,
+    })
+
+    setMessageText('')
+    setSending(false)
+    setMessageSent(true)
+    setTimeout(() => {
+      setMessageSent(false)
+      setShowMessageForm(false)
+    }, 2000)
+  }
+
   async function handleDecision(unitId: string, decision: string, name: string) {
     const note =
       decision === 'Deny'
@@ -173,13 +200,25 @@ export default function CustomerPortal() {
           </button>
         </div>
 
-        {/* Add Unit Button */}
-        <div className="mb-6">
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-3 mb-6">
           <button
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => {
+              setShowAddForm(!showAddForm)
+              setShowMessageForm(false)
+            }}
             className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition"
           >
             {showAddForm ? 'Cancel' : '+ Add Unit'}
+          </button>
+          <button
+            onClick={() => {
+              setShowMessageForm(!showMessageForm)
+              setShowAddForm(false)
+            }}
+            className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition"
+          >
+            {showMessageForm ? 'Cancel' : 'Send Message'}
           </button>
         </div>
 
@@ -223,6 +262,34 @@ export default function CustomerPortal() {
             >
               {adding ? 'Adding...' : 'Add Unit'}
             </button>
+          </form>
+        )}
+
+        {/* Message Form */}
+        {showMessageForm && (
+          <form onSubmit={handleSendMessage} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-8 space-y-4">
+            <h3 className="font-semibold">Send a Message</h3>
+            {messageSent ? (
+              <p className="text-green-400 text-sm">Message sent. Jesse will see it shortly.</p>
+            ) : (
+              <>
+                <textarea
+                  required
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  rows={4}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
+                  placeholder="Ask a question, request an expedite, or leave a note..."
+                />
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition"
+                >
+                  {sending ? 'Sending...' : 'Send Message'}
+                </button>
+              </>
+            )}
           </form>
         )}
 
@@ -291,7 +358,6 @@ export default function CustomerPortal() {
                   </a>
                 )}
 
-                {/* Request Repair button for Registered units */}
                 {unit.status === 'Registered' && (
                   <div className="mt-4">
                     <button
@@ -303,7 +369,6 @@ export default function CustomerPortal() {
                   </div>
                 )}
 
-                {/* Approval buttons */}
                 {unit.status === 'Needs Approval' && (
                   <div className="mt-4 pt-4 border-t border-zinc-800">
                     <p className="text-sm text-gray-400 mb-3">Your decision:</p>
