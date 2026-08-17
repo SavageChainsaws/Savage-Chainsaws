@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,11 +11,11 @@ const supabase = createClient(
 )
 
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
+  const [error, setError] = useState('')
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -37,32 +38,25 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-xl p-8">
-        
-        {/* Logo + Title */}
-        <div className="flex items-center gap-3 mb-6">
-          <img 
-            src="/images/logo.png" 
-            alt="Savage Chainsaws" 
-            className="h-12 w-12 object-contain"
-          />
-          <div>
-            <h1 className="text-2xl font-bold">
-              SAVAGE <span className="text-orange-500">CHAINSAWS</span>
-            </h1>
-            <p className="text-gray-400 text-sm">Customer Login</p>
-          </div>
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <img src="/images/logo.png" alt="Savage Chainsaws" className="h-16 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold">
+            SAVAGE <span className="text-orange-500">CHAINSAWS</span>
+          </h1>
+          <p className="text-gray-400 mt-1 text-sm">Customer Login</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleLogin} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Email</label>
             <input
               type="email"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-orange-500"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
+              placeholder="you@company.com"
             />
           </div>
 
@@ -70,10 +64,11 @@ export default function LoginPage() {
             <label className="block text-sm text-gray-400 mb-1">Password</label>
             <input
               type="password"
+              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-orange-500"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
+              placeholder="Your password"
             />
           </div>
 
@@ -84,10 +79,17 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-orange-600 hover:bg-orange-500 text-white font-medium py-2.5 rounded-lg disabled:opacity-50 transition"
+            className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition"
           >
             {loading ? 'Logging in...' : 'Log In'}
           </button>
+
+          <p className="text-center text-sm text-gray-500">
+            Don’t have an account?{' '}
+            <Link href="/signup" className="text-orange-400 hover:text-orange-300">
+              Sign up
+            </Link>
+          </p>
         </form>
       </div>
     </main>
