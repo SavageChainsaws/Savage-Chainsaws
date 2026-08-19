@@ -87,12 +87,11 @@ export default function CheckInForm({
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handlePhotoChange}
           className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500"
         />
         <p className="text-xs text-gray-500 mt-1">
-          {uploading ? 'Uploading photo…' : photoUrl ? '✓ Photo ready' : 'On phone this opens the camera'}
+          {uploading ? 'Uploading photo…' : photoUrl ? '✓ Photo ready' : 'Take photo or choose from library'}
         </p>
         {photoUrl && (
           <img src={photoUrl} alt="Preview" className="mt-2 h-24 w-24 object-cover rounded-lg border border-zinc-700" />
