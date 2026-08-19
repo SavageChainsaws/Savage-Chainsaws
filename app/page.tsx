@@ -20,6 +20,16 @@ async function addUnit(formData: FormData) {
   const customerNotes = formData.get('customer_notes') as string
   const customerId = formData.get('customer_id') as string
   const checkInDate = formData.get('check_in_date') as string
+  const photo = formData.get('photo') as File
+
+  let photoUrl: string | null = null
+
+  if (photo && photo.size > 0) {
+    const fileName = `checkin-${Date.now()}-${photo.name}`
+    await supabase.storage.from('invoices').upload(fileName, photo)
+    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+    photoUrl = publicUrl
+  }
 
   await supabase.from('units').insert({
     serial_number: serial,
@@ -29,6 +39,7 @@ async function addUnit(formData: FormData) {
     customer_id: customerId,
     status: 'Diagnosing',
     decision_seen: true,
+    photo_url: photoUrl,
     created_at: checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString(),
   })
 
@@ -206,6 +217,11 @@ export default async function Home({
               <span>Checked in: {formatDate(unit.created_at)}</span>
               {unit.model && <span>Model: {unit.model}</span>}
             </div>
+            {unit.photo_url && (
+              <a href={unit.photo_url} target="_blank" rel="noreferrer" className="inline-block mt-2">
+                <img src={unit.photo_url} alt="Check-in photo" className="h-20 w-20 object-cover rounded-lg border border-zinc-700" />
+              </a>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
@@ -449,32 +465,43 @@ export default async function Home({
         {selectedCustomerId && (
           <>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-8">
-              <h2 className="text-lg font-semibold mb-4 text-orange-400">Add New Unit</h2>
-              <form action={addUnit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h2 className="text-lg font-semibold mb-4 text-orange-400">Check In New Unit</h2>
+              <form action={addUnit} encType="multipart/form-data" className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input type="hidden" name="customer_id" value={selectedCustomerId} />
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                  <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                  <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Serial number" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Model</label>
-                  <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                  <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. MS 462" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Problem Type</label>
-                  <input name="problem_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                  <input name="problem_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Won't start, loss of power, etc." />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Check-in Date</label>
                   <input type="datetime-local" name="check_in_date" defaultValue={new Date().toISOString().slice(0, 16)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
                 </div>
                 <div className="md:col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Photo of Unit / Serial Plate</label>
+                  <input
+                    type="file"
+                    name="photo"
+                    accept="image/*"
+                    capture="environment"
+                    className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">On phone this opens the camera</p>
+                </div>
+                <div className="md:col-span-2">
                   <label className="block text-xs text-gray-500 mb-1">Customer Notes (optional)</label>
-                  <textarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                  <textarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="What the customer said is wrong..." />
                 </div>
                 <div className="md:col-span-2">
                   <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white font-medium px-6 py-2.5 rounded-lg transition">
-                    Add Unit
+                    Check In Unit
                   </button>
                 </div>
               </form>
@@ -509,6 +536,14 @@ export default async function Home({
                       </div>
                     </summary>
                     <div className="px-6 pb-5">
+                      {unit.photo_url && (
+                        <div className="mb-3">
+                          <a href={unit.photo_url} target="_blank" rel="noreferrer">
+                            <img src={unit.photo_url} alt="Check-in photo" className="h-32 w-32 object-cover rounded-lg border border-zinc-700" />
+                          </a>
+                          <p className="text-xs text-gray-500 mt-1">Tap photo to open full size</p>
+                        </div>
+                      )}
                       <form action={updateStatus} encType="multipart/form-data" className="mt-2 space-y-3">
                         <input type="hidden" name="id" value={unit.id} />
                         <div className="flex flex-wrap items-center gap-3">
