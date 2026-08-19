@@ -24,11 +24,25 @@ async function addUnit(formData: FormData) {
 
   let photoUrl: string | null = null
 
-  if (photo && photo.size > 0) {
-    const fileName = `checkin-${Date.now()}-${photo.name}`
-    await supabase.storage.from('invoices').upload(fileName, photo)
-    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-    photoUrl = publicUrl
+  if (photo && typeof photo === 'object' && 'size' in photo && photo.size > 0) {
+    try {
+      const bytes = await photo.arrayBuffer()
+      const buffer = Buffer.from(bytes)
+      const ext = (photo.name && photo.name.includes('.')) ? photo.name.split('.').pop() : 'jpg'
+      const fileName = `checkin-${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('invoices')
+        .upload(fileName, buffer, {
+          contentType: photo.type || 'image/jpeg',
+          upsert: false,
+        })
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+        photoUrl = publicUrl
+      }
+    } catch {
+      // Photo failed — still create the unit without it
+    }
   }
 
   await supabase.from('units').insert({
