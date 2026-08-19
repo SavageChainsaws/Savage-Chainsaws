@@ -27,12 +27,11 @@ async function addUnit(formData: FormData) {
   if (photo && typeof photo === 'object' && 'size' in photo && photo.size > 0) {
     try {
       const bytes = await photo.arrayBuffer()
-      const buffer = Buffer.from(bytes)
       const ext = (photo.name && photo.name.includes('.')) ? photo.name.split('.').pop() : 'jpg'
       const fileName = `checkin-${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('invoices')
-        .upload(fileName, buffer, {
+        .upload(fileName, bytes, {
           contentType: photo.type || 'image/jpeg',
           upsert: false,
         })
@@ -72,11 +71,23 @@ async function updateStatus(formData: FormData) {
     notes: notes || null,
   }
 
-  if (file && file.size > 0) {
-    const fileName = `${id}-${Date.now()}-${file.name}`
-    await supabase.storage.from('invoices').upload(fileName, file)
-    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-    updateData.invoice_url = publicUrl
+  if (file && typeof file === 'object' && 'size' in file && file.size > 0) {
+    try {
+      const bytes = await file.arrayBuffer()
+      const fileName = `${id}-${Date.now()}-${file.name || 'file'}`
+      const { error: uploadError } = await supabase.storage
+        .from('invoices')
+        .upload(fileName, bytes, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: false,
+        })
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+        updateData.invoice_url = publicUrl
+      }
+    } catch {
+      // Upload failed — still update status/notes
+    }
   }
 
   await supabase.from('units').update(updateData).eq('id', id)
