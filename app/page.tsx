@@ -6,6 +6,7 @@ import InactivityRedirect from './components/InactivityRedirect'
 import LastViewedBanner from './components/LastViewedBanner'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
+import CheckInForm from './components/CheckInForm'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,29 +21,7 @@ async function addUnit(formData: FormData) {
   const customerNotes = formData.get('customer_notes') as string
   const customerId = formData.get('customer_id') as string
   const checkInDate = formData.get('check_in_date') as string
-  const photo = formData.get('photo') as File
-
-  let photoUrl: string | null = null
-
-  if (photo && typeof photo === 'object' && 'size' in photo && photo.size > 0) {
-    try {
-      const bytes = await photo.arrayBuffer()
-      const ext = (photo.name && photo.name.includes('.')) ? photo.name.split('.').pop() : 'jpg'
-      const fileName = `checkin-${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from('invoices')
-        .upload(fileName, bytes, {
-          contentType: photo.type || 'image/jpeg',
-          upsert: false,
-        })
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-        photoUrl = publicUrl
-      }
-    } catch {
-      // Photo failed — still create the unit without it
-    }
-  }
+  const photoUrl = (formData.get('photo_url') as string) || null
 
   await supabase.from('units').insert({
     serial_number: serial,
@@ -491,45 +470,7 @@ export default async function Home({
           <>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-8">
               <h2 className="text-lg font-semibold mb-4 text-orange-400">Check In New Unit</h2>
-              <form action={addUnit} encType="multipart/form-data" className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="hidden" name="customer_id" value={selectedCustomerId} />
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                  <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Serial number" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Model</label>
-                  <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. MS 462" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Problem Type</label>
-                  <input name="problem_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Won't start, loss of power, etc." />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Check-in Date</label>
-                  <input type="datetime-local" name="check_in_date" defaultValue={new Date().toISOString().slice(0, 16)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">Photo of Unit / Serial Plate</label>
-                  <input
-                    type="file"
-                    name="photo"
-                    accept="image/*"
-                    capture="environment"
-                    className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">On phone this opens the camera</p>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">Customer Notes (optional)</label>
-                  <textarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="What the customer said is wrong..." />
-                </div>
-                <div className="md:col-span-2">
-                  <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white font-medium px-6 py-2.5 rounded-lg transition">
-                    Check In Unit
-                  </button>
-                </div>
-              </form>
+              <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
             </div>
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
