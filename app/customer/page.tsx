@@ -8,6 +8,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+// force new deploy
 
 type Unit = {
   id: string
@@ -219,6 +220,39 @@ export default function CustomerPortal() {
           </button>
         </div>
       </header>
+{/* Video Ticker */}
+<div className="bg-zinc-950 border-b border-zinc-800 overflow-hidden py-3">
+  <div className="flex animate-scroll gap-6">
+    {[1, 2].map((loop) => (
+      <div key={loop} className="flex gap-6 shrink-0">
+        <video
+          src="/videos/ms362.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="h-24 rounded-lg border border-zinc-700"
+        />
+        <video
+          src="/videos/ms391.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="h-24 rounded-lg border border-zinc-700"
+        />
+        <video
+          src="/videos/yellow-top.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="h-24 rounded-lg border border-zinc-700"
+        />
+      </div>
+    ))}
+  </div>
+</div>
 
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
         <section className="space-y-3">
@@ -492,4 +526,13 @@ export default function CustomerPortal() {
       </div>
     </main>
   )
+<style jsx>{`
+  @keyframes scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .animate-scroll {
+    animation: scroll 28s linear infinite;
+  }
+`}</style>
 }
