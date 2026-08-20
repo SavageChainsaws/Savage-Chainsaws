@@ -1,109 +1,180 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-async function requestRepair(formData: FormData) {
-  'use server'
-  const id = formData.get('id') as string
-  const notes = (formData.get('notes') as string) || 'Customer requested repair'
-  const { data: existing } = await supabase.from('units').select('history, notes').eq('id', id).single()
-  const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — Customer requested repair`
-  await supabase
-    .from('units')
-    .update({
-      status: 'Repair Requested',
-      notes: notes,
-      history: existing?.history ? `${line}\n${existing.history}` : line,
-    })
-    .eq('id', id)
-  revalidatePath('/customer')
+type Unit = {
+  id: string
+  serial_number: string
+  model: string | null
+  status: string
+  notes: string | null
+  problem_type: string | null
+  equipment_type: string | null
+  invoice_url: string | null
+  created_at: string
+  customer_id: string
 }
 
-async function approveRepair(formData: FormData) {
-  'use server'
-  const id = formData.get('id') as string
-  const name = (formData.get('approver_name') as string) || 'Customer'
-  const decision = formData.get('decision') as string
-  const { data: existing } = await supabase.from('units').select('history, notes').eq('id', id).single()
-  const stamp = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
-  let note = ''
-  let status = 'In Repair'
-  if (decision === 'approve') {
-    note = `Approved by ${name}`
-  } else if (decision === 'upgrade') {
-    note = `Upgrade requested by ${name}`
-  } else if (decision === 'equivalent') {
-    note = `Equivalent replacement requested by ${name}`
-  } else {
-    note = `Denied by ${name} — diagnosis fee $49.99 may apply`
-    status = 'Completed'
+type Customer = {
+  id: string
+  name: string
+  email: string | null
+}
+
+export default function CustomerPortal() {
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [userEmail, setUserEmail] = useState('')
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [units, setUnits] = useState<Unit[]>([])
+  const [approverName, setApproverName] = useState('')
+  const [newSerial, setNewSerial] = useState('')
+  const [newModel, setNewModel] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+  const [messageText, setMessageText] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) {
+      router.replace('/customer/login')
+      return
+    }
+    setUserEmail(user.email)
+
+    const { data: cust } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('email', user.email)
+      .maybeSingle()
+
+    if (!cust) {
+      setCustomer(null)
+      setLoading(false)
+      return
+    }
+    setCustomer(cust)
+
+    const { data: unitList } = await supabase
+      .from('units')
+      .select('*')
+      .eq('customer_id', cust.id)
+      .order('created_at', { ascending: false })
+
+    setUnits(unitList || [])
+    setLoading(false)
   }
-  const line = `${stamp} — ${note}`
-  await supabase
-    .from('units')
-    .update({
+
+  async function logout() {
+    await supabase.auth.signOut()
+    router.replace('/customer/login')
+  }
+
+  async function requestRepair(id: string) {
+    setBusy(true)
+    const stamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const { data: existing } = await supabase.from('units').select('history').eq('id', id).single()
+    const line = `${stamp} — Customer requested repair`
+    await supabase.from('units').update({
+      status: 'Repair Requested',
+      notes: 'Customer requested repair',
+      history: existing?.history ? `${line}\n${existing.history}` : line,
+    }).eq('id', id)
+    await load()
+    setBusy(false)
+  }
+
+  async function decide(id: string, decision: string) {
+    if (!approverName.trim()) {
+      alert('Enter your name first')
+      return
+    }
+    setBusy(true)
+    const stamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    let note = ''
+    let status = 'In Repair'
+    if (decision === 'approve') note = `Approved by ${approverName.trim()}`
+    else if (decision === 'upgrade') note = `Upgrade requested by ${approverName.trim()}`
+    else if (decision === 'equivalent') note = `Equivalent replacement requested by ${approverName.trim()}`
+    else {
+      note = `Denied by ${approverName.trim()} — diagnosis fee $49.99 may apply`
+      status = 'Completed'
+    }
+    const { data: existing } = await supabase.from('units').select('history').eq('id', id).single()
+    const line = `${stamp} — ${note}`
+    await supabase.from('units').update({
       status,
       notes: note,
       decision_seen: false,
       history: existing?.history ? `${line}\n${existing.history}` : line,
-    })
-    .eq('id', id)
-  revalidatePath('/customer')
-}
-
-async function sendMessage(formData: FormData) {
-  'use server'
-  const message = formData.get('message') as string
-  const customerName = formData.get('customer_name') as string
-  const customerId = formData.get('customer_id') as string
-  if (!message?.trim()) return
-  await supabase.from('messages').insert({
-    message: message.trim(),
-    customer_name: customerName,
-    customer_id: customerId || null,
-    is_read: false,
-  })
-  revalidatePath('/customer')
-}
-
-async function addRegisteredUnit(formData: FormData) {
-  'use server'
-  const serial = formData.get('serial') as string
-  const model = formData.get('model') as string
-  const customerId = formData.get('customer_id') as string
-  const notes = formData.get('notes') as string
-  if (!serial?.trim() || !customerId) return
-  await supabase.from('units').insert({
-    serial_number: serial.trim(),
-    model: model || null,
-    customer_id: customerId,
-    status: 'Registered',
-    notes: notes || 'Registered unit',
-    decision_seen: true,
-  })
-  revalidatePath('/customer')
-}
-
-export default async function CustomerPortal() {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user?.email) {
-    redirect('/customer/login')
+    }).eq('id', id)
+    setApproverName('')
+    await load()
+    setBusy(false)
   }
 
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('*')
-    .eq('email', user.email)
-    .maybeSingle()
+  async function addUnit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!customer || !newSerial.trim()) return
+    setBusy(true)
+    await supabase.from('units').insert({
+      serial_number: newSerial.trim(),
+      model: newModel || null,
+      customer_id: customer.id,
+      status: 'Registered',
+      notes: newNotes || 'Registered unit',
+      decision_seen: true,
+    })
+    setNewSerial('')
+    setNewModel('')
+    setNewNotes('')
+    await load()
+    setBusy(false)
+  }
+
+  async function sendMessage(e: React.FormEvent) {
+    e.preventDefault()
+    if (!customer || !messageText.trim()) return
+    setBusy(true)
+    await supabase.from('messages').insert({
+      message: messageText.trim(),
+      customer_name: customer.name,
+      customer_id: customer.id,
+      is_read: false,
+    })
+    setMessageText('')
+    setBusy(false)
+    alert('Message sent')
+  }
+
+  function formatDate(dateString: string | null) {
+    if (!dateString) return '—'
+    return new Date(dateString).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+        <p className="text-gray-400">Loading…</p>
+      </main>
+    )
+  }
 
   if (!customer) {
     return (
@@ -114,41 +185,21 @@ export default async function CustomerPortal() {
             SAVAGE <span className="text-orange-500">CHAINSAWS</span>
           </h1>
           <p className="text-gray-400">
-            Your account ({user.email}) is not linked to a customer profile yet.
-            Contact us and we’ll set you up.
+            Your account ({userEmail}) is not linked to a customer profile yet.
+            Contact Jesse and he’ll link your email.
           </p>
-          <a
-            href="https://savagechainsaws.com"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block text-orange-400 hover:text-orange-300 text-sm"
-          >
-            savagechainsaws.com →
-          </a>
+          <button onClick={logout} className="text-sm text-orange-400 hover:text-orange-300">
+            Log out
+          </button>
         </div>
       </main>
     )
   }
 
-  const { data: units } = await supabase
-    .from('units')
-    .select('*')
-    .eq('customer_id', customer.id)
-    .order('created_at', { ascending: false })
-
-  const needsDecision = units?.filter(u => u.status === 'Needs Approval') || []
-  const inShop = units?.filter(u =>
+  const needsDecision = units.filter(u => u.status === 'Needs Approval')
+  const inShop = units.filter(u =>
     ['Diagnosing', 'In Repair', 'Repair Requested', 'Ready for Pickup'].includes(u.status)
-  ) || []
-
-  function formatDate(dateString: string | null) {
-    if (!dateString) return '—'
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
-  }
+  )
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -163,11 +214,9 @@ export default async function CustomerPortal() {
               <p className="text-xs text-gray-500">Customer portal</p>
             </div>
           </div>
-          <form action="/auth/signout" method="post">
-            <button type="submit" className="text-sm text-gray-400 hover:text-white">
-              Log out
-            </button>
-          </form>
+          <button onClick={logout} className="text-sm text-gray-400 hover:text-white">
+            Log out
+          </button>
         </div>
       </header>
 
@@ -176,7 +225,7 @@ export default async function CustomerPortal() {
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Signed in as</p>
             <h1 className="text-2xl font-semibold text-orange-400">{customer.name}</h1>
-            <p className="text-sm text-gray-400">{user.email}</p>
+            <p className="text-sm text-gray-400">{userEmail}</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -236,49 +285,42 @@ export default async function CustomerPortal() {
                       View estimate / invoice →
                     </a>
                   )}
-                  <form action={approveRepair} className="space-y-3">
-                    <input type="hidden" name="id" value={unit.id} />
-                    <input
-                      name="approver_name"
-                      required
-                      placeholder="Your name (required)"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="submit"
-                        name="decision"
-                        value="approve"
-                        className="bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                      >
-                        Approve repair
-                      </button>
-                      <button
-                        type="submit"
-                        name="decision"
-                        value="upgrade"
-                        className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                      >
-                        Upgrade
-                      </button>
-                      <button
-                        type="submit"
-                        name="decision"
-                        value="equivalent"
-                        className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                      >
-                        Same / equivalent
-                      </button>
-                      <button
-                        type="submit"
-                        name="decision"
-                        value="deny"
-                        className="bg-red-700/80 hover:bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                      >
-                        Deny ($49.99 diagnosis)
-                      </button>
-                    </div>
-                  </form>
+                  <input
+                    value={approverName}
+                    onChange={e => setApproverName(e.target.value)}
+                    placeholder="Your name (required)"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      disabled={busy}
+                      onClick={() => decide(unit.id, 'approve')}
+                      className="bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                    >
+                      Approve repair
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => decide(unit.id, 'upgrade')}
+                      className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                    >
+                      Upgrade
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => decide(unit.id, 'equivalent')}
+                      className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                    >
+                      Same / equivalent
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => decide(unit.id, 'deny')}
+                      className="bg-red-700/80 hover:bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                    >
+                      Deny ($49.99 diagnosis)
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -327,26 +369,32 @@ export default async function CustomerPortal() {
             <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-orange-400 list-none">
               + Register a unit
             </summary>
-            <form action={addRegisteredUnit} className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
-              <input type="hidden" name="customer_id" value={customer.id} />
+            <form onSubmit={addUnit} className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
               <input
-                name="serial"
                 required
+                value={newSerial}
+                onChange={e => setNewSerial(e.target.value)}
                 placeholder="Serial number *"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
               />
               <input
-                name="model"
+                value={newModel}
+                onChange={e => setNewModel(e.target.value)}
                 placeholder="Model"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
               />
               <textarea
-                name="notes"
+                value={newNotes}
+                onChange={e => setNewNotes(e.target.value)}
                 rows={2}
                 placeholder="Notes (optional)"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
               />
-              <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+              <button
+                type="submit"
+                disabled={busy}
+                className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+              >
                 Save unit
               </button>
             </form>
@@ -356,17 +404,20 @@ export default async function CustomerPortal() {
             <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-300 list-none">
               Send a message
             </summary>
-            <form action={sendMessage} className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
-              <input type="hidden" name="customer_id" value={customer.id} />
-              <input type="hidden" name="customer_name" value={customer.name} />
+            <form onSubmit={sendMessage} className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
               <textarea
-                name="message"
                 required
+                value={messageText}
+                onChange={e => setMessageText(e.target.value)}
                 rows={3}
                 placeholder="What do you need?"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
               />
-              <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+              <button
+                type="submit"
+                disabled={busy}
+                className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+              >
                 Send
               </button>
             </form>
@@ -375,17 +426,14 @@ export default async function CustomerPortal() {
 
         <section>
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            Your units ({units?.length || 0})
+            Your units ({units.length})
           </h2>
-          {!units?.length ? (
+          {units.length === 0 ? (
             <p className="text-sm text-gray-500">No units on file yet. Register one above or drop it off.</p>
           ) : (
             <div className="space-y-3">
               {units.map(unit => (
-                <div
-                  key={unit.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl p-4"
-                >
+                <div key={unit.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-lg">{unit.serial_number}</p>
@@ -394,30 +442,24 @@ export default async function CustomerPortal() {
                         {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        Status:{' '}
-                        <span className="text-orange-400">{unit.status}</span>
+                        Status: <span className="text-orange-400">{unit.status}</span>
                         {' · '}
                         {formatDate(unit.created_at)}
                       </p>
-                      {unit.notes && (
-                        <p className="text-sm text-gray-300 mt-2">{unit.notes}</p>
-                      )}
+                      {unit.notes && <p className="text-sm text-gray-300 mt-2">{unit.notes}</p>}
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-800 text-gray-300 shrink-0">
                       {unit.status}
                     </span>
                   </div>
                   {unit.status === 'Registered' && (
-                    <form action={requestRepair} className="mt-3">
-                      <input type="hidden" name="id" value={unit.id} />
-                      <input type="hidden" name="notes" value="Customer requested repair" />
-                      <button
-                        type="submit"
-                        className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                      >
-                        Request Repair
-                      </button>
-                    </form>
+                    <button
+                      disabled={busy}
+                      onClick={() => requestRepair(unit.id)}
+                      className="mt-3 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                    >
+                      Request Repair
+                    </button>
                   )}
                   {unit.invoice_url && (
                     <a
