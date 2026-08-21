@@ -366,7 +366,7 @@ export default async function Home({
   }
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-6 md:p-10">
+    <main className="min-h-screen bg-transparent text-white p-4 sm:p-6 md:p-10">
       <Suspense fallback={null}>
         <InactivityRedirect />
       </Suspense>
