@@ -8,7 +8,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-// force new deploy
 
 type Unit = {
   id: string
@@ -21,6 +20,9 @@ type Unit = {
   invoice_url: string | null
   created_at: string
   customer_id: string
+  decision?: string | null
+  decision_by?: string | null
+  decision_seen?: boolean | null
 }
 
 type Customer = {
@@ -35,504 +37,306 @@ export default function CustomerPortal() {
   const [userEmail, setUserEmail] = useState('')
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
-  const [approverName, setApproverName] = useState('')
-  const [newSerial, setNewSerial] = useState('')
-  const [newModel, setNewModel] = useState('')
-  const [newNotes, setNewNotes] = useState('')
-  const [messageText, setMessageText] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [decisionName, setDecisionName] = useState('')
 
   useEffect(() => {
-    load()
-  }, [])
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
 
-  async function load() {
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.email) {
-      router.replace('/customer/login')
-      return
-    }
-    setUserEmail(user.email)
+      if (!session) {
+        router.push('/login')
+        return
+      }
 
-    const { data: cust } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('email', user.email)
-      .maybeSingle()
+      setUserEmail(session.user.email || '')
 
-    if (!cust) {
-      setCustomer(null)
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('email', session.user.email)
+        .single()
+
+      if (!cust) {
+        setLoading(false)
+        return
+      }
+
+      setCustomer(cust)
+
+      const { data: unitData } = await supabase
+        .from('units')
+        .select('*')
+        .eq('customer_id', cust.id)
+        .order('created_at', { ascending: false })
+
+      setUnits(unitData || [])
       setLoading(false)
+    }
+
+    load()
+  }, [router])
+
+  async function handleDecision(unitId: string, decision: string) {
+    if (!decisionName.trim()) {
+      alert('Please type your name before approving or denying.')
       return
     }
-    setCustomer(cust)
 
-    const { data: unitList } = await supabase
+    await supabase
       .from('units')
-      .select('*')
-      .eq('customer_id', cust.id)
-      .order('created_at', { ascending: false })
+      .update({
+        decision,
+        decision_by: decisionName.trim(),
+        decision_seen: false,
+        status: decision === 'approved' ? 'In Repair' : 'Diagnosing'
+      })
+      .eq('id', unitId)
 
-    setUnits(unitList || [])
-    setLoading(false)
-  }
-
-  async function logout() {
-    await supabase.auth.signOut()
-    router.replace('/customer/login')
-  }
-
-  async function requestRepair(id: string) {
-    setBusy(true)
-    const stamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    const { data: existing } = await supabase.from('units').select('history').eq('id', id).single()
-    const line = `${stamp} — Customer requested repair`
-    await supabase.from('units').update({
-      status: 'Repair Requested',
-      notes: 'Customer requested repair',
-      history: existing?.history ? `${line}\n${existing.history}` : line,
-    }).eq('id', id)
-    await load()
-    setBusy(false)
-  }
-
-  async function decide(id: string, decision: string) {
-    if (!approverName.trim()) {
-      alert('Enter your name first')
-      return
+    // Refresh units
+    if (customer) {
+      const { data } = await supabase
+        .from('units')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+      setUnits(data || [])
     }
-    setBusy(true)
-    const stamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    let note = ''
-    let status = 'In Repair'
-    if (decision === 'approve') note = `Approved by ${approverName.trim()}`
-    else if (decision === 'upgrade') note = `Upgrade requested by ${approverName.trim()}`
-    else if (decision === 'equivalent') note = `Equivalent replacement requested by ${approverName.trim()}`
-    else {
-      note = `Denied by ${approverName.trim()} — diagnosis fee $49.99 may apply`
-      status = 'Completed'
-    }
-    const { data: existing } = await supabase.from('units').select('history').eq('id', id).single()
-    const line = `${stamp} — ${note}`
-    await supabase.from('units').update({
-      status,
-      notes: note,
-      decision_seen: false,
-      history: existing?.history ? `${line}\n${existing.history}` : line,
-    }).eq('id', id)
-    setApproverName('')
-    await load()
-    setBusy(false)
-  }
 
-  async function addUnit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!customer || !newSerial.trim()) return
-    setBusy(true)
-    await supabase.from('units').insert({
-      serial_number: newSerial.trim(),
-      model: newModel || null,
-      customer_id: customer.id,
-      status: 'Registered',
-      notes: newNotes || 'Registered unit',
-      decision_seen: true,
-    })
-    setNewSerial('')
-    setNewModel('')
-    setNewNotes('')
-    await load()
-    setBusy(false)
-  }
-
-  async function sendMessage(e: React.FormEvent) {
-    e.preventDefault()
-    if (!customer || !messageText.trim()) return
-    setBusy(true)
-    await supabase.from('messages').insert({
-      message: messageText.trim(),
-      customer_name: customer.name,
-      customer_id: customer.id,
-      is_read: false,
-    })
-    setMessageText('')
-    setBusy(false)
-    alert('Message sent')
-  }
-
-  function formatDate(dateString: string | null) {
-    if (!dateString) return '—'
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
+    setDecisionName('')
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <p className="text-gray-400">Loading…</p>
-      </main>
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        <p className="text-orange-400 text-xl">Loading...</p>
+      </div>
     )
   }
 
   if (!customer) {
     return (
-      <main className="min-h-screen bg-black text-white p-6 flex items-center justify-center">
-        <div className="max-w-md text-center space-y-4">
-          <img src="/images/logo.png" alt="Savage Chainsaws" className="h-16 w-16 mx-auto object-contain" />
-          <h1 className="text-2xl font-bold">
-            SAVAGE <span className="text-orange-500">CHAINSAWS</span>
-          </h1>
-          <p className="text-gray-400">
-            Your account ({userEmail}) is not linked to a customer profile yet.
-            Contact Jesse and he’ll link your email.
-          </p>
-          <button onClick={logout} className="text-sm text-orange-400 hover:text-orange-300">
-            Log out
-          </button>
+      <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-xl mb-4">No customer account found for {userEmail}</p>
+          <p className="text-gray-400">Contact Savage Chainsaws to get set up.</p>
         </div>
-      </main>
+      </div>
     )
   }
 
-  const needsDecision = units.filter(u => u.status === 'Needs Approval')
-  const inShop = units.filter(u =>
-    ['Diagnosing', 'In Repair', 'Repair Requested', 'Ready for Pickup'].includes(u.status)
-  )
-
   return (
-    <main className="min-h-screen bg-black text-white">
-      <header className="border-b border-zinc-800 bg-zinc-950/80">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+    <main className="min-h-screen bg-zinc-950 text-white">
+      {/* Header */}
+      <header className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-10 w-10 object-contain" />
+            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-10 w-auto" />
             <div>
-              <p className="font-bold tracking-tight text-sm sm:text-base">
-                SAVAGE <span className="text-orange-500">CHAINSAWS</span>
-              </p>
-              <p className="text-xs text-gray-500">Customer portal</p>
+              <h1 className="text-lg font-bold text-orange-400">Savage Chainsaws</h1>
+              <p className="text-xs text-gray-400">Customer Portal</p>
             </div>
           </div>
-          <button onClick={logout} className="text-sm text-gray-400 hover:text-white">
-            Log out
-          </button>
+          <div className="text-right">
+            <p className="text-sm font-medium">{customer.name}</p>
+            <p className="text-xs text-gray-500">{userEmail}</p>
+          </div>
         </div>
       </header>
-{/* Video Ticker */}
-<div className="bg-zinc-950 border-b border-zinc-800 overflow-hidden py-3">
-  <div className="flex animate-scroll gap-6">
-    {[1, 2].map((loop) => (
-      <div key={loop} className="flex gap-6 shrink-0">
-        <video
-          src="/videos/ms362.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          className="h-24 rounded-lg border border-zinc-700"
-        />
-        <video
-          src="/videos/ms391.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          className="h-24 rounded-lg border border-zinc-700"
-        />
-        <video
-          src="/videos/yellow-top.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          className="h-24 rounded-lg border border-zinc-700"
-        />
+
+      {/* Video Ticker */}
+      <div className="bg-zinc-900 border-b border-zinc-800 overflow-hidden py-2">
+        <div className="animate-scroll flex whitespace-nowrap gap-12 text-sm text-orange-300">
+          <span>🔧 Chainsaw Precision by Jesse</span>
+          <span>• Fast diagnostics & repairs</span>
+          <span>• Fleet service available</span>
+          <span>• STIHL specialist</span>
+          <span>• Mobile pickup & delivery</span>
+          <span>🔧 Chainsaw Precision by Jesse</span>
+          <span>• Fast diagnostics & repairs</span>
+          <span>• Fleet service available</span>
+          <span>• STIHL specialist</span>
+          <span>• Mobile pickup & delivery</span>
+        </div>
       </div>
-    ))}
-  </div>
-</div>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-        <section className="space-y-3">
-          <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Signed in as</p>
-            <h1 className="text-2xl font-semibold text-orange-400">{customer.name}</h1>
-            <p className="text-sm text-gray-400">{userEmail}</p>
+      <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-orange-400">{units.length}</p>
+            <p className="text-xs text-gray-400 mt-1">Total Units</p>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <a
-              href="https://savagechainsaws.com"
-              target="_blank"
-              rel="noreferrer"
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-orange-500/50 transition"
-            >
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Website</p>
-              <p className="text-sm text-orange-400 font-medium">savagechainsaws.com →</p>
-            </a>
-            <a
-              href="mailto:savagechainsaws@gmail.com"
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-orange-500/50 transition"
-            >
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</p>
-              <p className="text-sm text-white font-medium">savagechainsaws@gmail.com</p>
-            </a>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Service area</p>
-              <p className="text-sm text-white font-medium">Oviedo, FL & surrounding</p>
-            </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-yellow-400">
+              {units.filter(u => u.status === 'Needs Approval').length}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Needs Approval</p>
           </div>
-        </section>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-blue-400">
+              {units.filter(u => u.status === 'In Repair' || u.status === 'Waiting on Parts').length}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">In Progress</p>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-green-400">
+              {units.filter(u => u.status === 'Completed').length}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Completed</p>
+          </div>
+        </div>
 
-        {needsDecision.length > 0 && (
-          <section className="bg-zinc-900 border border-yellow-500/40 rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-zinc-800">
-              <h2 className="font-semibold text-yellow-400">
-                Action needed ({needsDecision.length})
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">Approve, upgrade, or decline the repair</p>
-            </div>
-            <div className="divide-y divide-zinc-800">
-              {needsDecision.map(unit => (
-                <div key={unit.id} className="p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-lg font-semibold">{unit.serial_number}</p>
-                      <p className="text-sm text-gray-400">
-                        {unit.model || '—'} · {unit.problem_type || unit.notes || 'Awaiting approval'}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">Checked in {formatDate(unit.created_at)}</p>
-                    </div>
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-yellow-500/20 text-yellow-400 shrink-0">
-                      Needs Approval
-                    </span>
-                  </div>
-                  {unit.invoice_url && (
-                    <a
-                      href={unit.invoice_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-block text-sm text-orange-400 hover:text-orange-300"
-                    >
-                      View estimate / invoice →
-                    </a>
-                  )}
-                  <input
-                    value={approverName}
-                    onChange={e => setApproverName(e.target.value)}
-                    placeholder="Your name (required)"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      disabled={busy}
-                      onClick={() => decide(unit.id, 'approve')}
-                      className="bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                    >
-                      Approve repair
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => decide(unit.id, 'upgrade')}
-                      className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                    >
-                      Upgrade
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => decide(unit.id, 'equivalent')}
-                      className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                    >
-                      Same / equivalent
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => decide(unit.id, 'deny')}
-                      className="bg-red-700/80 hover:bg-red-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                    >
-                      Deny ($49.99 diagnosis)
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+        {/* Units List */}
+        <section>
+          <h2 className="text-xl font-bold mb-4 text-orange-400">Your Units</h2>
 
-        {inShop.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-              In the shop ({inShop.length})
-            </h2>
-            <div className="space-y-3">
-              {inShop.map(unit => (
+          {units.length === 0 ? (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center text-gray-400">
+              No units found yet.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {units.map((unit) => (
                 <div
                   key={unit.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-start justify-between gap-3"
+                  className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 relative"
                 >
-                  <div>
-                    <p className="font-semibold">{unit.serial_number}</p>
-                    <p className="text-sm text-gray-400">
-                      {unit.model || '—'}
-                      {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">Checked in {formatDate(unit.created_at)}</p>
-                    {unit.notes && <p className="text-sm text-gray-300 mt-2">{unit.notes}</p>}
-                  </div>
-                  <span
-                    className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
-                      unit.status === 'Ready for Pickup'
-                        ? 'bg-green-500/20 text-green-400'
-                        : unit.status === 'In Repair'
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : 'bg-orange-500/20 text-orange-400'
-                    }`}
-                  >
-                    {unit.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        <section className="flex flex-wrap gap-3">
-          <details className="bg-zinc-900 border border-zinc-800 rounded-xl open:border-orange-500/40">
-            <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-orange-400 list-none">
-              + Register a unit
-            </summary>
-            <form onSubmit={addUnit} className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
-              <input
-                required
-                value={newSerial}
-                onChange={e => setNewSerial(e.target.value)}
-                placeholder="Serial number *"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-              />
-              <input
-                value={newModel}
-                onChange={e => setNewModel(e.target.value)}
-                placeholder="Model"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-              />
-              <textarea
-                value={newNotes}
-                onChange={e => setNewNotes(e.target.value)}
-                rows={2}
-                placeholder="Notes (optional)"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-              />
-              <button
-                type="submit"
-                disabled={busy}
-                className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-              >
-                Save unit
-              </button>
-            </form>
-          </details>
-
-          <details className="bg-zinc-900 border border-zinc-800 rounded-xl open:border-orange-500/40">
-            <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-300 list-none">
-              Send a message
-            </summary>
-            <form onSubmit={sendMessage} className="px-4 pb-4 space-y-3 border-t border-zinc-800 pt-3">
-              <textarea
-                required
-                value={messageText}
-                onChange={e => setMessageText(e.target.value)}
-                rows={3}
-                placeholder="What do you need?"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-              />
-              <button
-                type="submit"
-                disabled={busy}
-                className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-              >
-                Send
-              </button>
-            </form>
-          </details>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            Your units ({units.length})
-          </h2>
-          {units.length === 0 ? (
-            <p className="text-sm text-gray-500">No units on file yet. Register one above or drop it off.</p>
-          ) : (
-            <div className="space-y-3">
-              {units.map(unit => (
-                <div key={unit.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-lg">{unit.serial_number}</p>
-                      <p className="text-sm text-gray-400">
-                        {unit.model || '—'}
-                        {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Status: <span className="text-orange-400">{unit.status}</span>
-                        {' · '}
-                        {formatDate(unit.created_at)}
-                      </p>
-                      {unit.notes && <p className="text-sm text-gray-300 mt-2">{unit.notes}</p>}
+                  {/* Red flag for needs approval */}
+                  {unit.status === 'Needs Approval' && (
+                    <div className="absolute top-4 right-4 text-2xl" title="Action needed">
+                      🚩
                     </div>
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-800 text-gray-300 shrink-0">
+                  )}
+
+                  <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-bold text-lg">{unit.serial_number}</p>
+                      <p className="text-sm text-gray-400">
+                        {unit.model || 'Unknown model'} {unit.equipment_type ? `• ${unit.equipment_type}` : ''}
+                      </p>
+                    </div>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        unit.status === 'Needs Approval'
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : unit.status === 'Completed'
+                          ? 'bg-green-500/20 text-green-400'
+                          : unit.status === 'In Repair' || unit.status === 'Waiting on Parts'
+                          ? 'bg-blue-500/20 text-blue-400'
+                          : 'bg-zinc-700 text-gray-300'
+                      }`}
+                    >
                       {unit.status}
                     </span>
                   </div>
-                  {unit.status === 'Registered' && (
-                    <button
-                      disabled={busy}
-                      onClick={() => requestRepair(unit.id)}
-                      className="mt-3 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                    >
-                      Request Repair
-                    </button>
+
+                  {unit.problem_type && (
+                    <p className="text-sm text-gray-300 mb-2">
+                      <span className="text-gray-500">Problem:</span> {unit.problem_type}
+                    </p>
                   )}
+
+                  {unit.notes && (
+                    <div className="bg-zinc-800/50 rounded-lg p-3 mb-3 text-sm text-gray-300">
+                      {unit.notes}
+                    </div>
+                  )}
+
                   {unit.invoice_url && (
                     <a
                       href={unit.invoice_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-block mt-2 text-sm text-orange-400 hover:text-orange-300"
+                      className="inline-block text-sm text-orange-400 hover:text-orange-300 mb-3"
                     >
-                      View file →
+                      View Invoice →
                     </a>
+                  )}
+
+                  {/* Approval section */}
+                  {unit.status === 'Needs Approval' && (
+                    <div className="mt-4 pt-4 border-t border-zinc-800">
+                      <p className="text-sm text-yellow-400 mb-3 font-medium">
+                        This unit needs your decision
+                      </p>
+                      <input
+                        type="text"
+                        placeholder="Type your full name to confirm"
+                        value={decisionName}
+                        onChange={(e) => setDecisionName(e.target.value)}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-orange-500"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleDecision(unit.id, 'approved')}
+                          className="bg-green-600 hover:bg-green-500 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                        >
+                          Approve Repair
+                        </button>
+                        <button
+                          onClick={() => handleDecision(unit.id, 'upgrade')}
+                          className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                        >
+                          Upgrade / Equivalent
+                        </button>
+                        <button
+                          onClick={() => handleDecision(unit.id, 'denied')}
+                          className="bg-red-600/80 hover:bg-red-500 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                        >
+                          Deny (Diagnosis fee $49.99)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {unit.decision && (
+                    <div className="mt-3 text-xs text-gray-400">
+                      Decision: <span className="text-white">{unit.decision}</span>
+                      {unit.decision_by && <> by {unit.decision_by}</>}
+                    </div>
                   )}
                 </div>
               ))}
             </div>
           )}
         </section>
-
-        <footer className="border-t border-zinc-800 pt-6 pb-10 text-center space-y-2">
-          <p className="text-sm text-gray-500">Savage Chainsaws LLC · Oviedo, Florida</p>
-          <div className="flex flex-wrap justify-center gap-4 text-sm">
-            <a href="https://savagechainsaws.com" target="_blank" rel="noreferrer" className="text-orange-400 hover:text-orange-300">
-              Website
-            </a>
-            <a href="mailto:savagechainsaws@gmail.com" className="text-orange-400 hover:text-orange-300">
-              Email us
-            </a>
-          </div>
-          <p className="text-xs text-gray-600">Chainsaw Precision by Jesse</p>
-        </footer>
       </div>
+
+      {/* Footer */}
+      <footer className="border-t border-zinc-800 pt-6 pb-10 text-center space-y-2 mt-12">
+        <p className="text-sm text-gray-500">Savage Chainsaws LLC · Oviedo, Florida</p>
+        <div className="flex flex-wrap justify-center gap-4 text-sm">
+          <a
+            href="https://savagechainsaws.com"
+            target="_blank"
+            rel="noreferrer"
+            className="text-orange-400 hover:text-orange-300"
+          >
+            Website
+          </a>
+          <a
+            href="mailto:savagechainsaws@gmail.com"
+            className="text-orange-400 hover:text-orange-300"
+          >
+            Email us
+          </a>
+        </div>
+        <p className="text-xs text-gray-600">Chainsaw Precision by Jesse</p>
+      </footer>
+
+      <style jsx>{`
+        @keyframes scroll {
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+        .animate-scroll {
+          animation: scroll 28s linear infinite;
+        }
+      `}</style>
     </main>
   )
-<style jsx>{`
-  @keyframes scroll {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(-50%); }
-  }
-  .animate-scroll {
-    animation: scroll 28s linear infinite;
-  }
-`}</style>
 }
