@@ -1,33 +1,32 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata: Metadata = {
-  title: "Savage Chainsaws",
-  description: "Unit Tracking Dashboard",
-  icons: {
-    icon: "/icon-192.png",
-    apple: "/apple-touch-icon.png",
-  },
-};
-
-export default function RootLayout({ children }: LayoutProps<"/">) {
-  return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
-    </html>
-  );
-}
+<body className="min-h-full flex flex-col">
+  {/* Subtle background images */}
+  <img
+    src="/images/sparks.jpg"
+    alt=""
+    style={{
+      position: "fixed",
+      left: "-40px",
+      bottom: "-30px",
+      width: "48%",
+      opacity: 0.18,
+      zIndex: -1,
+      pointerEvents: "none",
+      objectFit: "cover",
+    }}
+  />
+  <img
+    src="/images/stihl-ms500i.jpg"
+    alt=""
+    style={{
+      position: "fixed",
+      right: "-50px",
+      top: "-20px",
+      width: "42%",
+      opacity: 0.16,
+      zIndex: -1,
+      pointerEvents: "none",
+      objectFit: "cover",
+    }}
+  />
+  {children}
+</body>
