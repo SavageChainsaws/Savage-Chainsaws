@@ -92,7 +92,6 @@ export default function CustomerPortal() {
       })
       .eq('id', unitId)
 
-    // Refresh units
     if (customer) {
       const { data } = await supabase
         .from('units')
@@ -143,19 +142,15 @@ export default function CustomerPortal() {
         </div>
       </header>
 
-      {/* Video Ticker */}
-      <div className="bg-zinc-900 border-b border-zinc-800 overflow-hidden py-2">
-        <div className="animate-scroll flex whitespace-nowrap gap-12 text-sm text-orange-300">
-          <span>🔧 Chainsaw Precision by Jesse</span>
-          <span>• Fast diagnostics & repairs</span>
-          <span>• Fleet service available</span>
-          <span>• STIHL specialist</span>
-          <span>• Mobile pickup & delivery</span>
-          <span>🔧 Chainsaw Precision by Jesse</span>
-          <span>• Fast diagnostics & repairs</span>
-          <span>• Fleet service available</span>
-          <span>• STIHL specialist</span>
-          <span>• Mobile pickup & delivery</span>
+      {/* Professional Banner */}
+      <div className="bg-zinc-900 border-b border-zinc-800">
+        <div className="max-w-5xl mx-auto px-4 py-8 text-center">
+          <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">
+            Chainsaw Precision by Jesse
+          </h2>
+          <p className="text-orange-400 text-sm md:text-base">
+            Fast diagnostics • Expert repairs • Fleet support
+          </p>
         </div>
       </div>
 
@@ -201,7 +196,6 @@ export default function CustomerPortal() {
                   key={unit.id}
                   className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 relative"
                 >
-                  {/* Red flag for needs approval */}
                   {unit.status === 'Needs Approval' && (
                     <div className="absolute top-4 right-4 text-2xl" title="Action needed">
                       🚩
@@ -253,7 +247,6 @@ export default function CustomerPortal() {
                     </a>
                   )}
 
-                  {/* Approval section */}
                   {unit.status === 'Needs Approval' && (
                     <div className="mt-4 pt-4 border-t border-zinc-800">
                       <p className="text-sm text-yellow-400 mb-3 font-medium">
@@ -323,20 +316,6 @@ export default function CustomerPortal() {
         </div>
         <p className="text-xs text-gray-600">Chainsaw Precision by Jesse</p>
       </footer>
-
-      <style jsx>{`
-        @keyframes scroll {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
-        }
-        .animate-scroll {
-          animation: scroll 28s linear infinite;
-        }
-      `}</style>
     </main>
   )
 }
