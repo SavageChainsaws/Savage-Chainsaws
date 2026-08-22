@@ -217,10 +217,21 @@ export default function CustomerPortal() {
               <p className="text-xs text-gray-400">Customer Portal</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-medium">{customer.name}</p>
-            <p className="text-xs text-gray-500">{userEmail}</p>
-          </div>
+<div className="flex items-center gap-4">
+  <div className="text-right">
+    <p className="text-sm font-medium">{customer.name}</p>
+    <p className="text-xs text-gray-500">{userEmail}</p>
+  </div>
+  <button
+    onClick={async () => {
+      await supabase.auth.signOut()
+      router.push('/login')
+    }}
+    className="text-sm text-gray-400 hover:text-orange-400 border border-zinc-700 hover:border-orange-500 px-3 py-1.5 rounded-lg transition"
+  >
+    Log out
+  </button>
+</div>
         </div>
       </header>
 
