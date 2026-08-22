@@ -18,21 +18,21 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Admin background — MS 500i only, shifted left so the whole saw shows */
+/* Admin background — MS 500i centered, slightly smaller */
 html, body {
   background-color: #0a0a0a !important;
   background-image: url('/images/stihl-ms500i.jpg') !important;
-  background-size: 58% !important;
-  background-position: left -30px top -20px !important;
+  background-size: 48% !important;
+  background-position: center top -10px !important;
   background-repeat: no-repeat !important;
   background-attachment: fixed !important;
 }
 
-/* Mobile: make the saw bigger and keep it left */
+/* Mobile: still centered, a bit larger so it reads well */
 @media (max-width: 768px) {
   html, body {
-    background-size: 75% !important;
-    background-position: left -50px top 0 !important;
+    background-size: 70% !important;
+    background-position: center top 0 !important;
   }
 }
 
