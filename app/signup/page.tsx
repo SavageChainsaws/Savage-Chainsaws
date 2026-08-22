@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
@@ -14,6 +13,7 @@ export default function SignUpPage() {
   const router = useRouter()
   const [companyName, setCompanyName] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -53,13 +53,17 @@ export default function SignUpPage() {
       // Link the existing customer to this auth user
       await supabase
         .from('customers')
-        .update({ auth_user_id: authData.user.id })
+        .update({ 
+          auth_user_id: authData.user.id,
+          phone: phone || null
+        })
         .eq('id', existingCustomer.id)
     } else {
       // Create a new customer record
       await supabase.from('customers').insert({
         name: companyName,
         email: email,
+        phone: phone || null,
         auth_user_id: authData.user.id,
       })
     }
@@ -81,30 +85,35 @@ export default function SignUpPage() {
           <h1 className="text-2xl font-bold">
             SAVAGE <span className="text-orange-500">CHAINSAWS</span>
           </h1>
-          <p className="text-gray-400 mt-1 text-sm">Customer Sign Up</p>
+          <p className="text-gray-400 mt-1 text-sm">Create Your Customer Account</p>
         </div>
 
         {success ? (
           <div className="bg-green-500/10 border border-green-500/40 rounded-xl p-6 text-center">
-            <p className="text-green-400 font-medium">Account created successfully!</p>
-            <p className="text-gray-400 text-sm mt-2">Redirecting you to your portal...</p>
+            <p className="text-green-400 font-medium text-lg">Account created!</p>
+            <p className="text-gray-400 text-sm mt-2">Jesse has been notified. Redirecting you now...</p>
           </div>
         ) : (
           <form onSubmit={handleSignUp} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+            
+            {/* Company Name - more prominent */}
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Company Name</label>
+              <label className="block text-sm font-medium text-orange-400 mb-1">
+                Business / Company Name *
+              </label>
               <input
                 type="text"
                 required
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
-                placeholder="e.g. Davey Tree"
+                placeholder="e.g. Davey Tree, Signature Landscaping"
               />
             </div>
 
+            {/* Email */}
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Email</label>
+              <label className="block text-sm text-gray-400 mb-1">Email *</label>
               <input
                 type="email"
                 required
@@ -115,8 +124,21 @@ export default function SignUpPage() {
               />
             </div>
 
+            {/* Phone */}
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Password</label>
+              <label className="block text-sm text-gray-400 mb-1">Phone Number</label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
+                placeholder="(407) 555-1234"
+              />
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Password *</label>
               <input
                 type="password"
                 required
@@ -124,9 +146,15 @@ export default function SignUpPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
-                placeholder="At least 6 characters"
+                placeholder="Create a password"
               />
+              <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
             </div>
+
+            {/* Note */}
+            <p className="text-xs text-gray-500 bg-zinc-800/50 rounded-lg p-3">
+              Jesse will be notified when you create this account so he can start adding your units.
+            </p>
 
             {error && (
               <p className="text-red-400 text-sm">{error}</p>
@@ -137,7 +165,7 @@ export default function SignUpPage() {
               disabled={loading}
               className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition"
             >
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? 'Creating your account...' : 'Create Account & Continue'}
             </button>
 
             <p className="text-center text-sm text-gray-500">
