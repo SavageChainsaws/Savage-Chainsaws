@@ -141,7 +141,7 @@ async function updateStatus(formData: FormData) {
         updateData.history = stampHistory(updateData.history || existing?.history, 'File uploaded')
       }
     } catch {
-      // ignore upload errors
+      // ignore
     }
   }
   await supabase.from('units').update(updateData).eq('id', id)
@@ -194,7 +194,6 @@ function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const lastService = unit.last_service_date ? new Date(unit.last_service_date) : null
   const purchase = unit.purchase_date ? new Date(unit.purchase_date) : null
   const reference = lastService || purchase
-
   if (unit.status === 'Completed' || unit.status === 'Ready for Pickup' || lastService) {
     if (reference && reference < threeMonthsAgo) return 'red'
     return 'green'
@@ -315,71 +314,90 @@ export default async function Home({
     })
   }
 
+  // UPDATED ActionCard — photo on LEFT
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
     return (
-      <div className={`px-6 py-5 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
-          <div className="space-y-1">
-            <p className="text-sm text-gray-400">
-              <span className="text-orange-400 font-medium">
-                {customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'}
-              </span>
-              {unit.equipment_type && <span className="text-gray-500"> · {unit.equipment_type}</span>}
-            </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <p className="text-xl font-semibold">{unit.serial_number}</p>
-              {unit.is_priority && (
-                <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
-              )}
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                  : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                  : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                  : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
-                  : 'bg-orange-500/20 text-orange-400'
-              }`}>{unit.status}</span>
-            </div>
-            {children}
-            <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-2">
-              <span>Checked in: {formatDate(unit.created_at)}</span>
-              {unit.model && <span>Model: {unit.model}</span>}
-              {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
-              {unit.expedite_fee ? <span className="text-orange-400">Expedite: ${Number(unit.expedite_fee).toFixed(2)}</span> : null}
-            </div>
-            {unit.photo_url && (
-              <a href={unit.photo_url} target="_blank" rel="noreferrer" className="inline-block mt-2">
-                <img src={unit.photo_url} alt="" className="h-20 w-20 object-cover rounded-lg border border-zinc-700" />
+      <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
+        <div className="flex gap-4">
+          {/* PHOTO LEFT */}
+          <div className="shrink-0">
+            {unit.photo_url ? (
+              <a href={unit.photo_url} target="_blank" rel="noreferrer">
+                <img
+                  src={unit.photo_url}
+                  alt=""
+                  className="h-16 w-16 sm:h-20 sm:w-20 object-cover rounded-lg border border-zinc-700"
+                />
               </a>
+            ) : (
+              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-lg border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">
+                No photo
+              </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href={`/?customer=${unit.customer_id}`} className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap">
-              Go to Unit →
-            </Link>
-            <form action={snoozeUnit}>
+
+          {/* CONTENT RIGHT */}
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm text-gray-400">
+                  <span className="text-orange-400 font-medium">
+                    {customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'}
+                  </span>
+                  {unit.equipment_type && <span className="text-gray-500"> · {unit.equipment_type}</span>}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-lg sm:text-xl font-semibold truncate">{unit.serial_number}</p>
+                  {unit.is_priority && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
+                  )}
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                    unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                      : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                      : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                      : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
+                      : 'bg-orange-500/20 text-orange-400'
+                  }`}>{unit.status}</span>
+                </div>
+                {children}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+                  <span>Checked in: {formatDate(unit.created_at)}</span>
+                  {unit.model && <span>Model: {unit.model}</span>}
+                  {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
+                  {unit.expedite_fee ? <span className="text-orange-400">Expedite: ${Number(unit.expedite_fee).toFixed(2)}</span> : null}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <Link href={`/?customer=${unit.customer_id}`} className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition whitespace-nowrap">
+                  Go to Unit →
+                </Link>
+                <form action={snoozeUnit}>
+                  <input type="hidden" name="id" value={unit.id} />
+                  <input type="hidden" name="days" value="7" />
+                  <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Delay 7 Days</button>
+                </form>
+                {(approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)) && (
+                  <form action={markDecisionSeen}>
+                    <input type="hidden" name="id" value={unit.id} />
+                    <button type="submit" className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Mark Seen</button>
+                  </form>
+                )}
+                <DeleteUnitButton id={unit.id} />
+              </div>
+            </div>
+
+            <form action={updateNotes} className="mt-3">
               <input type="hidden" name="id" value={unit.id} />
-              <input type="hidden" name="days" value="7" />
-              <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap">Delay 7 Days</button>
+              <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Add internal notes..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+              <button type="submit" className="mt-1.5 text-xs text-orange-400 hover:text-orange-300">Save Notes</button>
             </form>
-            {(approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)) && (
-              <form action={markDecisionSeen}>
-                <input type="hidden" name="id" value={unit.id} />
-                <button type="submit" className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap">Mark Seen</button>
-              </form>
-            )}
-            <DeleteUnitButton id={unit.id} />
           </div>
         </div>
-        <form action={updateNotes} className="mt-3">
-          <input type="hidden" name="id" value={unit.id} />
-          <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Add internal notes..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
-          <button type="submit" className="mt-2 text-xs text-orange-400 hover:text-orange-300">Save Notes</button>
-        </form>
       </div>
     )
   }
 
-  // Group fleet for headers
   let lastGroup = 0
 
   return (
@@ -418,7 +436,6 @@ export default async function Home({
           </div>
         )}
 
-        {/* STATUS CARDS */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4 mb-8 md:mb-10">
           <Link href="/?status=Diagnosing" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500/60 ${statusFilter === 'Diagnosing' ? 'border-orange-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Diagnosing</p>
@@ -477,7 +494,6 @@ export default async function Home({
           </div>
         )}
 
-        {/* STATUS FILTER */}
         {statusFilter && statusFilter !== 'Units' && (
           <div className="bg-zinc-900 border border-orange-500/40 rounded-xl overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -542,7 +558,6 @@ export default async function Home({
           </div>
         )}
 
-        {/* ACTION CENTER */}
         {!selectedCustomerId && !statusFilter && (
           <>
             {priorityUnits.length > 0 && (
@@ -649,21 +664,16 @@ export default async function Home({
           </>
         )}
 
-        {/* CUSTOMER VIEW */}
         {selectedCustomerId && !statusFilter && (
           <>
-            {/* CHECK IN — always open */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4 text-orange-400">Check In New Unit</h2>
               <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
             </div>
 
-            {/* ALL UNITS (REPAIR FLOW) — collapsed */}
             <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6 group">
               <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-                <h2 className="font-semibold text-orange-400">
-                  All Units — Repair Flow ({repairUnits.length})
-                </h2>
+                <h2 className="font-semibold text-orange-400">All Units — Repair Flow ({repairUnits.length})</h2>
                 <span className="text-gray-500 text-sm group-open:rotate-180 transition">▼</span>
               </summary>
               <div className="border-t border-zinc-800 divide-y divide-zinc-800">
@@ -672,13 +682,16 @@ export default async function Home({
                 )}
                 {repairUnits.map(unit => (
                   <details key={unit.id} className="group/item">
-                    <summary className="px-4 sm:px-6 py-4 cursor-pointer hover:bg-zinc-800/50 transition flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0">
-                        <p className="font-medium text-base sm:text-lg truncate">{unit.serial_number}</p>
-                        {unit.is_priority && (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black shrink-0">PRIORITY</span>
-                        )}
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${
+                    <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
+                      {unit.photo_url ? (
+                        <img src={unit.photo_url} alt="" className="h-12 w-12 object-cover rounded-lg border border-zinc-700 shrink-0" />
+                      ) : (
+                        <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <p className="font-medium truncate">{unit.serial_number}</p>
+                        {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                           unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
                             : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                             : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
@@ -687,15 +700,10 @@ export default async function Home({
                       </div>
                     </summary>
                     <div className="px-4 sm:px-6 pb-5">
-                      {unit.photo_url && (
-                        <a href={unit.photo_url} target="_blank" rel="noreferrer" className="inline-block mb-3">
-                          <img src={unit.photo_url} alt="" className="h-32 w-32 object-cover rounded-lg border border-zinc-700" />
-                        </a>
-                      )}
                       <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
                         <input type="hidden" name="id" value={unit.id} />
                         <div className="flex flex-wrap items-center gap-3">
-                          <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500">
+                          <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
                             <option value="Registered">Registered</option>
                             <option value="Repair Requested">Repair Requested</option>
                             <option value="Diagnosing">Diagnosing</option>
@@ -716,9 +724,7 @@ export default async function Home({
                         <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                         {(unit.status === 'Needs Approval' || unit.status === 'Completed' || unit.status === 'Ready for Pickup') && (
                           <div>
-                            <label className="block text-xs text-gray-500 mb-1">
-                              {unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}
-                            </label>
+                            <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
                             <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
                           </div>
                         )}
@@ -738,7 +744,6 @@ export default async function Home({
               </div>
             </details>
 
-            {/* FLEET UNITS — collapsed, with Add button */}
             <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6 group">
               <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
                 <div className="flex items-center gap-3">
@@ -747,9 +752,7 @@ export default async function Home({
                 </div>
                 <span className="text-gray-500 text-sm group-open:rotate-180 transition">▼</span>
               </summary>
-
               <div className="border-t border-zinc-800">
-                {/* ADD UNIT (nested collapse) */}
                 <details className="border-b border-zinc-800">
                   <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center gap-2 text-sm text-orange-400 hover:text-orange-300 hover:bg-zinc-800/30 transition">
                     <span className="text-lg leading-none">+</span>
@@ -802,19 +805,16 @@ export default async function Home({
                       <textarea name="fleet_notes" rows={2} placeholder="Anything about this unit..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div className="sm:col-span-2 lg:col-span-3">
-                      <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg">
-                        Add to Fleet
-                      </button>
+                      <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg">Add to Fleet</button>
                     </div>
                   </form>
                 </details>
 
-                {/* LIST */}
                 {sortedFleet.length === 0 ? (
                   <p className="px-6 py-8 text-gray-500 text-sm">No fleet units yet. Use + Add Unit to Fleet above.</p>
                 ) : (
                   <div className="divide-y divide-zinc-800">
-                    {sortedFleet.map((unit, idx) => {
+                    {sortedFleet.map(unit => {
                       const g = equipmentGroup(unit.equipment_type)
                       const showHeader = g !== lastGroup
                       if (showHeader) lastGroup = g
