@@ -484,26 +484,38 @@ export default function CustomerPortal() {
         </section>
       </div>
 
-      {/* FOOTER */}
-      <footer className="border-t border-zinc-800 pt-6 pb-10 text-center space-y-2 mt-12">
-        <p className="text-sm text-gray-500">Savage Chainsaws LLC · Oviedo, Florida</p>
-        <div className="flex flex-wrap justify-center gap-4 text-sm">
-          <a
-            href="https://savagechainsaws.com"
-            target="_blank"
-            rel="noreferrer"
-            className="text-orange-400 hover:text-orange-300"
-          >
-            Website
-          </a>
-          <a
-            href="mailto:savagechainsaws@gmail.com"
-            className="text-orange-400 hover:text-orange-300"
-          >
-            Email us
-          </a>
+            {/* FOOTER with sharpening photo on mobile */}
+      <footer className="border-t border-zinc-800 pt-6 pb-10 text-center space-y-4 mt-12 relative overflow-hidden">
+        {/* Sharpening / sparks image — bottom banner on mobile */}
+        <div className="absolute inset-x-0 bottom-0 h-32 md:h-40 pointer-events-none opacity-40 md:opacity-30">
+          <img
+            src="/images/sparks.jpg"
+            alt=""
+            className="w-full h-full object-cover object-center"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent" />
         </div>
-        <p className="text-xs text-gray-600">Chainsaw Precision by Jesse</p>
+
+        <div className="relative z-10 space-y-2">
+          <p className="text-sm text-gray-500">Savage Chainsaws LLC · Oviedo, Florida</p>
+          <div className="flex flex-wrap justify-center gap-4 text-sm">
+            <a
+              href="https://savagechainsaws.com"
+              target="_blank"
+              rel="noreferrer"
+              className="text-orange-400 hover:text-orange-300"
+            >
+              Website
+            </a>
+            <a
+              href="mailto:savagechainsaws@gmail.com"
+              className="text-orange-400 hover:text-orange-300"
+            >
+              Email us
+            </a>
+          </div>
+          <p className="text-xs text-gray-600">Chainsaw Precision by Jesse</p>
+        </div>
       </footer>
     </main>
   )

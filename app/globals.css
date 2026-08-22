@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,32 +12,31 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
-/* Force subtle background watermarks */
+
+/* Admin background — MS 500i only, shifted left so the whole saw shows */
 html, body {
   background-color: #0a0a0a !important;
-  background-image: 
-    url('/images/sparks.jpg'),
-    url('/images/stihl-ms500i.jpg') !important;
-  background-size: 50%, 42% !important;
-  background-position: 
-    left -60px bottom -40px,
-    right -80px top -30px !important;
+  background-image: url('/images/stihl-ms500i.jpg') !important;
+  background-size: 58% !important;
+  background-position: left -30px top -20px !important;
   background-repeat: no-repeat !important;
   background-attachment: fixed !important;
 }
 
+/* Mobile: make the saw bigger and keep it left */
+@media (max-width: 768px) {
+  html, body {
+    background-size: 75% !important;
+    background-position: left -50px top 0 !important;
+  }
+}
+
+/* Dark overlay so text stays readable */
 body::before {
   content: "" !important;
   position: fixed !important;
