@@ -32,6 +32,7 @@ type Customer = {
   id: string
   name: string
   email: string | null
+  logo_url: string | null
 }
 
 const ACTIVE_STATUSES = [
@@ -64,6 +65,7 @@ export default function CustomerPortal() {
   const [units, setUnits] = useState<Unit[]>([])
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [showAddFleet, setShowAddFleet] = useState(false)
+  const [showLogoUpload, setShowLogoUpload] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
@@ -93,6 +95,10 @@ export default function CustomerPortal() {
   const [serviceNote, setServiceNote] = useState('')
   const [detailBusy, setDetailBusy] = useState(false)
 
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [logoBusy, setLogoBusy] = useState(false)
+
   useEffect(() => {
     loadData()
   }, [])
@@ -109,7 +115,7 @@ export default function CustomerPortal() {
 
     const { data: cust } = await supabase
       .from('customers')
-      .select('id, name, email')
+      .select('id, name, email, logo_url')
       .ilike('email', user.email ?? '')
       .maybeSingle()
 
@@ -149,6 +155,51 @@ export default function CustomerPortal() {
     if (error) throw error
     const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
     return publicUrl
+  }
+
+  function onLogoPick(file: File | null) {
+    setLogoFile(file)
+    if (logoPreview) URL.revokeObjectURL(logoPreview)
+    setLogoPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  async function saveLogo() {
+    if (!customer || !logoFile) return
+    setLogoBusy(true)
+    setMessage(null)
+    try {
+      const url = await uploadFile(logoFile, `logo-${customer.id}`)
+      const { error } = await supabase
+        .from('customers')
+        .update({ logo_url: url })
+        .eq('id', customer.id)
+      if (error) throw error
+      setCustomer(prev => prev ? { ...prev, logo_url: url } : null)
+      onLogoPick(null)
+      setShowLogoUpload(false)
+      setMessage('Company logo updated.')
+    } catch (err) {
+      console.error(err)
+      setMessage('Could not upload logo. Try a smaller image (JPG/PNG).')
+    }
+    setLogoBusy(false)
+  }
+
+  async function removeLogo() {
+    if (!customer) return
+    if (!confirm('Remove your company logo?')) return
+    setLogoBusy(true)
+    const { error } = await supabase
+      .from('customers')
+      .update({ logo_url: null })
+      .eq('id', customer.id)
+    setLogoBusy(false)
+    if (error) {
+      setMessage('Could not remove logo.')
+      return
+    }
+    setCustomer(prev => prev ? { ...prev, logo_url: null } : null)
+    setMessage('Company logo removed.')
   }
 
   async function handleCheckIn(e: React.FormEvent) {
@@ -258,6 +309,7 @@ export default function CustomerPortal() {
     setMessage(null)
     setShowCheckIn(false)
     setShowAddFleet(false)
+    setShowLogoUpload(false)
   }
 
   function closeUnit() {
@@ -495,7 +547,6 @@ export default function CustomerPortal() {
     ['Completed', 'Ready for Pickup'].includes(u.status)
   ).length
 
-  // Model first, then type — never lead with serial
   function displayName(u: Unit) {
     const model = (u.model || '').trim()
     const type = (u.equipment_type || '').trim()
@@ -608,23 +659,28 @@ export default function CustomerPortal() {
       selectedUnit.status === 'Completed' ||
       selectedUnit.status === 'Registered')
 
+  const headerLogo = customer.logo_url || '/images/logo.png'
+
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
       <header className="border-b border-zinc-800 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-10 w-10 object-contain" />
+            <img
+              src={headerLogo}
+              alt={customer.name}
+              className="h-10 w-10 object-contain rounded-lg bg-zinc-900 border border-zinc-700"
+            />
             <div>
-              <p className="font-bold text-lg leading-tight">
-                Savage <span className="text-orange-500">Chainsaws</span>
+              <p className="font-bold text-lg leading-tight">{customer.name}</p>
+              <p className="text-xs text-gray-500">
+                Powered by <span className="text-orange-400">Savage Chainsaws</span>
               </p>
-              <p className="text-xs text-gray-500">Customer Portal</p>
             </div>
           </div>
           <div className="flex items-center gap-3 text-sm">
             <div className="text-right hidden sm:block">
-              <p className="font-medium">{customer.name}</p>
-              <p className="text-xs text-gray-500">{userEmail}</p>
+              <p className="font-medium">{userEmail}</p>
             </div>
             <button
               onClick={handleLogout}
@@ -665,8 +721,20 @@ export default function CustomerPortal() {
         <div className="flex flex-wrap justify-end gap-2">
           <button
             onClick={() => {
+              setShowLogoUpload(!showLogoUpload)
+              setShowAddFleet(false)
+              setShowCheckIn(false)
+              closeUnit()
+            }}
+            className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            {showLogoUpload ? 'Close' : 'Company Logo'}
+          </button>
+          <button
+            onClick={() => {
               setShowAddFleet(!showAddFleet)
               setShowCheckIn(false)
+              setShowLogoUpload(false)
               closeUnit()
             }}
             className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -677,6 +745,7 @@ export default function CustomerPortal() {
             onClick={() => {
               setShowCheckIn(!showCheckIn)
               setShowAddFleet(false)
+              setShowLogoUpload(false)
               closeUnit()
             }}
             className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -684,6 +753,51 @@ export default function CustomerPortal() {
             {showCheckIn ? 'Close Check-In' : 'Check In a Unit'}
           </button>
         </div>
+
+        {showLogoUpload && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-orange-400">Company Logo</h2>
+            <p className="text-sm text-gray-500">
+              Upload your logo. It appears at the top of your portal.
+            </p>
+            <div className="flex items-center gap-4">
+              <img
+                src={logoPreview || customer.logo_url || '/images/logo.png'}
+                alt="Logo preview"
+                className="h-16 w-16 object-contain rounded-lg border border-zinc-700 bg-zinc-950"
+              />
+              <div className="space-y-2">
+                <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg cursor-pointer">
+                  Choose Logo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => onLogoPick(e.target.files?.[0] || null)}
+                  />
+                </label>
+                {logoFile && (
+                  <button
+                    onClick={saveLogo}
+                    disabled={logoBusy}
+                    className="block bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                  >
+                    {logoBusy ? 'Uploading...' : 'Save Logo'}
+                  </button>
+                )}
+                {customer.logo_url && !logoFile && (
+                  <button
+                    onClick={removeLogo}
+                    disabled={logoBusy}
+                    className="block text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
+                  >
+                    Remove logo
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {showAddFleet && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
@@ -997,9 +1111,6 @@ export default function CustomerPortal() {
                   </button>
                 )}
               </div>
-              <p className="text-xs text-gray-500 mt-2">
-                Pick from library or take a photo. Current thumbnail is at the top of this card.
-              </p>
             </div>
 
             {canEditDetails && (
@@ -1030,9 +1141,6 @@ export default function CustomerPortal() {
                 >
                   Withdraw Service → Back to Fleet
                 </button>
-                <p className="text-xs text-gray-500 mt-1">
-                  Cancel this shop visit if plans changed. Unit returns to your fleet list.
-                </p>
               </div>
             )}
 
@@ -1077,9 +1185,6 @@ export default function CustomerPortal() {
               >
                 Remove from my list
               </button>
-              <p className="text-xs text-gray-500 mt-1">
-                Removes it from your view only. Jesse keeps a service history.
-              </p>
             </div>
           </div>
         )}
