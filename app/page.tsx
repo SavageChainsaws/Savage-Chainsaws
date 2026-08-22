@@ -111,6 +111,31 @@ async function updateFleetUnit(formData: FormData) {
   revalidatePath('/')
 }
 
+async function scheduleFleetService(formData: FormData) {
+  'use server'
+  const id = formData.get('id') as string
+  const note = (formData.get('service_note') as string) || ''
+  const { data: existing } = await supabase
+    .from('units')
+    .select('history, notes, nickname, serial_number')
+    .eq('id', id)
+    .single()
+
+  const entry = note.trim()
+    ? `Scheduled for service: ${note.trim()}`
+    : 'Scheduled for service from fleet'
+
+  await supabase.from('units').update({
+    status: 'Repair Requested',
+    decision_seen: true,
+    problem_type: note.trim() || 'Service requested from fleet',
+    notes: existing?.notes ? `${entry}\n${existing.notes}` : entry,
+    history: stampHistory(existing?.history, entry),
+  }).eq('id', id)
+
+  revalidatePath('/')
+}
+
 async function updateStatus(formData: FormData) {
   'use server'
   const id = formData.get('id') as string
@@ -232,7 +257,6 @@ function unitLabel(unit: any) {
 function unitImage(unit: any) {
   return unit.thumbnail_url || unit.photo_url || null
 }
-
 export default async function Home({
   searchParams,
 }: {
@@ -249,12 +273,6 @@ export default async function Home({
   if (selectedCustomerId && !statusFilter) {
     units = allUnits?.filter(u => u.customer_id === selectedCustomerId) || []
   }
-
-  const { data: messages } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('is_read', false)
-    .order('created_at', { ascending: false })
 
   const diagnosing = allUnits?.filter(u => u.status === 'Diagnosing').length || 0
   const needsApproval = allUnits?.filter(u => u.status === 'Needs Approval').length || 0
@@ -339,11 +357,7 @@ export default async function Home({
           <div className="shrink-0">
             {img ? (
               <a href={img} target="_blank" rel="noreferrer">
-                <img
-                  src={img}
-                  alt=""
-                  className="h-14 w-14 sm:h-24 sm:w-24 object-cover rounded-lg border border-zinc-700"
-                />
+                <img src={img} alt="" className="h-14 w-14 sm:h-24 sm:w-24 object-cover rounded-lg border border-zinc-700" />
               </a>
             ) : (
               <div className="h-14 w-14 sm:h-24 sm:w-24 rounded-lg border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-600 text-[10px] sm:text-xs">
@@ -351,7 +365,6 @@ export default async function Home({
               </div>
             )}
           </div>
-
           <div className="flex-1 min-w-0">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
               <div className="min-w-0 space-y-0.5">
@@ -363,9 +376,7 @@ export default async function Home({
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-base sm:text-xl font-semibold truncate">{unitLabel(unit)}</p>
-                  {unit.nickname && (
-                    <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>
-                  )}
+                  {unit.nickname && <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>}
                   {unit.is_priority && (
                     <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
                   )}
@@ -385,7 +396,6 @@ export default async function Home({
                   {unit.expedite_fee ? <span className="text-orange-400">Expedite: ${Number(unit.expedite_fee).toFixed(2)}</span> : null}
                 </div>
               </div>
-
               <div className="flex flex-wrap gap-2 shrink-0">
                 <Link href={`/?customer=${unit.customer_id}`} className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition whitespace-nowrap">
                   Go to Unit →
@@ -404,23 +414,14 @@ export default async function Home({
                 <DeleteUnitButton id={unit.id} />
               </div>
             </div>
-
             <details className="mt-2 group/notes">
               <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
                 Notes {unit.notes ? '· has notes' : ''}
               </summary>
               <form action={updateNotes} className="mt-2">
                 <input type="hidden" name="id" value={unit.id} />
-                <textarea
-                  name="notes"
-                  defaultValue={unit.notes || ''}
-                  rows={2}
-                  placeholder="Add internal notes..."
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                />
-                <button type="submit" className="mt-1.5 text-xs text-orange-400 hover:text-orange-300">
-                  Save Notes
-                </button>
+                <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Add internal notes..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
+                <button type="submit" className="mt-1.5 text-xs text-orange-400 hover:text-orange-300">Save Notes</button>
               </form>
             </details>
           </div>
@@ -691,9 +692,7 @@ export default async function Home({
                         )}
                         <div className="flex items-center gap-2 flex-wrap min-w-0">
                           <p className="font-medium truncate">{unitLabel(unit)}</p>
-                          {unit.nickname && (
-                            <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>
-                          )}
+                          {unit.nickname && <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>}
                           {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
                           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                             unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
@@ -905,6 +904,22 @@ export default async function Home({
                                   <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Save</button>
                                   <DeleteUnitButton id={unit.id} />
                                 </div>
+                              </form>
+
+                              <form action={scheduleFleetService} className="border-t border-zinc-800 pt-3 space-y-2">
+                                <input type="hidden" name="id" value={unit.id} />
+                                <label className="block text-xs text-gray-500">Schedule service / send to shop</label>
+                                <input
+                                  name="service_note"
+                                  placeholder="e.g. 3-month tune-up, won't start..."
+                                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                                />
+                                <button
+                                  type="submit"
+                                  className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg"
+                                >
+                                  Send to Repair Flow
+                                </button>
                               </form>
                             </div>
                           </details>
