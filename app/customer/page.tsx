@@ -96,6 +96,11 @@ export default function CustomerPortal() {
     load()
   }, [router])
 
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
   async function handleDecision(unitId: string, decision: string) {
     if (!decisionName.trim()) {
       alert('Please type your name before approving or denying.')
@@ -187,9 +192,9 @@ export default function CustomerPortal() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950/60 text-white">
-      {/* Header with Log out */}
-      <header className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-50">
+    <main className="min-h-screen bg-zinc-950 text-white">
+      {/* HEADER WITH LOG OUT */}
+      <header className="border-b border-zinc-800 bg-zinc-900 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img src="/images/logo.png" alt="Savage Chainsaws" className="h-10 w-auto" />
@@ -201,15 +206,12 @@ export default function CustomerPortal() {
 
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-sm font-medium">{customer.name}</p>
+              <p className="text-sm font-medium text-white">{customer.name}</p>
               <p className="text-xs text-gray-500">{userEmail}</p>
             </div>
             <button
-              onClick={async () => {
-                await supabase.auth.signOut()
-                router.push('/login')
-              }}
-              className="text-sm text-gray-400 hover:text-orange-400 border border-zinc-700 hover:border-orange-500 px-3 py-1.5 rounded-lg transition"
+              onClick={handleLogout}
+              className="text-sm bg-zinc-800 hover:bg-orange-600 text-white border border-zinc-600 hover:border-orange-500 px-4 py-2 rounded-lg transition"
             >
               Log out
             </button>
@@ -217,7 +219,7 @@ export default function CustomerPortal() {
         </div>
       </header>
 
-      {/* Banner */}
+      {/* BANNER */}
       <div className="bg-zinc-900 border-b border-zinc-800">
         <div className="max-w-5xl mx-auto px-4 py-8 text-center">
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">
@@ -230,7 +232,7 @@ export default function CustomerPortal() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-        {/* Stats */}
+        {/* STATS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
             <p className="text-2xl font-bold text-orange-400">{units.length}</p>
@@ -256,7 +258,7 @@ export default function CustomerPortal() {
           </div>
         </div>
 
-        {/* Check In Button */}
+        {/* CHECK IN BUTTON */}
         <div className="flex justify-end">
           <button
             onClick={() => setShowForm((v) => !v)}
@@ -266,7 +268,7 @@ export default function CustomerPortal() {
           </button>
         </div>
 
-        {/* Check In Form */}
+        {/* CHECK IN FORM */}
         {showForm && (
           <form
             onSubmit={handleCheckIn}
@@ -303,9 +305,7 @@ export default function CustomerPortal() {
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 >
                   {EQUIPMENT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
               </div>
@@ -368,7 +368,7 @@ export default function CustomerPortal() {
           </form>
         )}
 
-        {/* Units List */}
+        {/* UNITS LIST */}
         <section>
           <h2 className="text-xl font-bold mb-4 text-orange-400">Your Units</h2>
           {units.length === 0 ? (
@@ -484,7 +484,7 @@ export default function CustomerPortal() {
         </section>
       </div>
 
-      {/* Footer */}
+      {/* FOOTER */}
       <footer className="border-t border-zinc-800 pt-6 pb-10 text-center space-y-2 mt-12">
         <p className="text-sm text-gray-500">Savage Chainsaws LLC · Oviedo, Florida</p>
         <div className="flex flex-wrap justify-center gap-4 text-sm">
