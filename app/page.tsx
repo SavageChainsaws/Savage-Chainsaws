@@ -117,7 +117,7 @@ async function scheduleFleetService(formData: FormData) {
   const note = (formData.get('service_note') as string) || ''
   const { data: existing } = await supabase
     .from('units')
-    .select('history, notes, nickname, serial_number')
+    .select('history, notes')
     .eq('id', id)
     .single()
 
@@ -131,6 +131,25 @@ async function scheduleFleetService(formData: FormData) {
     problem_type: note.trim() || 'Service requested from fleet',
     notes: existing?.notes ? `${entry}\n${existing.notes}` : entry,
     history: stampHistory(existing?.history, entry),
+  }).eq('id', id)
+
+  revalidatePath('/')
+}
+
+async function returnToFleet(formData: FormData) {
+  'use server'
+  const id = formData.get('id') as string
+  const { data: existing } = await supabase
+    .from('units')
+    .select('history')
+    .eq('id', id)
+    .single()
+
+  await supabase.from('units').update({
+    status: 'Fleet',
+    decision_seen: true,
+    problem_type: null,
+    history: stampHistory(existing?.history, 'Withdrawn from shop — returned to fleet'),
   }).eq('id', id)
 
   revalidatePath('/')
@@ -215,13 +234,6 @@ async function updateNotes(formData: FormData) {
   revalidatePath('/')
 }
 
-async function markMessageRead(formData: FormData) {
-  'use server'
-  const id = formData.get('id') as string
-  await supabase.from('messages').update({ is_read: true }).eq('id', id)
-  revalidatePath('/')
-}
-
 function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -257,6 +269,7 @@ function unitLabel(unit: any) {
 function unitImage(unit: any) {
   return unit.thumbnail_url || unit.photo_url || null
 }
+
 export default async function Home({
   searchParams,
 }: {
@@ -735,6 +748,16 @@ export default async function Home({
                             <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file →</a>
                           )}
                         </form>
+
+                        {(unit.status === 'Repair Requested' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
+                          <form action={returnToFleet} className="pt-3">
+                            <input type="hidden" name="id" value={unit.id} />
+                            <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg">
+                              Withdraw → Return to Fleet
+                            </button>
+                          </form>
+                        )}
+
                         {unit.history && (
                           <div className="mt-4 border-t border-zinc-800 pt-3">
                             <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
@@ -914,10 +937,7 @@ export default async function Home({
                                   placeholder="e.g. 3-month tune-up, won't start..."
                                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                                 />
-                                <button
-                                  type="submit"
-                                  className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg"
-                                >
+                                <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg">
                                   Send to Repair Flow
                                 </button>
                               </form>

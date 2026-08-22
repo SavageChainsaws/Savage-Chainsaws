@@ -83,7 +83,6 @@ export default function CustomerPortal() {
   const [fleetHours, setFleetHours] = useState('')
   const [fleetThumb, setFleetThumb] = useState<File | null>(null)
 
-  // Detail / edit fields
   const [editNickname, setEditNickname] = useState('')
   const [editSerial, setEditSerial] = useState('')
   const [editModel, setEditModel] = useState('')
@@ -101,13 +100,11 @@ export default function CustomerPortal() {
   async function loadData() {
     setLoading(true)
     setMessage(null)
-
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       router.push('/login')
       return
     }
-
     setUserEmail(user.email ?? null)
 
     const { data: cust } = await supabase
@@ -124,7 +121,6 @@ export default function CustomerPortal() {
     }
 
     setCustomer(cust)
-
     const { data: unitData } = await supabase
       .from('units')
       .select('*')
@@ -163,11 +159,9 @@ export default function CustomerPortal() {
     try {
       let photoUrl: string | null = null
       if (photoFile) photoUrl = await uploadFile(photoFile, customer.id)
-
       const createdAt = scheduled
         ? new Date(scheduled).toISOString()
         : new Date().toISOString()
-
       const { error } = await supabase.from('units').insert({
         serial_number: serial.trim(),
         model: model.trim() || null,
@@ -182,14 +176,12 @@ export default function CustomerPortal() {
         archived: false,
         created_at: createdAt,
       })
-
       if (error) {
         console.error(error)
         setMessage('Could not check in this unit. Let Jesse know if this keeps happening.')
         setSubmitting(false)
         return
       }
-
       setSerial('')
       setModel('')
       setUnitType('Chainsaw')
@@ -215,7 +207,6 @@ export default function CustomerPortal() {
     try {
       let thumbUrl: string | null = null
       if (fleetThumb) thumbUrl = await uploadFile(fleetThumb, `fleet-${customer.id}`)
-
       const { error } = await supabase.from('units').insert({
         serial_number: fleetSerial.trim(),
         model: fleetModel.trim() || null,
@@ -231,14 +222,12 @@ export default function CustomerPortal() {
           month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
         })} — Added to fleet by customer`,
       })
-
       if (error) {
         console.error(error)
         setMessage('Could not add unit to fleet.')
         setSubmitting(false)
         return
       }
-
       setFleetSerial('')
       setFleetModel('')
       setFleetType('Chainsaw')
@@ -291,7 +280,6 @@ export default function CustomerPortal() {
       return
     }
     setDetailBusy(true)
-
     const { error } = await supabase
       .from('units')
       .update({
@@ -302,7 +290,6 @@ export default function CustomerPortal() {
         hour_meter: editHours.trim() || null,
       })
       .eq('id', selectedUnit.id)
-
     setDetailBusy(false)
     if (error) {
       console.error(error)
@@ -349,19 +336,16 @@ export default function CustomerPortal() {
   async function requestService() {
     if (!selectedUnit || !customer) return
     setDetailBusy(true)
-
     const name = customer.name || userEmail || 'Customer'
     const note = serviceNote.trim() || 'Customer requested tune-up / service'
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     })} — Service requested by ${name}: ${note}`
-
     const { data: existing } = await supabase
       .from('units')
       .select('notes, history')
       .eq('id', selectedUnit.id)
       .single()
-
     const { error } = await supabase
       .from('units')
       .update({
@@ -372,7 +356,6 @@ export default function CustomerPortal() {
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
       })
       .eq('id', selectedUnit.id)
-
     setDetailBusy(false)
     if (error) {
       console.error(error)
@@ -384,22 +367,52 @@ export default function CustomerPortal() {
     closeUnit()
   }
 
-  async function archiveUnit() {
+  async function withdrawService() {
     if (!selectedUnit || !customer) return
-    if (!confirm('Remove this unit from your list? Jesse will still keep a history of it.')) return
-
+    if (!confirm('Withdraw this service request? The unit will go back to your fleet list.')) return
     setDetailBusy(true)
     const name = customer.name || userEmail || 'Customer'
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} — Archived by ${name} (removed from customer list)`
-
+    })} — Service withdrawn by ${name} — returned to fleet`
     const { data: existing } = await supabase
       .from('units')
       .select('history')
       .eq('id', selectedUnit.id)
       .single()
+    const { error } = await supabase
+      .from('units')
+      .update({
+        status: 'Fleet',
+        problem_type: null,
+        decision_seen: true,
+        history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
+      })
+      .eq('id', selectedUnit.id)
+    setDetailBusy(false)
+    if (error) {
+      console.error(error)
+      setMessage('Could not withdraw service request.')
+      return
+    }
+    setMessage('Service request withdrawn. Unit is back on your fleet list.')
+    closeUnit()
+    await loadData()
+  }
 
+  async function archiveUnit() {
+    if (!selectedUnit || !customer) return
+    if (!confirm('Remove this unit from your list? Jesse will still keep a history of it.')) return
+    setDetailBusy(true)
+    const name = customer.name || userEmail || 'Customer'
+    const historyLine = `${new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    })} — Archived by ${name} (removed from customer list)`
+    const { data: existing } = await supabase
+      .from('units')
+      .select('history')
+      .eq('id', selectedUnit.id)
+      .single()
     const { error } = await supabase
       .from('units')
       .update({
@@ -407,7 +420,6 @@ export default function CustomerPortal() {
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
       })
       .eq('id', selectedUnit.id)
-
     setDetailBusy(false)
     if (error) {
       console.error(error)
@@ -424,7 +436,6 @@ export default function CustomerPortal() {
     const name = customer.name || userEmail || 'Customer'
     let status = 'In Repair'
     let note = ''
-
     if (decision === 'approve') {
       status = 'In Repair'
       note = `Approved by ${name}`
@@ -438,17 +449,14 @@ export default function CustomerPortal() {
       status = 'Completed'
       note = `Denied by ${name} — diagnosis fee $49.99 will apply`
     }
-
     const { data: existing } = await supabase
       .from('units')
       .select('notes, history')
       .eq('id', unitId)
       .single()
-
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     })} — ${note}`
-
     const { error } = await supabase
       .from('units')
       .update({
@@ -458,13 +466,11 @@ export default function CustomerPortal() {
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
       })
       .eq('id', unitId)
-
     if (error) {
       console.error(error)
       setMessage('Could not save decision. Try again.')
       return
     }
-
     setMessage(
       decision === 'deny'
         ? 'Repair denied. A $49.99 diagnosis fee applies.'
@@ -551,6 +557,9 @@ export default function CustomerPortal() {
           )}
           {(unit.status === 'Fleet' || unit.status === 'Completed') && (
             <p className="text-xs text-gray-500 mt-1">Tap to edit or schedule service →</p>
+          )}
+          {(unit.status === 'Repair Requested' || unit.status === 'Diagnosing') && (
+            <p className="text-xs text-gray-500 mt-1">Tap to view or withdraw service →</p>
           )}
         </div>
       </button>
@@ -873,7 +882,6 @@ export default function CustomerPortal() {
               </button>
             </div>
 
-            {/* Editable details for Fleet / Completed */}
             {canEditDetails && (
               <div className="space-y-3 border-t border-zinc-800 pt-4">
                 <p className="text-sm font-medium text-orange-300">Edit unit details</p>
@@ -936,7 +944,6 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {/* Nickname only for in-service units */}
             {!canEditDetails && (
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Nickname (your label)</label>
@@ -1008,6 +1015,21 @@ export default function CustomerPortal() {
                 >
                   Schedule Service
                 </button>
+              </div>
+            )}
+
+            {(selectedUnit.status === 'Repair Requested' || selectedUnit.status === 'Diagnosing') && (
+              <div className="border-t border-zinc-800 pt-4">
+                <button
+                  onClick={withdrawService}
+                  disabled={detailBusy}
+                  className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                >
+                  Withdraw Service → Back to Fleet
+                </button>
+                <p className="text-xs text-gray-500 mt-1">
+                  Cancel this shop visit if plans changed. Unit returns to your fleet list.
+                </p>
               </div>
             )}
 
