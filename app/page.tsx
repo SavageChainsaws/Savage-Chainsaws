@@ -33,9 +33,7 @@ async function addUnit(formData: FormData) {
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const expediteFee = expediteFeeRaw ? Number(expediteFeeRaw) : null
-
   const history = stampHistory(null, `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` — ${problemType}` : ''}`)
-
   await supabase.from('units').insert({
     serial_number: serial,
     model: model || null,
@@ -53,7 +51,56 @@ async function addUnit(formData: FormData) {
     history,
     created_at: checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString(),
   })
+  revalidatePath('/')
+}
 
+async function addFleetUnit(formData: FormData) {
+  'use server'
+  const serial = formData.get('serial') as string
+  const model = formData.get('model') as string
+  const customerId = formData.get('customer_id') as string
+  const equipmentType = formData.get('equipment_type') as string
+  const hourMeter = formData.get('hour_meter') as string
+  const purchaseDate = formData.get('purchase_date') as string
+  const lastServiceDate = formData.get('last_service_date') as string
+  const fleetNotes = formData.get('fleet_notes') as string
+  const partNumbers = formData.get('part_numbers') as string
+  const photoUrl = (formData.get('photo_url') as string) || null
+
+  await supabase.from('units').insert({
+    serial_number: serial,
+    model: model || null,
+    customer_id: customerId,
+    status: 'Fleet',
+    decision_seen: true,
+    equipment_type: equipmentType || null,
+    hour_meter: hourMeter || null,
+    purchase_date: purchaseDate || null,
+    last_service_date: lastServiceDate || null,
+    fleet_notes: fleetNotes || null,
+    part_numbers: partNumbers || null,
+    photo_url: photoUrl,
+    history: stampHistory(null, 'Added to fleet inventory'),
+  })
+  revalidatePath('/')
+}
+
+async function updateFleetUnit(formData: FormData) {
+  'use server'
+  const id = formData.get('id') as string
+  const fleetNotes = formData.get('fleet_notes') as string
+  const partNumbers = formData.get('part_numbers') as string
+  const lastServiceDate = formData.get('last_service_date') as string
+  const purchaseDate = formData.get('purchase_date') as string
+  const hourMeter = formData.get('hour_meter') as string
+
+  await supabase.from('units').update({
+    fleet_notes: fleetNotes || null,
+    part_numbers: partNumbers || null,
+    last_service_date: lastServiceDate || null,
+    purchase_date: purchaseDate || null,
+    hour_meter: hourMeter || null,
+  }).eq('id', id)
   revalidatePath('/')
 }
 
@@ -65,23 +112,21 @@ async function updateStatus(formData: FormData) {
   const file = formData.get('invoice') as File
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
-
   const { data: existing } = await supabase.from('units').select('status, history, is_priority').eq('id', id).single()
-
   const updateData: any = {
     status,
     notes: notes || null,
     is_priority: isPriority,
   }
-
   if (expediteFeeRaw !== null && expediteFeeRaw !== undefined && expediteFeeRaw !== '') {
     updateData.expedite_fee = Number(expediteFeeRaw)
   }
-
   if (existing && existing.status !== status) {
     updateData.history = stampHistory(existing.history, `Status → ${status}`)
   }
-
+  if (status === 'Completed' || status === 'Ready for Pickup') {
+    updateData.last_service_date = new Date().toISOString().split('T')[0]
+  }
   if (file && typeof file === 'object' && 'size' in file && file.size > 0) {
     try {
       const bytes = await file.arrayBuffer()
@@ -101,7 +146,6 @@ async function updateStatus(formData: FormData) {
       // Upload failed — still update status/notes
     }
   }
-
   await supabase.from('units').update(updateData).eq('id', id)
   revalidatePath('/')
 }
@@ -119,9 +163,7 @@ async function snoozeUnit(formData: FormData) {
   const days = Number(formData.get('days') || 7)
   const snoozeUntil = new Date()
   snoozeUntil.setDate(snoozeUntil.getDate() + days)
-
   const { data: existing } = await supabase.from('units').select('history').eq('id', id).single()
-
   await supabase
     .from('units')
     .update({
@@ -130,7 +172,6 @@ async function snoozeUnit(formData: FormData) {
       history: stampHistory(existing?.history, `Snoozed ${days} days`),
     })
     .eq('id', id)
-
   revalidatePath('/')
 }
 
@@ -142,23 +183,36 @@ async function updateNotes(formData: FormData) {
   revalidatePath('/')
 }
 
-async function togglePriority(formData: FormData) {
-  'use server'
-  const id = formData.get('id') as string
-  const { data: existing } = await supabase.from('units').select('is_priority, history').eq('id', id).single()
-  const next = !existing?.is_priority
-  await supabase.from('units').update({
-    is_priority: next,
-    history: stampHistory(existing?.history, next ? 'Marked PRIORITY' : 'Priority cleared'),
-  }).eq('id', id)
-  revalidatePath('/')
-}
-
 async function markMessageRead(formData: FormData) {
   'use server'
   const id = formData.get('id') as string
   await supabase.from('messages').update({ is_read: true }).eq('id', id)
   revalidatePath('/')
+}
+
+function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
+  const now = new Date()
+  const threeMonthsAgo = new Date()
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+
+  const lastService = unit.last_service_date ? new Date(unit.last_service_date) : null
+  const purchase = unit.purchase_date ? new Date(unit.purchase_date) : null
+  const reference = lastService || purchase
+
+  if (unit.status === 'Completed' || unit.status === 'Ready for Pickup' || lastService) {
+    if (reference && reference < threeMonthsAgo) return 'red'
+    return 'green'
+  }
+  if (reference && reference < threeMonthsAgo) return 'red'
+  return 'orange'
+}
+
+function equipmentGroup(type: string | null): number {
+  if (!type) return 3
+  const t = type.toLowerCase()
+  if (t.includes('riding') || t.includes('mower') && !t.includes('walk')) return 1
+  if (t.includes('chainsaw') || t.includes('pole') || t.includes('cutquik') || t.includes('hedge')) return 2
+  return 3
 }
 
 export default async function Home({
@@ -175,7 +229,6 @@ export default async function Home({
     .select('*')
     .order('name')
 
-  // Always load all units for top-card counts (cross-customer)
   const { data: allUnits } = await supabase
     .from('units')
     .select('*')
@@ -192,7 +245,6 @@ export default async function Home({
     .eq('is_read', false)
     .order('created_at', { ascending: false })
 
-  // Top cards always show totals across every customer
   const diagnosing = allUnits?.filter(u => u.status === 'Diagnosing').length || 0
   const needsApproval = allUnits?.filter(u => u.status === 'Needs Approval').length || 0
   const inRepair = allUnits?.filter(u => u.status === 'In Repair').length || 0
@@ -201,7 +253,12 @@ export default async function Home({
   const readyPickup = allUnits?.filter(u => u.status === 'Ready for Pickup').length || 0
   const priorityCount = allUnits?.filter(u => u.is_priority && u.status !== 'Completed').length || 0
 
-  // Filtered list when a top card was clicked
+  // Fleet / Units counts (all known equipment for selected customer or all)
+  const fleetUnitsAll = (selectedCustomerId
+    ? allUnits?.filter(u => u.customer_id === selectedCustomerId)
+    : allUnits) || []
+  const unitsCount = fleetUnitsAll.length
+
   const statusFilteredUnits = (() => {
     if (!statusFilter || !allUnits) return []
     if (statusFilter === 'Priority') {
@@ -210,17 +267,21 @@ export default async function Home({
     if (statusFilter === 'Completed') {
       return allUnits.filter(u => u.status === 'Completed' || u.status === 'Ready for Pickup')
     }
+    if (statusFilter === 'Units') {
+      return selectedCustomerId
+        ? allUnits.filter(u => u.customer_id === selectedCustomerId)
+        : allUnits
+    }
     return allUnits.filter(u => u.status === statusFilter)
   })()
 
   const currentCustomer = customers?.find(c => c.id === selectedCustomerId)
-
   const now = new Date()
   const isSnoozed = (u: any) => u.snoozed_until && new Date(u.snoozed_until) > now
 
   const staleUnits = (units?.filter(u => {
     if (isSnoozed(u)) return false
-    if (u.status === 'Completed' || u.status === 'Registered' || u.status === 'Ready for Pickup') return false
+    if (u.status === 'Completed' || u.status === 'Registered' || u.status === 'Ready for Pickup' || u.status === 'Fleet') return false
     const days = Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24))
     return days >= 7
   }) || []).map(u => ({
@@ -229,35 +290,39 @@ export default async function Home({
   }))
 
   const approvedDecisions = units?.filter(u =>
-    !u.decision_seen &&
-    u.notes?.includes('Approved by')
+    !u.decision_seen && u.notes?.includes('Approved by')
   ) || []
-
   const deniedDecisions = units?.filter(u =>
-    !u.decision_seen &&
-    u.notes?.includes('Denied by')
+    !u.decision_seen && u.notes?.includes('Denied by')
   ) || []
-
   const waitingOnCustomer = units?.filter(u =>
     u.status === 'Needs Approval' && !isSnoozed(u)
   ) || []
-
   const repairRequestedUnits = units?.filter(u =>
     u.status === 'Repair Requested' && !isSnoozed(u)
   ) || []
-
   const diagnosingUnits = units?.filter(u =>
     u.status === 'Diagnosing' && !isSnoozed(u) &&
     Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24)) < 7
   ) || []
-
   const readyForPickupUnits = units?.filter(u =>
     u.status === 'Ready for Pickup' && !isSnoozed(u)
   ) || []
-
   const priorityUnits = units?.filter(u =>
     u.is_priority && u.status !== 'Completed' && !isSnoozed(u)
   ) || []
+
+  // Fleet units for the selected customer (for the Units panel)
+  const customerFleet = selectedCustomerId
+    ? (allUnits?.filter(u => u.customer_id === selectedCustomerId) || [])
+    : []
+
+  const sortedFleet = [...customerFleet].sort((a, b) => {
+    const ga = equipmentGroup(a.equipment_type)
+    const gb = equipmentGroup(b.equipment_type)
+    if (ga !== gb) return ga - gb
+    return (a.serial_number || '').localeCompare(b.serial_number || '')
+  })
 
   function formatDate(dateString: string | null) {
     if (!dateString) return '—'
@@ -267,6 +332,15 @@ export default async function Home({
       year: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+    })
+  }
+
+  function formatShortDate(dateString: string | null) {
+    if (!dateString) return '—'
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
     })
   }
 
@@ -305,6 +379,8 @@ export default async function Home({
                   ? 'bg-green-500/20 text-green-400'
                   : unit.status === 'In Repair'
                   ? 'bg-blue-500/20 text-blue-400'
+                  : unit.status === 'Fleet'
+                  ? 'bg-zinc-600 text-gray-300'
                   : 'bg-orange-500/20 text-orange-400'
               }`}>
                 {unit.status}
@@ -415,64 +491,49 @@ export default async function Home({
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 md:gap-4 mb-8 md:mb-10">
-          <Link
-            href="/?status=Diagnosing"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500/60 ${statusFilter === 'Diagnosing' ? 'border-orange-500' : 'border-zinc-800'}`}
-          >
+        {/* STATUS CARDS */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4 mb-8 md:mb-10">
+          <Link href="/?status=Diagnosing" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500/60 ${statusFilter === 'Diagnosing' ? 'border-orange-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Diagnosing</p>
             <p className="text-2xl md:text-3xl font-bold text-orange-400">{diagnosing}</p>
           </Link>
-          <Link
-            href="/?status=Needs%20Approval"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-yellow-500/60 ${statusFilter === 'Needs Approval' ? 'border-yellow-500' : 'border-zinc-800'}`}
-          >
+          <Link href="/?status=Needs%20Approval" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-yellow-500/60 ${statusFilter === 'Needs Approval' ? 'border-yellow-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Needs Approval</p>
             <p className="text-2xl md:text-3xl font-bold text-yellow-400">{needsApproval}</p>
           </Link>
-          <Link
-            href="/?status=Repair%20Requested"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-400/60 ${statusFilter === 'Repair Requested' ? 'border-blue-400' : 'border-zinc-800'}`}
-          >
+          <Link href="/?status=Repair%20Requested" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-400/60 ${statusFilter === 'Repair Requested' ? 'border-blue-400' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Repair Req.</p>
             <p className="text-2xl md:text-3xl font-bold text-blue-300">{repairRequested}</p>
           </Link>
-          <Link
-            href="/?status=In%20Repair"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-500/60 ${statusFilter === 'In Repair' ? 'border-blue-500' : 'border-zinc-800'}`}
-          >
+          <Link href="/?status=In%20Repair" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-500/60 ${statusFilter === 'In Repair' ? 'border-blue-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">In Repair</p>
             <p className="text-2xl md:text-3xl font-bold text-blue-400">{inRepair}</p>
           </Link>
-          <Link
-            href="/?status=Ready%20for%20Pickup"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-green-400/60 ${statusFilter === 'Ready for Pickup' ? 'border-green-400' : 'border-zinc-800'}`}
-          >
+          <Link href="/?status=Ready%20for%20Pickup" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-green-400/60 ${statusFilter === 'Ready for Pickup' ? 'border-green-400' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Ready Pickup</p>
             <p className="text-2xl md:text-3xl font-bold text-green-300">{readyPickup}</p>
           </Link>
-          <Link
-            href="/?status=Completed"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-green-500/60 ${statusFilter === 'Completed' ? 'border-green-500' : 'border-zinc-800'}`}
-          >
+          <Link href="/?status=Completed" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-green-500/60 ${statusFilter === 'Completed' ? 'border-green-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Completed</p>
             <p className="text-2xl md:text-3xl font-bold text-green-400">{completed}</p>
           </Link>
-          <Link
-            href="/?status=Priority"
-            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500 ${statusFilter === 'Priority' ? 'border-orange-500' : 'border-orange-500/40'}`}
-          >
+          <Link href="/?status=Priority" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500 ${statusFilter === 'Priority' ? 'border-orange-500' : 'border-orange-500/40'}`}>
             <p className="text-xs text-orange-400/80 uppercase tracking-wider">Priority</p>
             <p className="text-2xl md:text-3xl font-bold text-orange-400">{priorityCount}</p>
+          </Link>
+          <Link
+            href={selectedCustomerId ? `/?customer=${selectedCustomerId}&status=Units` : '/?status=Units'}
+            className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-400 ${statusFilter === 'Units' ? 'border-orange-400' : 'border-zinc-800'}`}
+          >
+            <p className="text-xs text-gray-400 uppercase tracking-wider">Units</p>
+            <p className="text-2xl md:text-3xl font-bold text-orange-300">{unitsCount}</p>
           </Link>
         </div>
 
         {messages && messages.length > 0 && (
           <div className="bg-zinc-900 border border-orange-500/40 rounded-xl overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-orange-400">
-                New Messages ({messages.length})
-              </h2>
+              <h2 className="text-lg font-semibold text-orange-400">New Messages ({messages.length})</h2>
               <p className="text-xs text-gray-500">Customer inquiries</p>
             </div>
             <div className="divide-y divide-zinc-800">
@@ -485,9 +546,7 @@ export default async function Home({
                   </div>
                   <form action={markMessageRead}>
                     <input type="hidden" name="id" value={msg.id} />
-                    <button type="submit" className="text-xs text-gray-400 hover:text-white whitespace-nowrap">
-                      Mark Read
-                    </button>
+                    <button type="submit" className="text-xs text-gray-400 hover:text-white whitespace-nowrap">Mark Read</button>
                   </form>
                 </div>
               ))}
@@ -495,19 +554,15 @@ export default async function Home({
           </div>
         )}
 
-        {statusFilter && (
+        {/* STATUS FILTER VIEW */}
+        {statusFilter && statusFilter !== 'Units' && (
           <div className="bg-zinc-900 border border-orange-500/40 rounded-xl overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-orange-400">
-                  {statusFilter} ({statusFilteredUnits.length})
-                </h2>
+                <h2 className="text-lg font-semibold text-orange-400">{statusFilter} ({statusFilteredUnits.length})</h2>
                 <p className="text-xs text-gray-500 mt-1">All customers · click a unit to open that account</p>
               </div>
-              <Link
-                href="/"
-                className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition whitespace-nowrap"
-              >
+              <Link href="/" className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition whitespace-nowrap">
                 ← Back to Action Center
               </Link>
             </div>
@@ -520,20 +575,14 @@ export default async function Home({
                     key={unit.id}
                     unit={unit}
                     borderColor={
-                      statusFilter === 'Priority' || statusFilter === 'Diagnosing'
-                        ? 'border-orange-500'
-                        : statusFilter === 'Needs Approval'
-                        ? 'border-yellow-500'
-                        : statusFilter === 'In Repair' || statusFilter === 'Repair Requested'
-                        ? 'border-blue-400'
-                        : statusFilter === 'Completed' || statusFilter === 'Ready for Pickup'
-                        ? 'border-green-400'
+                      statusFilter === 'Priority' || statusFilter === 'Diagnosing' ? 'border-orange-500'
+                        : statusFilter === 'Needs Approval' ? 'border-yellow-500'
+                        : statusFilter === 'In Repair' || statusFilter === 'Repair Requested' ? 'border-blue-400'
+                        : statusFilter === 'Completed' || statusFilter === 'Ready for Pickup' ? 'border-green-400'
                         : 'border-orange-500'
                     }
                   >
-                    <p className="text-sm text-gray-400">
-                      {unit.problem_type || unit.notes || unit.status}
-                    </p>
+                    <p className="text-sm text-gray-400">{unit.problem_type || unit.notes || unit.status}</p>
                   </ActionCard>
                 ))}
               </div>
@@ -541,14 +590,72 @@ export default async function Home({
           </div>
         )}
 
+        {/* UNITS / FLEET FILTER VIEW */}
+        {statusFilter === 'Units' && (
+          <div className="bg-zinc-900 border border-orange-400/40 rounded-xl overflow-hidden mb-8">
+            <div className="px-6 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-orange-300">
+                  Units ({statusFilteredUnits.length})
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  🟢 Serviced · 🟠 Known · 🔴 Due (3+ months)
+                </p>
+              </div>
+              <Link
+                href={selectedCustomerId ? `/?customer=${selectedCustomerId}` : '/'}
+                className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition whitespace-nowrap"
+              >
+                ← Back
+              </Link>
+            </div>
+            {statusFilteredUnits.length === 0 ? (
+              <p className="px-6 py-8 text-gray-500 text-sm">No units found.</p>
+            ) : (
+              <div className="divide-y divide-zinc-800">
+                {[...statusFilteredUnits]
+                  .sort((a, b) => equipmentGroup(a.equipment_type) - equipmentGroup(b.equipment_type))
+                  .map(unit => {
+                    const color = getFleetColor(unit)
+                    return (
+                      <div key={unit.id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="text-xl mt-0.5">
+                            {color === 'red' ? '🔴' : color === 'green' ? '🟢' : '🟠'}
+                          </span>
+                          <div>
+                            <p className="font-semibold">{unit.serial_number}</p>
+                            <p className="text-sm text-gray-400">
+                              {unit.model || '—'} · {unit.equipment_type || '—'}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {customers?.find(c => c.id === unit.customer_id)?.name}
+                              {unit.purchase_date && ` · Purchased ${formatShortDate(unit.purchase_date)}`}
+                              {unit.last_service_date && ` · Last service ${formatShortDate(unit.last_service_date)}`}
+                            </p>
+                          </div>
+                        </div>
+                        <Link
+                          href={`/?customer=${unit.customer_id}`}
+                          className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-2 rounded-lg transition whitespace-nowrap"
+                        >
+                          Open →
+                        </Link>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ACTION CENTER (no customer selected) */}
         {!selectedCustomerId && !statusFilter && (
           <>
             {priorityUnits.length > 0 && (
               <div className="bg-zinc-900 border border-orange-500/50 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-orange-400">
-                    Priority Units ({priorityUnits.length})
-                  </h2>
+                  <h2 className="text-lg font-semibold text-orange-400">Priority Units ({priorityUnits.length})</h2>
                   <p className="text-xs text-orange-300/80">Expedite — work these first</p>
                 </div>
                 <div className="divide-y divide-zinc-800">
@@ -562,14 +669,10 @@ export default async function Home({
                 </div>
               </div>
             )}
-
             {readyForPickupUnits.length > 0 && (
               <div className="bg-zinc-900 border border-green-500/40 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-green-300">
-                    Ready for Pickup ({readyForPickupUnits.length})
-                  </h2>
-                  <p className="text-xs text-green-200/70">Notify customer</p>
+                  <h2 className="text-lg font-semibold text-green-300">Ready for Pickup ({readyForPickupUnits.length})</h2>
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {readyForPickupUnits.map(unit => (
@@ -580,14 +683,10 @@ export default async function Home({
                 </div>
               </div>
             )}
-
             {repairRequestedUnits.length > 0 && (
               <div className="bg-zinc-900 border border-blue-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-blue-300">
-                    Repair Requested ({repairRequestedUnits.length})
-                  </h2>
-                  <p className="text-xs text-blue-200/70">Heads up — unit is on its way</p>
+                  <h2 className="text-lg font-semibold text-blue-300">Repair Requested ({repairRequestedUnits.length})</h2>
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {repairRequestedUnits.map(unit => (
@@ -598,54 +697,39 @@ export default async function Home({
                 </div>
               </div>
             )}
-
             {diagnosingUnits.length > 0 && (
               <div className="bg-zinc-900 border border-orange-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-orange-400">
-                    Diagnosing ({diagnosingUnits.length})
-                  </h2>
-                  <p className="text-xs text-orange-300/80">Recently checked in</p>
+                  <h2 className="text-lg font-semibold text-orange-400">Diagnosing ({diagnosingUnits.length})</h2>
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {diagnosingUnits.map(unit => (
                     <ActionCard key={unit.id} unit={unit} borderColor="border-orange-500">
-                      <p className="text-sm text-orange-300">
-                        {unit.problem_type || unit.notes || 'In diagnosis'}
-                      </p>
+                      <p className="text-sm text-orange-300">{unit.problem_type || unit.notes || 'In diagnosis'}</p>
                     </ActionCard>
                   ))}
                 </div>
               </div>
             )}
-
             {staleUnits.length > 0 && (
               <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-red-400">
-                    Stagnant Units ({staleUnits.length})
-                  </h2>
+                  <h2 className="text-lg font-semibold text-red-400">Stagnant Units ({staleUnits.length})</h2>
                   <p className="text-xs text-red-300/80">Over 7 days with no action</p>
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {staleUnits.map(unit => (
                     <ActionCard key={unit.id} unit={unit} borderColor="border-red-500">
-                      <p className="text-sm text-red-400 font-medium">
-                        No action for {unit.daysSinceCheckIn} days
-                      </p>
+                      <p className="text-sm text-red-400 font-medium">No action for {unit.daysSinceCheckIn} days</p>
                     </ActionCard>
                   ))}
                 </div>
               </div>
             )}
-
             {approvedDecisions.length > 0 && (
               <div className="bg-zinc-900 border border-green-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-green-400">
-                    Customer Approved ({approvedDecisions.length})
-                  </h2>
-                  <p className="text-xs text-green-300/80">Ready to work</p>
+                  <h2 className="text-lg font-semibold text-green-400">Customer Approved ({approvedDecisions.length})</h2>
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {approvedDecisions.map(unit => (
@@ -656,13 +740,10 @@ export default async function Home({
                 </div>
               </div>
             )}
-
             {deniedDecisions.length > 0 && (
               <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-red-400">
-                    Customer Denied ({deniedDecisions.length})
-                  </h2>
+                  <h2 className="text-lg font-semibold text-red-400">Customer Denied ({deniedDecisions.length})</h2>
                 </div>
                 <div className="divide-y divide-zinc-800">
                   {deniedDecisions.map(unit => (
@@ -673,13 +754,9 @@ export default async function Home({
                 </div>
               </div>
             )}
-
             <div className="bg-zinc-900 border border-yellow-500/30 rounded-xl overflow-hidden mb-8">
               <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-yellow-400">
-                  Waiting on Customer ({waitingOnCustomer.length})
-                </h2>
-                <p className="text-xs text-yellow-300/80">Needs Approval</p>
+                <h2 className="text-lg font-semibold text-yellow-400">Waiting on Customer ({waitingOnCustomer.length})</h2>
               </div>
               {waitingOnCustomer.length === 0 ? (
                 <p className="px-6 py-8 text-gray-500 text-sm">No units currently waiting on customer approval.</p>
@@ -696,47 +773,184 @@ export default async function Home({
           </>
         )}
 
+        {/* CUSTOMER SELECTED VIEW */}
         {selectedCustomerId && !statusFilter && (
           <>
+            {/* CHECK IN */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 mb-8">
               <h2 className="text-lg font-semibold mb-4 text-orange-400">Check In New Unit</h2>
               <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
             </div>
 
+            {/* ADD TO FLEET */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 mb-8">
+              <h2 className="text-lg font-semibold mb-2 text-orange-300">Add Unit to Fleet</h2>
+              <p className="text-xs text-gray-500 mb-4">
+                For equipment you sold or know about that is not currently in the shop.
+              </p>
+              <form action={addFleetUnit} className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <input type="hidden" name="customer_id" value={selectedCustomerId} />
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Serial Number *</label>
+                  <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Model</label>
+                  <input name="model" placeholder="e.g. RZ 752" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Equipment Type</label>
+                  <select name="equipment_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                    <option>Riding Mower</option>
+                    <option>Walk-Behind Mower</option>
+                    <option>Chainsaw</option>
+                    <option>Pole Saw</option>
+                    <option>String Trimmer</option>
+                    <option>Hedge Trimmer</option>
+                    <option>Blower</option>
+                    <option>Backpack Blower</option>
+                    <option>Edger</option>
+                    <option>Cutquik</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Purchase Date</label>
+                  <input type="date" name="purchase_date" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Last Service Date</label>
+                  <input type="date" name="last_service_date" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Hour Meter</label>
+                  <input name="hour_meter" placeholder="e.g. 12.5" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs text-gray-400 mb-1">Part Numbers / Notes</label>
+                  <input name="part_numbers" placeholder="Parts needed or notes..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="block text-xs text-gray-400 mb-1">Fleet Notes</label>
+                  <textarea name="fleet_notes" rows={2} placeholder="Anything about this unit..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white font-medium px-5 py-2 rounded-lg transition">
+                    Add to Fleet
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* FLEET LIST */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-8">
+              <div className="px-4 sm:px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                <h2 className="font-semibold text-orange-300">Fleet Units ({sortedFleet.length})</h2>
+                <p className="text-xs text-gray-500">🟢 Serviced · 🟠 Known · 🔴 Due (3+ mo)</p>
+              </div>
+              {sortedFleet.length === 0 ? (
+                <p className="px-6 py-8 text-gray-500 text-sm">No fleet units yet. Add equipment above.</p>
+              ) : (
+                <div className="divide-y divide-zinc-800">
+                  {sortedFleet.map(unit => {
+                    const color = getFleetColor(unit)
+                    return (
+                      <details key={unit.id} className="group">
+                        <summary className="px-4 sm:px-6 py-4 cursor-pointer hover:bg-zinc-800/50 transition flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="text-lg">
+                              {color === 'red' ? '🔴' : color === 'green' ? '🟢' : '🟠'}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{unit.serial_number}</p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {unit.model || '—'} · {unit.equipment_type || '—'}
+                                {unit.hour_meter ? ` · ${unit.hour_meter} hrs` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
+                            unit.status === 'Fleet' ? 'bg-zinc-700 text-gray-300'
+                              : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                              : 'bg-orange-500/20 text-orange-400'
+                          }`}>
+                            {unit.status}
+                          </span>
+                        </summary>
+                        <div className="px-4 sm:px-6 pb-5 space-y-3">
+                          <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+                            <span>Purchased: {formatShortDate(unit.purchase_date)}</span>
+                            <span>Last service: {formatShortDate(unit.last_service_date)}</span>
+                          </div>
+                          {unit.photo_url && (
+                            <a href={unit.photo_url} target="_blank" rel="noreferrer">
+                              <img src={unit.photo_url} alt="" className="h-24 w-24 object-cover rounded-lg border border-zinc-700" />
+                            </a>
+                          )}
+                          <form action={updateFleetUnit} className="space-y-3">
+                            <input type="hidden" name="id" value={unit.id} />
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Purchase Date</label>
+                                <input type="date" name="purchase_date" defaultValue={unit.purchase_date || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Last Service Date</label>
+                                <input type="date" name="last_service_date" defaultValue={unit.last_service_date || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Hour Meter</label>
+                                <input name="hour_meter" defaultValue={unit.hour_meter || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 mb-1">Part Numbers</label>
+                                <input name="part_numbers" defaultValue={unit.part_numbers || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Fleet Notes</label>
+                              <textarea name="fleet_notes" rows={2} defaultValue={unit.fleet_notes || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                            </div>
+                            <div className="flex gap-2">
+                              <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
+                                Save
+                              </button>
+                              <DeleteUnitButton id={unit.id} />
+                            </div>
+                          </form>
+                        </div>
+                      </details>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ALL UNITS (repair flow) */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
               <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
-                <h2 className="font-semibold text-orange-400">All Units</h2>
+                <h2 className="font-semibold text-orange-400">All Units (Repair Flow)</h2>
               </div>
               <div className="divide-y divide-zinc-800">
-                {units?.length === 0 && (
-                  <p className="px-6 py-8 text-gray-500 text-sm">No units for this customer yet.</p>
+                {units?.filter(u => u.status !== 'Fleet').length === 0 && (
+                  <p className="px-6 py-8 text-gray-500 text-sm">No active repair units for this customer.</p>
                 )}
-                {units?.map(unit => (
+                {units?.filter(u => u.status !== 'Fleet').map(unit => (
                   <details key={unit.id} className="group">
                     <summary className="px-4 sm:px-6 py-4 cursor-pointer font-semibold hover:bg-zinc-800/50 transition flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0">
                         <p className="font-medium text-base sm:text-lg truncate">{unit.serial_number}</p>
                         {unit.is_priority && (
-                          <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black shrink-0">
-                            PRIORITY
-                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black shrink-0">PRIORITY</span>
                         )}
                         <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ${
-                          unit.status === 'Needs Approval' || unit.status === 'Repair Requested'
-                            ? 'bg-yellow-500/20 text-yellow-400'
-                            : unit.status === 'Completed' || unit.status === 'Ready for Pickup'
-                            ? 'bg-green-500/20 text-green-400'
-                            : unit.status === 'In Repair'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : unit.status === 'Registered'
-                            ? 'bg-zinc-700 text-gray-300'
+                          unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                            : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                            : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
                             : 'bg-orange-500/20 text-orange-400'
                         }`}>
                           {unit.status}
                         </span>
-                        {unit.equipment_type && (
-                          <span className="text-xs text-gray-500 hidden sm:inline">{unit.equipment_type}</span>
-                        )}
                       </div>
                     </summary>
                     <div className="px-4 sm:px-6 pb-5">
@@ -745,26 +959,12 @@ export default async function Home({
                           <a href={unit.photo_url} target="_blank" rel="noreferrer">
                             <img src={unit.photo_url} alt="Check-in photo" className="h-32 w-32 object-cover rounded-lg border border-zinc-700" />
                           </a>
-                          <p className="text-xs text-gray-500 mt-1">Tap photo to open full size</p>
                         </div>
                       )}
-
-                      <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-3">
-                        {unit.model && <span>Model: {unit.model}</span>}
-                        {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
-                        {unit.part_number && <span>Part #: {unit.part_number}</span>}
-                        {unit.expedite_fee ? <span className="text-orange-400">Expedite: ${Number(unit.expedite_fee).toFixed(2)}</span> : null}
-                      </div>
-
                       <form action={updateStatus} encType="multipart/form-data" className="mt-2 space-y-3">
                         <input type="hidden" name="id" value={unit.id} />
                         <div className="flex flex-wrap items-center gap-3">
-                          <select
-                            name="status"
-                            defaultValue={unit.status}
-                            key={unit.id + unit.status}
-                            className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
-                          >
+                          <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500">
                             <option value="Registered">Registered</option>
                             <option value="Repair Requested">Repair Requested</option>
                             <option value="Diagnosing">Diagnosing</option>
@@ -772,38 +972,17 @@ export default async function Home({
                             <option value="In Repair">In Repair</option>
                             <option value="Ready for Pickup">Ready for Pickup</option>
                             <option value="Completed">Completed</option>
+                            <option value="Fleet">Fleet</option>
                           </select>
                           <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              name="is_priority"
-                              value="true"
-                              defaultChecked={!!unit.is_priority}
-                              className="rounded border-zinc-600 bg-zinc-800 text-orange-500"
-                            />
+                            <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
                             Priority
                           </label>
-                          <input
-                            name="expedite_fee"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            defaultValue={unit.expedite_fee ?? ''}
-                            placeholder="Fee $"
-                            className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-orange-500"
-                          />
-                          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg transition">
-                            Update
-                          </button>
+                          <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-orange-500" />
+                          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg transition">Update</button>
                           <DeleteUnitButton id={unit.id} />
                         </div>
-                        <textarea
-                          name="notes"
-                          defaultValue={unit.notes || ''}
-                          rows={2}
-                          placeholder="Notes..."
-                          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                        />
+                        <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
                         {(unit.status === 'Needs Approval' || unit.status === 'Completed' || unit.status === 'Ready for Pickup') && (
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">
@@ -813,12 +992,9 @@ export default async function Home({
                           </div>
                         )}
                         {unit.invoice_url && (
-                          <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">
-                            View uploaded file →
-                          </a>
+                          <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file →</a>
                         )}
                       </form>
-
                       {unit.history && (
                         <div className="mt-4 border-t border-zinc-800 pt-3">
                           <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
