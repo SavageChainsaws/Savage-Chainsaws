@@ -34,6 +34,14 @@ type Customer = {
   email: string | null
 }
 
+const ACTIVE_STATUSES = [
+  'Diagnosing',
+  'Needs Approval',
+  'In Repair',
+  'Repair Requested',
+  'Ready for Pickup',
+]
+
 export default function CustomerPortal() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -41,6 +49,7 @@ export default function CustomerPortal() {
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   const [showCheckIn, setShowCheckIn] = useState(false)
+  const [showAddFleet, setShowAddFleet] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
@@ -54,9 +63,17 @@ export default function CustomerPortal() {
   const [notes, setNotes] = useState('')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
 
-  // Unit detail form
+  // Add to fleet form
+  const [fleetSerial, setFleetSerial] = useState('')
+  const [fleetModel, setFleetModel] = useState('')
+  const [fleetType, setFleetType] = useState('Chainsaw')
+  const [fleetNickname, setFleetNickname] = useState('')
+  const [fleetThumb, setFleetThumb] = useState<File | null>(null)
+
+  // Unit detail
   const [editNickname, setEditNickname] = useState('')
   const [thumbFile, setThumbFile] = useState<File | null>(null)
+  const [thumbPreview, setThumbPreview] = useState<string | null>(null)
   const [serviceNote, setServiceNote] = useState('')
   const [detailBusy, setDetailBusy] = useState(false)
 
@@ -108,7 +125,8 @@ export default function CustomerPortal() {
   }
 
   async function uploadFile(file: File, prefix: string) {
-    const fileName = `${prefix}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const fileName = `${prefix}-${Date.now()}-${safe}`
     const { error } = await supabase.storage
       .from('invoices')
       .upload(fileName, file, {
@@ -123,15 +141,11 @@ export default function CustomerPortal() {
   async function handleCheckIn(e: React.FormEvent) {
     e.preventDefault()
     if (!customer || !serial.trim()) return
-
     setSubmitting(true)
     setMessage(null)
-
     try {
       let photoUrl: string | null = null
-      if (photoFile) {
-        photoUrl = await uploadFile(photoFile, customer.id)
-      }
+      if (photoFile) photoUrl = await uploadFile(photoFile, customer.id)
 
       const createdAt = scheduled
         ? new Date(scheduled).toISOString()
@@ -144,7 +158,7 @@ export default function CustomerPortal() {
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
         photo_url: photoUrl,
-        thumbnail_url: photoUrl, // first photo also becomes thumbnail if none set
+        thumbnail_url: photoUrl,
         customer_id: customer.id,
         status: 'Repair Requested',
         decision_seen: true,
@@ -173,7 +187,52 @@ export default function CustomerPortal() {
       console.error(err)
       setMessage('Could not check in this unit. Let Jesse know if this keeps happening.')
     }
+    setSubmitting(false)
+  }
 
+  async function handleAddFleet(e: React.FormEvent) {
+    e.preventDefault()
+    if (!customer || !fleetSerial.trim()) return
+    setSubmitting(true)
+    setMessage(null)
+    try {
+      let thumbUrl: string | null = null
+      if (fleetThumb) thumbUrl = await uploadFile(fleetThumb, `fleet-${customer.id}`)
+
+      const { error } = await supabase.from('units').insert({
+        serial_number: fleetSerial.trim(),
+        model: fleetModel.trim() || null,
+        equipment_type: fleetType || null,
+        nickname: fleetNickname.trim() || null,
+        thumbnail_url: thumbUrl,
+        customer_id: customer.id,
+        status: 'Fleet',
+        decision_seen: true,
+        archived: false,
+        history: `${new Date().toLocaleString('en-US', {
+          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        })} — Added to fleet by customer`,
+      })
+
+      if (error) {
+        console.error(error)
+        setMessage('Could not add unit to fleet.')
+        setSubmitting(false)
+        return
+      }
+
+      setFleetSerial('')
+      setFleetModel('')
+      setFleetType('Chainsaw')
+      setFleetNickname('')
+      setFleetThumb(null)
+      setShowAddFleet(false)
+      setMessage('Unit added to your fleet.')
+      await loadData()
+    } catch (err) {
+      console.error(err)
+      setMessage('Could not add unit to fleet.')
+    }
     setSubmitting(false)
   }
 
@@ -181,14 +240,24 @@ export default function CustomerPortal() {
     setSelectedUnit(unit)
     setEditNickname(unit.nickname || '')
     setThumbFile(null)
+    setThumbPreview(null)
     setServiceNote('')
     setMessage(null)
+    setShowCheckIn(false)
+    setShowAddFleet(false)
   }
 
   function closeUnit() {
     setSelectedUnit(null)
     setThumbFile(null)
+    setThumbPreview(null)
     setServiceNote('')
+  }
+
+  function onThumbPick(file: File | null) {
+    setThumbFile(file)
+    if (thumbPreview) URL.revokeObjectURL(thumbPreview)
+    setThumbPreview(file ? URL.createObjectURL(file) : null)
   }
 
   async function saveNickname() {
@@ -219,7 +288,7 @@ export default function CustomerPortal() {
         .eq('id', selectedUnit.id)
       if (error) throw error
       setMessage('Thumbnail updated.')
-      setThumbFile(null)
+      onThumbPick(null)
       await loadData()
       setSelectedUnit(prev => prev ? { ...prev, thumbnail_url: url } : null)
     } catch (err) {
@@ -304,7 +373,6 @@ export default function CustomerPortal() {
 
   async function handleDecision(unitId: string, decision: 'approve' | 'upgrade' | 'equivalent' | 'deny') {
     if (!customer) return
-
     const name = customer.name || userEmail || 'Customer'
     let status = 'In Repair'
     let note = ''
@@ -355,7 +423,14 @@ export default function CustomerPortal() {
         : 'Decision saved. Jesse has been notified.'
     )
     await loadData()
+    if (selectedUnit?.id === unitId) closeUnit()
   }
+
+  const activeUnits = units.filter(u => ACTIVE_STATUSES.includes(u.status))
+  const fleetUnits = units.filter(u => u.status === 'Fleet')
+  const otherUnits = units.filter(
+    u => !ACTIVE_STATUSES.includes(u.status) && u.status !== 'Fleet'
+  )
 
   const total = units.length
   const needsApproval = units.filter(u => u.status === 'Needs Approval').length
@@ -372,6 +447,65 @@ export default function CustomerPortal() {
 
   function unitImage(u: Unit) {
     return u.thumbnail_url || u.photo_url
+  }
+
+  function UnitCard({ unit }: { unit: Unit }) {
+    return (
+      <button
+        type="button"
+        onClick={() => openUnit(unit)}
+        className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-4 flex gap-4 transition"
+      >
+        <div className="shrink-0">
+          {unitImage(unit) ? (
+            <img
+              src={unitImage(unit)!}
+              alt=""
+              className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg border border-zinc-700"
+            />
+          ) : (
+            <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-lg border border-zinc-700 bg-zinc-800" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-0.5">
+            <p className="font-semibold text-base sm:text-lg truncate">{displayName(unit)}</p>
+            {unit.nickname && (
+              <span className="text-xs text-gray-500 truncate">S/N {unit.serial_number}</span>
+            )}
+            <span
+              className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                unit.status === 'Needs Approval'
+                  ? 'bg-yellow-500/20 text-yellow-400'
+                  : unit.status === 'Fleet'
+                  ? 'bg-zinc-600 text-gray-300'
+                  : unit.status === 'Completed' || unit.status === 'Ready for Pickup'
+                  ? 'bg-green-500/20 text-green-400'
+                  : unit.status === 'In Repair'
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'bg-orange-500/20 text-orange-400'
+              }`}
+            >
+              {unit.status}
+              {unit.status === 'Needs Approval' && ' 🚩'}
+            </span>
+          </div>
+          <p className="text-sm text-gray-400">
+            {unit.model || '—'}
+            {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
+          </p>
+          {unit.problem_type && unit.status !== 'Fleet' && (
+            <p className="text-sm text-gray-500 mt-0.5">Problem: {unit.problem_type}</p>
+          )}
+          {unit.status === 'Needs Approval' && (
+            <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide →</p>
+          )}
+          {(unit.status === 'Fleet' || unit.status === 'Completed') && (
+            <p className="text-xs text-gray-500 mt-1">Tap to schedule service or edit →</p>
+          )}
+        </div>
+      </button>
+    )
   }
 
   if (loading) {
@@ -461,10 +595,21 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            onClick={() => {
+              setShowAddFleet(!showAddFleet)
+              setShowCheckIn(false)
+              closeUnit()
+            }}
+            className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            {showAddFleet ? 'Close' : 'Add to Fleet'}
+          </button>
           <button
             onClick={() => {
               setShowCheckIn(!showCheckIn)
+              setShowAddFleet(false)
               closeUnit()
             }}
             className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -473,6 +618,85 @@ export default function CustomerPortal() {
           </button>
         </div>
 
+        {/* Add to Fleet */}
+        {showAddFleet && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
+            <h2 className="text-lg font-semibold text-orange-400 mb-1">Add Unit to Fleet</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Register equipment you own so you can schedule service later.
+            </p>
+            <form onSubmit={handleAddFleet} className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
+                <input
+                  required
+                  value={fleetSerial}
+                  onChange={e => setFleetSerial(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Model</label>
+                <input
+                  value={fleetModel}
+                  onChange={e => setFleetModel(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  placeholder="e.g. MS 462"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Unit Type</label>
+                <select
+                  value={fleetType}
+                  onChange={e => setFleetType(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option>Chainsaw</option>
+                  <option>Pole Saw</option>
+                  <option>String Trimmer</option>
+                  <option>Hedge Trimmer</option>
+                  <option>Blower</option>
+                  <option>Backpack Blower</option>
+                  <option>Riding Mower</option>
+                  <option>Walk-Behind Mower</option>
+                  <option>Edger</option>
+                  <option>Cutquik</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
+                <input
+                  value={fleetNickname}
+                  onChange={e => setFleetNickname(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  placeholder="e.g. Shop mower #2"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Thumbnail photo (optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={e => setFleetThumb(e.target.files?.[0] || null)}
+                  className="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition"
+                >
+                  {submitting ? 'Adding...' : 'Add to Fleet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Check-in form */}
         {showCheckIn && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-orange-400 mb-1">Check In a Unit</h2>
@@ -541,6 +765,7 @@ export default function CustomerPortal() {
                 <input
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   onChange={e => setPhotoFile(e.target.files?.[0] || null)}
                   className="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
                 />
@@ -598,13 +823,12 @@ export default function CustomerPortal() {
               </div>
               <button
                 onClick={closeUnit}
-                className="text-gray-400 hover:text-white text-sm border border-zinc-700 rounded-lg px-3 py-1.5"
+                className="text-gray-400 hover:text-white text-sm border border-zinc-700 rounded-lg px-3 py-1.5 shrink-0"
               >
                 Close
               </button>
             </div>
 
-            {/* Nickname */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Nickname (your label)</label>
               <div className="flex gap-2">
@@ -624,28 +848,46 @@ export default function CustomerPortal() {
               </div>
             </div>
 
-            {/* Thumbnail */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={e => setThumbFile(e.target.files?.[0] || null)}
-                  className="text-sm text-gray-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
-                />
-                <button
-                  onClick={saveThumbnail}
-                  disabled={!thumbFile || detailBusy}
-                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg"
-                >
-                  Upload Thumbnail
-                </button>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                {(thumbPreview || selectedUnit.thumbnail_url) && (
+                  <img
+                    src={thumbPreview || selectedUnit.thumbnail_url!}
+                    alt=""
+                    className="h-20 w-20 object-cover rounded-lg border border-zinc-700"
+                  />
+                )}
+                <div className="flex flex-col gap-2">
+                  <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer">
+                    Choose Photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={e => onThumbPick(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                  {thumbFile && (
+                    <button
+                      onClick={saveThumbnail}
+                      disabled={detailBusy}
+                      className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg"
+                    >
+                      {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
+                    </button>
+                  )}
+                  {thumbFile && (
+                    <p className="text-xs text-gray-400 truncate max-w-[200px]">{thumbFile.name}</p>
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-1">This is the photo shown on your unit list (separate from service check-in photos).</p>
+              <p className="text-xs text-gray-500 mt-2">
+                This is the photo on your unit list (separate from service check-in photos).
+              </p>
             </div>
 
-            {/* Request service / tune-up */}
             {(selectedUnit.status === 'Fleet' ||
               selectedUnit.status === 'Completed' ||
               selectedUnit.status === 'Registered') && (
@@ -654,7 +896,7 @@ export default function CustomerPortal() {
                 <input
                   value={serviceNote}
                   onChange={e => setServiceNote(e.target.value)}
-                  placeholder="e.g. Due for 3-month tune-up, blade sharpening..."
+                  placeholder="e.g. Due for 3-month tune-up..."
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"
                 />
                 <button
@@ -667,7 +909,6 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {/* Approval decisions */}
             {selectedUnit.status === 'Needs Approval' && (
               <div className="border-t border-zinc-800 pt-4 flex flex-wrap gap-2">
                 <button
@@ -701,7 +942,6 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {/* Remove from list */}
             <div className="border-t border-zinc-800 pt-4">
               <button
                 onClick={archiveUnit}
@@ -717,77 +957,57 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {/* Unit list */}
+        {/* Active service units — always open */}
         <div>
-          <h2 className="text-lg font-semibold text-orange-400 mb-3">Your Units</h2>
-          {units.length === 0 ? (
-            <p className="text-gray-500 text-sm">No units yet. Use Check In a Unit to add one.</p>
+          <h2 className="text-lg font-semibold text-orange-400 mb-3">
+            In Service ({activeUnits.length})
+          </h2>
+          {activeUnits.length === 0 ? (
+            <p className="text-gray-500 text-sm">No units currently in service.</p>
           ) : (
             <div className="space-y-3">
-              {units.map(unit => (
-                <button
-                  key={unit.id}
-                  type="button"
-                  onClick={() => openUnit(unit)}
-                  className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-4 flex gap-4 transition"
-                >
-                  <div className="shrink-0">
-                    {unitImage(unit) ? (
-                      <img
-                        src={unitImage(unit)!}
-                        alt=""
-                        className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg border border-zinc-700"
-                      />
-                    ) : (
-                      <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-lg border border-zinc-700 bg-zinc-800" />
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                      <p className="font-semibold text-base sm:text-lg truncate">
-                        {displayName(unit)}
-                      </p>
-                      {unit.nickname && (
-                        <span className="text-xs text-gray-500 truncate">S/N {unit.serial_number}</span>
-                      )}
-                      <span
-                        className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                          unit.status === 'Needs Approval'
-                            ? 'bg-yellow-500/20 text-yellow-400'
-                            : unit.status === 'Fleet'
-                            ? 'bg-zinc-600 text-gray-300'
-                            : unit.status === 'Completed' || unit.status === 'Ready for Pickup'
-                            ? 'bg-green-500/20 text-green-400'
-                            : unit.status === 'In Repair'
-                            ? 'bg-blue-500/20 text-blue-400'
-                            : 'bg-orange-500/20 text-orange-400'
-                        }`}
-                      >
-                        {unit.status}
-                        {unit.status === 'Needs Approval' && ' 🚩'}
-                      </span>
-                    </div>
-
-                    <p className="text-sm text-gray-400">
-                      {unit.model || '—'}
-                      {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
-                    </p>
-                    {unit.problem_type && unit.status !== 'Fleet' && (
-                      <p className="text-sm text-gray-500 mt-0.5">Problem: {unit.problem_type}</p>
-                    )}
-                    {unit.status === 'Needs Approval' && (
-                      <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide →</p>
-                    )}
-                    {(unit.status === 'Fleet' || unit.status === 'Completed') && (
-                      <p className="text-xs text-gray-500 mt-1">Tap to schedule service or edit →</p>
-                    )}
-                  </div>
-                </button>
+              {activeUnits.map(unit => (
+                <UnitCard key={unit.id} unit={unit} />
               ))}
             </div>
           )}
         </div>
+
+        {/* Fleet — collapsible */}
+        <details className="group" open={fleetUnits.length > 0 && fleetUnits.length <= 6}>
+          <summary className="cursor-pointer list-none flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 hover:border-orange-500/40 transition">
+            <h2 className="text-lg font-semibold text-orange-300">
+              Fleet ({fleetUnits.length})
+            </h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">▼</span>
+          </summary>
+          <div className="mt-3 space-y-3">
+            {fleetUnits.length === 0 ? (
+              <p className="text-gray-500 text-sm px-1">
+                No fleet units yet. Use <strong>Add to Fleet</strong> to register equipment.
+              </p>
+            ) : (
+              fleetUnits.map(unit => <UnitCard key={unit.id} unit={unit} />)
+            )}
+          </div>
+        </details>
+
+        {/* Other / completed — collapsible */}
+        <details className="group">
+          <summary className="cursor-pointer list-none flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 hover:border-orange-500/40 transition">
+            <h2 className="text-lg font-semibold text-gray-300">
+              Other Units ({otherUnits.length})
+            </h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">▼</span>
+          </summary>
+          <div className="mt-3 space-y-3">
+            {otherUnits.length === 0 ? (
+              <p className="text-gray-500 text-sm px-1">No completed or other units.</p>
+            ) : (
+              otherUnits.map(unit => <UnitCard key={unit.id} unit={unit} />)
+            )}
+          </div>
+        </details>
       </div>
     </main>
   )
