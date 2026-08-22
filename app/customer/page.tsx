@@ -1,5 +1,4 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
@@ -55,7 +54,6 @@ export default function CustomerPortal() {
   const [units, setUnits] = useState<Unit[]>([])
   const [decisionName, setDecisionName] = useState('')
   const [showForm, setShowForm] = useState(false)
-
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
   const [equipmentType, setEquipmentType] = useState('Chainsaw')
@@ -77,30 +75,24 @@ export default function CustomerPortal() {
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
-
       if (!session) {
         router.push('/login')
         return
       }
-
       setUserEmail(session.user.email || '')
-
       const { data: cust } = await supabase
         .from('customers')
         .select('*')
         .eq('email', session.user.email)
         .single()
-
       if (!cust) {
         setLoading(false)
         return
       }
-
       setCustomer(cust)
       await refreshUnits(cust.id)
       setLoading(false)
     }
-
     load()
   }, [router])
 
@@ -109,7 +101,6 @@ export default function CustomerPortal() {
       alert('Please type your name before approving or denying.')
       return
     }
-
     await supabase
       .from('units')
       .update({
@@ -119,7 +110,6 @@ export default function CustomerPortal() {
         status: decision === 'approved' ? 'In Repair' : 'Diagnosing',
       })
       .eq('id', unitId)
-
     if (customer) await refreshUnits(customer.id)
     setDecisionName('')
   }
@@ -131,24 +121,19 @@ export default function CustomerPortal() {
       alert('Serial number is required.')
       return
     }
-
     setSaving(true)
-
     let photoUrl: string | null = null
-
     if (photoFile) {
       const ext = photoFile.name.split('.').pop() || 'jpg'
       const path = `${customer.id}/${Date.now()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('unit-photos')
         .upload(path, photoFile)
-
       if (!uploadError) {
         const { data } = supabase.storage.from('unit-photos').getPublicUrl(path)
         photoUrl = data.publicUrl
       }
     }
-
     const insertData: Record<string, unknown> = {
       customer_id: customer.id,
       serial_number: serial.trim(),
@@ -160,21 +145,16 @@ export default function CustomerPortal() {
       photo_url: photoUrl,
       check_in_date: dropOffDate || new Date().toISOString(),
     }
-
     if (equipmentType === 'Riding Mower' && hourMeter.trim()) {
       insertData.hour_meter = hourMeter.trim()
     }
-
     const { error } = await supabase.from('units').insert(insertData)
-
     setSaving(false)
-
     if (error) {
       alert('Could not check in this unit. Let Jesse know if this keeps happening.')
       console.error(error)
       return
     }
-
     setSerial('')
     setModel('')
     setEquipmentType('Chainsaw')
@@ -208,6 +188,7 @@ export default function CustomerPortal() {
 
   return (
     <main className="min-h-screen bg-zinc-950/60 text-white">
+      {/* Header with Log out */}
       <header className="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-50">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -217,24 +198,26 @@ export default function CustomerPortal() {
               <p className="text-xs text-gray-400">Customer Portal</p>
             </div>
           </div>
-<div className="flex items-center gap-4">
-  <div className="text-right">
-    <p className="text-sm font-medium">{customer.name}</p>
-    <p className="text-xs text-gray-500">{userEmail}</p>
-  </div>
-  <button
-    onClick={async () => {
-      await supabase.auth.signOut()
-      router.push('/login')
-    }}
-    className="text-sm text-gray-400 hover:text-orange-400 border border-zinc-700 hover:border-orange-500 px-3 py-1.5 rounded-lg transition"
-  >
-    Log out
-  </button>
-</div>
+
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-sm font-medium">{customer.name}</p>
+              <p className="text-xs text-gray-500">{userEmail}</p>
+            </div>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut()
+                router.push('/login')
+              }}
+              className="text-sm text-gray-400 hover:text-orange-400 border border-zinc-700 hover:border-orange-500 px-3 py-1.5 rounded-lg transition"
+            >
+              Log out
+            </button>
+          </div>
         </div>
       </header>
 
+      {/* Banner */}
       <div className="bg-zinc-900 border-b border-zinc-800">
         <div className="max-w-5xl mx-auto px-4 py-8 text-center">
           <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">
@@ -247,6 +230,7 @@ export default function CustomerPortal() {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-center">
             <p className="text-2xl font-bold text-orange-400">{units.length}</p>
@@ -272,6 +256,7 @@ export default function CustomerPortal() {
           </div>
         </div>
 
+        {/* Check In Button */}
         <div className="flex justify-end">
           <button
             onClick={() => setShowForm((v) => !v)}
@@ -281,6 +266,7 @@ export default function CustomerPortal() {
           </button>
         </div>
 
+        {/* Check In Form */}
         {showForm && (
           <form
             onSubmit={handleCheckIn}
@@ -290,7 +276,6 @@ export default function CustomerPortal() {
             <p className="text-sm text-gray-400">
               Tell us what’s coming in. Jesse can correct any details after pickup.
             </p>
-
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Serial Number *</label>
@@ -333,7 +318,6 @@ export default function CustomerPortal() {
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
-
               {equipmentType === 'Riding Mower' && (
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Hour Meter</label>
@@ -345,7 +329,6 @@ export default function CustomerPortal() {
                   />
                 </div>
               )}
-
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Scheduled drop-off (optional)</label>
                 <input
@@ -356,7 +339,6 @@ export default function CustomerPortal() {
                 />
               </div>
             </div>
-
             <div>
               <label className="block text-xs text-gray-400 mb-1">Photo of unit / serial plate</label>
               <input
@@ -367,7 +349,6 @@ export default function CustomerPortal() {
                 className="text-sm text-gray-300"
               />
             </div>
-
             <div>
               <label className="block text-xs text-gray-400 mb-1">Notes</label>
               <textarea
@@ -377,7 +358,6 @@ export default function CustomerPortal() {
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm min-h-[80px]"
               />
             </div>
-
             <button
               type="submit"
               disabled={saving}
@@ -388,9 +368,9 @@ export default function CustomerPortal() {
           </form>
         )}
 
+        {/* Units List */}
         <section>
           <h2 className="text-xl font-bold mb-4 text-orange-400">Your Units</h2>
-
           {units.length === 0 ? (
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center text-gray-400">
               No units found yet. Check one in above when you’re ready.
@@ -407,7 +387,6 @@ export default function CustomerPortal() {
                       🚩
                     </div>
                   )}
-
                   <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                     <div>
                       <p className="font-bold text-lg">{unit.serial_number}</p>
@@ -431,19 +410,16 @@ export default function CustomerPortal() {
                       {unit.status}
                     </span>
                   </div>
-
                   {unit.problem_type && (
                     <p className="text-sm text-gray-300 mb-2">
                       <span className="text-gray-500">Problem:</span> {unit.problem_type}
                     </p>
                   )}
-
                   {unit.notes && (
                     <div className="bg-zinc-800/50 rounded-lg p-3 mb-3 text-sm text-gray-300">
                       {unit.notes}
                     </div>
                   )}
-
                   {unit.photo_url && (
                     <img
                       src={unit.photo_url}
@@ -451,7 +427,6 @@ export default function CustomerPortal() {
                       className="rounded-lg max-h-40 mb-3 border border-zinc-800"
                     />
                   )}
-
                   {unit.invoice_url && (
                     <a
                       href={unit.invoice_url}
@@ -462,7 +437,6 @@ export default function CustomerPortal() {
                       View Invoice →
                     </a>
                   )}
-
                   {unit.status === 'Needs Approval' && (
                     <div className="mt-4 pt-4 border-t border-zinc-800">
                       <p className="text-sm text-yellow-400 mb-3 font-medium">
@@ -497,7 +471,6 @@ export default function CustomerPortal() {
                       </div>
                     </div>
                   )}
-
                   {unit.decision && (
                     <div className="mt-3 text-xs text-gray-400">
                       Decision: <span className="text-white">{unit.decision}</span>
@@ -511,6 +484,7 @@ export default function CustomerPortal() {
         </section>
       </div>
 
+      {/* Footer */}
       <footer className="border-t border-zinc-800 pt-6 pb-10 text-center space-y-2 mt-12">
         <p className="text-sm text-gray-500">Savage Chainsaws LLC · Oviedo, Florida</p>
         <div className="flex flex-wrap justify-center gap-4 text-sm">
