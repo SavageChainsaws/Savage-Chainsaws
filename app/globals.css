@@ -18,12 +18,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Admin background — MS 500i centered, slightly smaller */
+/* Admin background — MS 500i higher & a bit larger on desktop */
 html, body {
   background-color: #0a0a0a !important;
   background-image: url('/images/stihl-ms500i.jpg') !important;
-  background-size: 48% !important;
-  background-position: center top -10px !important;
+  background-size: 55% !important;
+  background-position: center top -60px !important;
   background-repeat: no-repeat !important;
   background-attachment: fixed !important;
 }
@@ -31,17 +31,17 @@ html, body {
 /* Mobile: still centered, a bit larger so it reads well */
 @media (max-width: 768px) {
   html, body {
-    background-size: 70% !important;
-    background-position: center top 0 !important;
+    background-size: 75% !important;
+    background-position: center top -20px !important;
   }
 }
 
-/* Dark overlay so text stays readable */
+/* Dark overlay — slightly lighter so the saw shows more */
 body::before {
   content: "" !important;
   position: fixed !important;
   inset: 0 !important;
-  background: rgba(0, 0, 0, 0.78) !important;
+  background: rgba(0, 0, 0, 0.72) !important;
   z-index: -1 !important;
   pointer-events: none !important;
 }

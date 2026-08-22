@@ -314,32 +314,30 @@ export default async function Home({
     })
   }
 
-  // UPDATED ActionCard — photo on LEFT
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
     return (
       <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
-        <div className="flex gap-4">
-          {/* PHOTO LEFT */}
+        <div className="flex gap-3 sm:gap-4">
+          {/* PHOTO — larger on desktop */}
           <div className="shrink-0">
             {unit.photo_url ? (
               <a href={unit.photo_url} target="_blank" rel="noreferrer">
                 <img
                   src={unit.photo_url}
                   alt=""
-                  className="h-16 w-16 sm:h-20 sm:w-20 object-cover rounded-lg border border-zinc-700"
+                  className="h-14 w-14 sm:h-24 sm:w-24 object-cover rounded-lg border border-zinc-700"
                 />
               </a>
             ) : (
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-lg border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">
+              <div className="h-14 w-14 sm:h-24 sm:w-24 rounded-lg border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-600 text-[10px] sm:text-xs">
                 No photo
               </div>
             )}
           </div>
 
-          {/* CONTENT RIGHT */}
           <div className="flex-1 min-w-0">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-              <div className="min-w-0 space-y-1">
+              <div className="min-w-0 space-y-0.5">
                 <p className="text-sm text-gray-400">
                   <span className="text-orange-400 font-medium">
                     {customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'}
@@ -347,7 +345,7 @@ export default async function Home({
                   {unit.equipment_type && <span className="text-gray-500"> · {unit.equipment_type}</span>}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-lg sm:text-xl font-semibold truncate">{unit.serial_number}</p>
+                  <p className="text-base sm:text-xl font-semibold truncate">{unit.serial_number}</p>
                   {unit.is_priority && (
                     <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
                   )}
@@ -360,7 +358,7 @@ export default async function Home({
                   }`}>{unit.status}</span>
                 </div>
                 {children}
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-1">
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 mt-0.5">
                   <span>Checked in: {formatDate(unit.created_at)}</span>
                   {unit.model && <span>Model: {unit.model}</span>}
                   {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
@@ -387,11 +385,25 @@ export default async function Home({
               </div>
             </div>
 
-            <form action={updateNotes} className="mt-3">
-              <input type="hidden" name="id" value={unit.id} />
-              <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Add internal notes..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
-              <button type="submit" className="mt-1.5 text-xs text-orange-400 hover:text-orange-300">Save Notes</button>
-            </form>
+            {/* NOTES — collapsed by default */}
+            <details className="mt-2 group/notes">
+              <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
+                Notes {unit.notes ? '· has notes' : ''}
+              </summary>
+              <form action={updateNotes} className="mt-2">
+                <input type="hidden" name="id" value={unit.id} />
+                <textarea
+                  name="notes"
+                  defaultValue={unit.notes || ''}
+                  rows={2}
+                  placeholder="Add internal notes..."
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                />
+                <button type="submit" className="mt-1.5 text-xs text-orange-400 hover:text-orange-300">
+                  Save Notes
+                </button>
+              </form>
+            </details>
           </div>
         </div>
       </div>
