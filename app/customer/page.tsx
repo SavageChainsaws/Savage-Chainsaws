@@ -495,8 +495,14 @@ export default function CustomerPortal() {
     ['Completed', 'Ready for Pickup'].includes(u.status)
   ).length
 
+  // Model first, then type — never lead with serial
   function displayName(u: Unit) {
-    return u.nickname || u.serial_number
+    const model = (u.model || '').trim()
+    const type = (u.equipment_type || '').trim()
+    if (model && type) return `${model} · ${type}`
+    if (model) return model
+    if (type) return type
+    return u.nickname || u.serial_number || 'No model'
   }
 
   function unitImage(u: Unit) {
@@ -524,9 +530,6 @@ export default function CustomerPortal() {
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-0.5">
             <p className="font-semibold text-base sm:text-lg truncate">{displayName(unit)}</p>
-            {unit.nickname && (
-              <span className="text-xs text-gray-500 truncate">S/N {unit.serial_number}</span>
-            )}
             <span
               className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                 unit.status === 'Needs Approval'
@@ -545,8 +548,8 @@ export default function CustomerPortal() {
             </span>
           </div>
           <p className="text-sm text-gray-400">
-            {unit.model || '—'}
-            {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
+            Serial: {unit.serial_number || '—'}
+            {unit.nickname ? ` · ${unit.nickname}` : ''}
             {unit.hour_meter ? ` · ${unit.hour_meter} hrs` : ''}
           </p>
           {unit.problem_type && unit.status !== 'Fleet' && (
@@ -690,21 +693,21 @@ export default function CustomerPortal() {
             </p>
             <form onSubmit={handleAddFleet} className="grid sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                <input
-                  required
-                  value={fleetSerial}
-                  onChange={e => setFleetSerial(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
                 <label className="block text-xs text-gray-500 mb-1">Model</label>
                 <input
                   value={fleetModel}
                   onChange={e => setFleetModel(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                   placeholder="e.g. MS 462"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
+                <input
+                  required
+                  value={fleetSerial}
+                  onChange={e => setFleetSerial(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -768,21 +771,21 @@ export default function CustomerPortal() {
             </p>
             <form onSubmit={handleCheckIn} className="grid sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                <input
-                  required
-                  value={serial}
-                  onChange={e => setSerial(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
                 <label className="block text-xs text-gray-500 mb-1">Model</label>
                 <input
                   value={model}
                   onChange={e => setModel(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                   placeholder="e.g. MS 462"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
+                <input
+                  required
+                  value={serial}
+                  onChange={e => setSerial(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -863,8 +866,8 @@ export default function CustomerPortal() {
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{displayName(selectedUnit)}</p>
                   <p className="text-sm text-gray-400">
-                    S/N: {selectedUnit.serial_number}
-                    {selectedUnit.model ? ` · ${selectedUnit.model}` : ''}
+                    Serial: {selectedUnit.serial_number || '—'}
+                    {selectedUnit.nickname ? ` · ${selectedUnit.nickname}` : ''}
                   </p>
                   <span className={`inline-block mt-1 text-xs px-2.5 py-1 rounded-full font-medium ${
                     selectedUnit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
@@ -887,11 +890,10 @@ export default function CustomerPortal() {
                 <p className="text-sm font-medium text-orange-300">Edit unit details</p>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Nickname</label>
+                    <label className="block text-xs text-gray-500 mb-1">Model</label>
                     <input
-                      value={editNickname}
-                      onChange={e => setEditNickname(e.target.value)}
-                      placeholder="e.g. Shop mower #2"
+                      value={editModel}
+                      onChange={e => setEditModel(e.target.value)}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
@@ -900,14 +902,6 @@ export default function CustomerPortal() {
                     <input
                       value={editSerial}
                       onChange={e => setEditSerial(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Model</label>
-                    <input
-                      value={editModel}
-                      onChange={e => setEditModel(e.target.value)}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
@@ -922,6 +916,15 @@ export default function CustomerPortal() {
                         <option key={t}>{t}</option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Nickname</label>
+                    <input
+                      value={editNickname}
+                      onChange={e => setEditNickname(e.target.value)}
+                      placeholder="e.g. Shop mower #2"
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-xs text-gray-500 mb-1">Hour meter</label>

@@ -88,13 +88,13 @@ export default function CheckInForm({
       <input type="hidden" name="customer_id" value={customerId} />
 
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-        <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Serial number" />
+        <label className="block text-xs text-gray-500 mb-1">Model</label>
+        <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. MS 462" />
       </div>
 
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Model</label>
-        <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. MS 462" />
+        <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
+        <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Serial number" />
       </div>
 
       <div>

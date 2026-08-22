@@ -262,8 +262,14 @@ function groupLabel(n: number) {
   return 'Trimmers & Misc'
 }
 
+// Model · Type first — never lead with serial
 function unitLabel(unit: any) {
-  return unit.nickname || unit.serial_number || 'No s/n'
+  const model = (unit.model || '').trim()
+  const type = (unit.equipment_type || '').trim()
+  if (model && type) return `${model} · ${type}`
+  if (model) return model
+  if (type) return type
+  return unit.nickname || unit.serial_number || 'No model'
 }
 
 function unitImage(unit: any) {
@@ -365,6 +371,7 @@ export default async function Home({
 
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
     const img = unitImage(unit)
+    const company = customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'
     return (
       <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
         <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="block">
@@ -379,15 +386,8 @@ export default async function Home({
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-gray-400">
-                <span className="text-orange-400 font-medium">
-                  {customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'}
-                </span>
-                {unit.equipment_type && <span className="text-gray-500"> · {unit.equipment_type}</span>}
-              </p>
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-base sm:text-xl font-semibold truncate">{unitLabel(unit)}</p>
-                {unit.nickname && <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>}
                 {unit.is_priority && (
                   <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
                 )}
@@ -399,10 +399,14 @@ export default async function Home({
                     : 'bg-orange-500/20 text-orange-400'
                 }`}>{unit.status}</span>
               </div>
+              <p className="text-sm text-gray-400">
+                Serial: {unit.serial_number || '—'}
+                {unit.nickname ? ` · ${unit.nickname}` : ''}
+              </p>
+              <p className="text-sm text-orange-400 font-medium">{company}</p>
               {children}
               <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 mt-0.5">
                 <span>Checked in: {formatDate(unit.created_at)}</span>
-                {unit.model && <span>Model: {unit.model}</span>}
                 {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
               </div>
               <p className="text-xs text-orange-400 mt-2">Tap card to open unit →</p>
@@ -486,7 +490,6 @@ export default async function Home({
           </div>
         )}
 
-        {/* Status tiles — fixed height, numbers centered */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4 mb-8 md:mb-10">
           {tiles.map(tile => {
             const href = selectedCustomerId
@@ -510,7 +513,6 @@ export default async function Home({
           })}
         </div>
 
-        {/* Status filter list — works for Diagnosing, Requested, etc. */}
         {statusFilter && (
           <div className="bg-zinc-900 border border-orange-400/40 rounded-xl overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -533,6 +535,7 @@ export default async function Home({
               <div className="divide-y divide-zinc-800">
                 {statusFilteredUnits.map(unit => {
                   const img = unitImage(unit)
+                  const company = customers?.find(c => c.id === unit.customer_id)?.name
                   return (
                     <Link
                       key={unit.id}
@@ -545,15 +548,12 @@ export default async function Home({
                         <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold truncate">
-                          {unitLabel(unit)}
-                          {unit.nickname && <span className="text-xs text-gray-500 font-normal ml-2">S/N {unit.serial_number}</span>}
-                        </p>
+                        <p className="font-semibold truncate">{unitLabel(unit)}</p>
                         <p className="text-sm text-gray-400 truncate">
-                          {customers?.find(c => c.id === unit.customer_id)?.name}
-                          {unit.model ? ` · ${unit.model}` : ''}
-                          {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
+                          Serial: {unit.serial_number || '—'}
+                          {unit.nickname ? ` · ${unit.nickname}` : ''}
                         </p>
+                        <p className="text-sm text-orange-400 truncate">{company}</p>
                         {unit.problem_type && (
                           <p className="text-xs text-gray-500 mt-0.5 truncate">{unit.problem_type}</p>
                         )}
@@ -712,16 +712,21 @@ export default async function Home({
                         ) : (
                           <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
                         )}
-                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                          <p className="font-medium truncate">{unitLabel(unit)}</p>
-                          {unit.nickname && <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>}
-                          {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                            unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                              : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                              : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                              : 'bg-orange-500/20 text-orange-400'
-                          }`}>{unit.status}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium truncate">{unitLabel(unit)}</p>
+                            {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                              unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                                : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                                : 'bg-orange-500/20 text-orange-400'
+                            }`}>{unit.status}</span>
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Serial: {unit.serial_number || '—'}
+                            {unit.nickname ? ` · ${unit.nickname}` : ''}
+                          </p>
                         </div>
                       </summary>
                       <div className="px-4 sm:px-6 pb-5">
@@ -797,16 +802,16 @@ export default async function Home({
                   <form action={addFleetUnit} className="px-4 sm:px-6 pb-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <input type="hidden" name="customer_id" value={selectedCustomerId} />
                     <div>
+                      <label className="block text-xs text-gray-500 mb-1">Model</label>
+                      <input name="model" placeholder="e.g. RZ 752" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
                       <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
                       <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
                       <input name="nickname" placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Model</label>
-                      <input name="model" placeholder="e.g. RZ 752" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Equipment Type</label>
@@ -877,14 +882,10 @@ export default async function Home({
                                   <div className="h-10 w-10 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
                                 )}
                                 <div className="min-w-0">
-                                  <p className="font-medium truncate">
-                                    {unitLabel(unit)}
-                                    {unit.nickname && (
-                                      <span className="text-xs text-gray-500 font-normal ml-2">S/N {unit.serial_number}</span>
-                                    )}
-                                  </p>
+                                  <p className="font-medium truncate">{unitLabel(unit)}</p>
                                   <p className="text-xs text-gray-500 truncate">
-                                    {unit.model || '—'} · {unit.equipment_type || '—'}
+                                    Serial: {unit.serial_number || '—'}
+                                    {unit.nickname ? ` · ${unit.nickname}` : ''}
                                     {unit.hour_meter ? ` · ${unit.hour_meter} hrs` : ''}
                                   </p>
                                 </div>
