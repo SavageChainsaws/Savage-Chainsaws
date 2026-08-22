@@ -43,6 +43,7 @@ async function addUnit(formData: FormData) {
     status: 'Diagnosing',
     decision_seen: true,
     photo_url: photoUrl,
+    thumbnail_url: photoUrl,
     equipment_type: equipmentType || null,
     hour_meter: hourMeter || null,
     part_number: partNumber || null,
@@ -65,6 +66,7 @@ async function addFleetUnit(formData: FormData) {
   const lastServiceDate = formData.get('last_service_date') as string
   const fleetNotes = formData.get('fleet_notes') as string
   const partNumbers = formData.get('part_numbers') as string
+  const nickname = formData.get('nickname') as string
 
   await supabase.from('units').insert({
     serial_number: serial,
@@ -78,6 +80,7 @@ async function addFleetUnit(formData: FormData) {
     last_service_date: lastServiceDate || null,
     fleet_notes: fleetNotes || null,
     part_numbers: partNumbers || null,
+    nickname: nickname || null,
     history: stampHistory(null, 'Added to fleet inventory'),
   })
   revalidatePath('/')
@@ -91,14 +94,20 @@ async function updateFleetUnit(formData: FormData) {
   const lastServiceDate = formData.get('last_service_date') as string
   const purchaseDate = formData.get('purchase_date') as string
   const hourMeter = formData.get('hour_meter') as string
+  const nickname = formData.get('nickname') as string
+  const serial = formData.get('serial') as string
 
-  await supabase.from('units').update({
+  const update: any = {
     fleet_notes: fleetNotes || null,
     part_numbers: partNumbers || null,
     last_service_date: lastServiceDate || null,
     purchase_date: purchaseDate || null,
     hour_meter: hourMeter || null,
-  }).eq('id', id)
+    nickname: nickname || null,
+  }
+  if (serial?.trim()) update.serial_number = serial.trim()
+
+  await supabase.from('units').update(update).eq('id', id)
   revalidatePath('/')
 }
 
@@ -216,6 +225,14 @@ function groupLabel(n: number) {
   return 'Trimmers & Misc'
 }
 
+function unitLabel(unit: any) {
+  return unit.nickname || unit.serial_number
+}
+
+function unitImage(unit: any) {
+  return unit.thumbnail_url || unit.photo_url || null
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -315,15 +332,15 @@ export default async function Home({
   }
 
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
+    const img = unitImage(unit)
     return (
       <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
         <div className="flex gap-3 sm:gap-4">
-          {/* PHOTO — larger on desktop */}
           <div className="shrink-0">
-            {unit.photo_url ? (
-              <a href={unit.photo_url} target="_blank" rel="noreferrer">
+            {img ? (
+              <a href={img} target="_blank" rel="noreferrer">
                 <img
-                  src={unit.photo_url}
+                  src={img}
                   alt=""
                   className="h-14 w-14 sm:h-24 sm:w-24 object-cover rounded-lg border border-zinc-700"
                 />
@@ -345,7 +362,10 @@ export default async function Home({
                   {unit.equipment_type && <span className="text-gray-500"> · {unit.equipment_type}</span>}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-base sm:text-xl font-semibold truncate">{unit.serial_number}</p>
+                  <p className="text-base sm:text-xl font-semibold truncate">{unitLabel(unit)}</p>
+                  {unit.nickname && (
+                    <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>
+                  )}
                   {unit.is_priority && (
                     <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
                   )}
@@ -385,7 +405,6 @@ export default async function Home({
               </div>
             </div>
 
-            {/* NOTES — collapsed by default */}
             <details className="mt-2 group/notes">
               <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
                 Notes {unit.notes ? '· has notes' : ''}
@@ -457,78 +476,37 @@ export default async function Home({
             <p className="text-xs text-gray-500 uppercase tracking-wider">Needs Approval</p>
             <p className="text-2xl md:text-3xl font-bold text-yellow-400">{needsApproval}</p>
           </Link>
-          <Link href="/?status=Repair%20Requested" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-400/60 ${statusFilter === 'Repair Requested' ? 'border-blue-400' : 'border-zinc-800'}`}>
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Repair Req.</p>
-            <p className="text-2xl md:text-3xl font-bold text-blue-300">{repairRequested}</p>
-          </Link>
           <Link href="/?status=In%20Repair" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-500/60 ${statusFilter === 'In Repair' ? 'border-blue-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">In Repair</p>
             <p className="text-2xl md:text-3xl font-bold text-blue-400">{inRepair}</p>
           </Link>
+          <Link href="/?status=Repair%20Requested" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-blue-400/60 ${statusFilter === 'Repair Requested' ? 'border-blue-400' : 'border-zinc-800'}`}>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Requested</p>
+            <p className="text-2xl md:text-3xl font-bold text-blue-300">{repairRequested}</p>
+          </Link>
           <Link href="/?status=Ready%20for%20Pickup" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-green-400/60 ${statusFilter === 'Ready for Pickup' ? 'border-green-400' : 'border-zinc-800'}`}>
-            <p className="text-xs text-gray-500 uppercase tracking-wider">Ready Pickup</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Ready</p>
             <p className="text-2xl md:text-3xl font-bold text-green-300">{readyPickup}</p>
           </Link>
           <Link href="/?status=Completed" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-green-500/60 ${statusFilter === 'Completed' ? 'border-green-500' : 'border-zinc-800'}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wider">Completed</p>
             <p className="text-2xl md:text-3xl font-bold text-green-400">{completed}</p>
           </Link>
-          <Link href="/?status=Priority" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500 ${statusFilter === 'Priority' ? 'border-orange-500' : 'border-orange-500/40'}`}>
-            <p className="text-xs text-orange-400/80 uppercase tracking-wider">Priority</p>
-            <p className="text-2xl md:text-3xl font-bold text-orange-400">{priorityCount}</p>
+          <Link href="/?status=Priority" className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500/60 ${statusFilter === 'Priority' ? 'border-orange-500' : 'border-zinc-800'}`}>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">Priority</p>
+            <p className="text-2xl md:text-3xl font-bold text-orange-500">{priorityCount}</p>
           </Link>
-          <Link href={selectedCustomerId ? `/?customer=${selectedCustomerId}&status=Units` : '/?status=Units'} className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-400 ${statusFilter === 'Units' ? 'border-orange-400' : 'border-zinc-800'}`}>
-            <p className="text-xs text-gray-400 uppercase tracking-wider">Units</p>
+          <Link href={selectedCustomerId ? `/?customer=${selectedCustomerId}&status=Units` : '/?status=Units'} className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-400/60 ${statusFilter === 'Units' ? 'border-orange-400' : 'border-zinc-800'}`}>
+            <p className="text-xs text-gray-500 uppercase tracking-wider">All Units</p>
             <p className="text-2xl md:text-3xl font-bold text-orange-300">{unitsCount}</p>
           </Link>
         </div>
 
-        {messages && messages.length > 0 && (
-          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-orange-400">New Messages ({messages.length})</h2>
-            </div>
-            <div className="divide-y divide-zinc-800">
-              {messages.map((msg: any) => (
-                <div key={msg.id} className="px-6 py-4 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-orange-400 font-medium">{msg.customer_name}</p>
-                    <p className="text-sm text-gray-300 mt-1">{msg.message}</p>
-                    <p className="text-xs text-gray-500 mt-2">{formatDate(msg.created_at)}</p>
-                  </div>
-                  <form action={markMessageRead}>
-                    <input type="hidden" name="id" value={msg.id} />
-                    <button type="submit" className="text-xs text-gray-400 hover:text-white whitespace-nowrap">Mark Read</button>
-                  </form>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {statusFilter && statusFilter !== 'Units' && (
-          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-orange-400">{statusFilter} ({statusFilteredUnits.length})</h2>
-              <Link href="/" className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition">← Back to Action Center</Link>
-            </div>
-            {statusFilteredUnits.length === 0 ? (
-              <p className="px-6 py-8 text-gray-500 text-sm">No units in this status.</p>
-            ) : (
-              <div className="divide-y divide-zinc-800">
-                {statusFilteredUnits.map(unit => (
-                  <ActionCard key={unit.id} unit={unit} borderColor={
-                    statusFilter === 'Priority' || statusFilter === 'Diagnosing' ? 'border-orange-500'
-                      : statusFilter === 'Needs Approval' ? 'border-yellow-500'
-                      : statusFilter === 'In Repair' || statusFilter === 'Repair Requested' ? 'border-blue-400'
-                      : statusFilter === 'Completed' || statusFilter === 'Ready for Pickup' ? 'border-green-400'
-                      : 'border-orange-500'
-                  }>
-                    <p className="text-sm text-gray-400">{unit.problem_type || unit.notes || unit.status}</p>
-                  </ActionCard>
-                ))}
-              </div>
-            )}
+          <div className="mb-6">
+            <Link href={selectedCustomerId ? `/?customer=${selectedCustomerId}` : '/'} className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition inline-block">
+              ← Back to {selectedCustomerId ? 'customer' : 'Action Center'}
+            </Link>
           </div>
         )}
 
@@ -547,12 +525,21 @@ export default async function Home({
               <div className="divide-y divide-zinc-800">
                 {[...statusFilteredUnits].sort((a, b) => equipmentGroup(a.equipment_type) - equipmentGroup(b.equipment_type)).map(unit => {
                   const color = getFleetColor(unit)
+                  const img = unitImage(unit)
                   return (
                     <div key={unit.id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-start gap-3">
                         <span className="text-xl">{color === 'red' ? '🔴' : color === 'green' ? '🟢' : '🟠'}</span>
+                        {img ? (
+                          <img src={img} alt="" className="h-12 w-12 object-cover rounded-lg border border-zinc-700 shrink-0" />
+                        ) : (
+                          <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
+                        )}
                         <div>
-                          <p className="font-semibold">{unit.serial_number}</p>
+                          <p className="font-semibold">
+                            {unitLabel(unit)}
+                            {unit.nickname && <span className="text-xs text-gray-500 font-normal ml-2">S/N {unit.serial_number}</span>}
+                          </p>
                           <p className="text-sm text-gray-400">{unit.model || '—'} · {unit.equipment_type || '—'}</p>
                           <p className="text-xs text-gray-500 mt-1">
                             {customers?.find(c => c.id === unit.customer_id)?.name}
@@ -692,67 +679,73 @@ export default async function Home({
                 {repairUnits.length === 0 && (
                   <p className="px-6 py-8 text-gray-500 text-sm">No active repair units.</p>
                 )}
-                {repairUnits.map(unit => (
-                  <details key={unit.id} className="group/item">
-                    <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
-                      {unit.photo_url ? (
-                        <img src={unit.photo_url} alt="" className="h-12 w-12 object-cover rounded-lg border border-zinc-700 shrink-0" />
-                      ) : (
-                        <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        <p className="font-medium truncate">{unit.serial_number}</p>
-                        {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                          unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                            : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                            : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                            : 'bg-orange-500/20 text-orange-400'
-                        }`}>{unit.status}</span>
-                      </div>
-                    </summary>
-                    <div className="px-4 sm:px-6 pb-5">
-                      <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
-                        <input type="hidden" name="id" value={unit.id} />
-                        <div className="flex flex-wrap items-center gap-3">
-                          <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
-                            <option value="Registered">Registered</option>
-                            <option value="Repair Requested">Repair Requested</option>
-                            <option value="Diagnosing">Diagnosing</option>
-                            <option value="Needs Approval">Needs Approval</option>
-                            <option value="In Repair">In Repair</option>
-                            <option value="Ready for Pickup">Ready for Pickup</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Fleet">Fleet</option>
-                          </select>
-                          <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
-                            <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
-                            Priority
-                          </label>
-                          <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-                          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
-                          <DeleteUnitButton id={unit.id} />
+                {repairUnits.map(unit => {
+                  const img = unitImage(unit)
+                  return (
+                    <details key={unit.id} className="group/item">
+                      <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
+                        {img ? (
+                          <img src={img} alt="" className="h-12 w-12 object-cover rounded-lg border border-zinc-700 shrink-0" />
+                        ) : (
+                          <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
+                        )}
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <p className="font-medium truncate">{unitLabel(unit)}</p>
+                          {unit.nickname && (
+                            <span className="text-xs text-gray-500">S/N {unit.serial_number}</span>
+                          )}
+                          {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                            unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                              : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                              : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                              : 'bg-orange-500/20 text-orange-400'
+                          }`}>{unit.status}</span>
                         </div>
-                        <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-                        {(unit.status === 'Needs Approval' || unit.status === 'Completed' || unit.status === 'Ready for Pickup') && (
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
-                            <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
+                      </summary>
+                      <div className="px-4 sm:px-6 pb-5">
+                        <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
+                          <input type="hidden" name="id" value={unit.id} />
+                          <div className="flex flex-wrap items-center gap-3">
+                            <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
+                              <option value="Registered">Registered</option>
+                              <option value="Repair Requested">Repair Requested</option>
+                              <option value="Diagnosing">Diagnosing</option>
+                              <option value="Needs Approval">Needs Approval</option>
+                              <option value="In Repair">In Repair</option>
+                              <option value="Ready for Pickup">Ready for Pickup</option>
+                              <option value="Completed">Completed</option>
+                              <option value="Fleet">Fleet</option>
+                            </select>
+                            <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
+                              <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
+                              Priority
+                            </label>
+                            <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+                            <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
+                            <DeleteUnitButton id={unit.id} />
+                          </div>
+                          <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                          {(unit.status === 'Needs Approval' || unit.status === 'Completed' || unit.status === 'Ready for Pickup') && (
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
+                              <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
+                            </div>
+                          )}
+                          {unit.invoice_url && (
+                            <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file →</a>
+                          )}
+                        </form>
+                        {unit.history && (
+                          <div className="mt-4 border-t border-zinc-800 pt-3">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
+                            <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
                           </div>
                         )}
-                        {unit.invoice_url && (
-                          <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file →</a>
-                        )}
-                      </form>
-                      {unit.history && (
-                        <div className="mt-4 border-t border-zinc-800 pt-3">
-                          <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
-                          <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
-                        </div>
-                      )}
-                    </div>
-                  </details>
-                ))}
+                      </div>
+                    </details>
+                  )
+                })}
               </div>
             </details>
 
@@ -775,6 +768,10 @@ export default async function Home({
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
                       <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
+                      <input name="nickname" placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Model</label>
@@ -831,6 +828,7 @@ export default async function Home({
                       const showHeader = g !== lastGroup
                       if (showHeader) lastGroup = g
                       const color = getFleetColor(unit)
+                      const img = unitImage(unit)
                       return (
                         <div key={unit.id}>
                           {showHeader && (
@@ -842,8 +840,18 @@ export default async function Home({
                             <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/40 transition flex items-center justify-between gap-2">
                               <div className="flex items-center gap-3 min-w-0">
                                 <span>{color === 'red' ? '🔴' : color === 'green' ? '🟢' : '🟠'}</span>
+                                {img ? (
+                                  <img src={img} alt="" className="h-10 w-10 object-cover rounded-lg border border-zinc-700 shrink-0" />
+                                ) : (
+                                  <div className="h-10 w-10 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
+                                )}
                                 <div className="min-w-0">
-                                  <p className="font-medium truncate">{unit.serial_number}</p>
+                                  <p className="font-medium truncate">
+                                    {unitLabel(unit)}
+                                    {unit.nickname && (
+                                      <span className="text-xs text-gray-500 font-normal ml-2">S/N {unit.serial_number}</span>
+                                    )}
+                                  </p>
                                   <p className="text-xs text-gray-500 truncate">
                                     {unit.model || '—'} · {unit.equipment_type || '—'}
                                     {unit.hour_meter ? ` · ${unit.hour_meter} hrs` : ''}
@@ -864,6 +872,14 @@ export default async function Home({
                               <form action={updateFleetUnit} className="space-y-3">
                                 <input type="hidden" name="id" value={unit.id} />
                                 <div className="grid sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Nickname</label>
+                                    <input name="nickname" defaultValue={unit.nickname || ''} placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Serial Number</label>
+                                    <input name="serial" defaultValue={unit.serial_number || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                  </div>
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Purchase Date</label>
                                     <input type="date" name="purchase_date" defaultValue={unit.purchase_date || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
