@@ -54,7 +54,6 @@ export default function CustomerPortal() {
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
 
-  // Check-in form
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
   const [unitType, setUnitType] = useState('Chainsaw')
@@ -63,14 +62,12 @@ export default function CustomerPortal() {
   const [notes, setNotes] = useState('')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
 
-  // Add to fleet form
   const [fleetSerial, setFleetSerial] = useState('')
   const [fleetModel, setFleetModel] = useState('')
   const [fleetType, setFleetType] = useState('Chainsaw')
   const [fleetNickname, setFleetNickname] = useState('')
   const [fleetThumb, setFleetThumb] = useState<File | null>(null)
 
-  // Unit detail
   const [editNickname, setEditNickname] = useState('')
   const [thumbFile, setThumbFile] = useState<File | null>(null)
   const [thumbPreview, setThumbPreview] = useState<string | null>(null)
@@ -240,6 +237,7 @@ export default function CustomerPortal() {
     setSelectedUnit(unit)
     setEditNickname(unit.nickname || '')
     setThumbFile(null)
+    if (thumbPreview) URL.revokeObjectURL(thumbPreview)
     setThumbPreview(null)
     setServiceNote('')
     setMessage(null)
@@ -250,6 +248,7 @@ export default function CustomerPortal() {
   function closeUnit() {
     setSelectedUnit(null)
     setThumbFile(null)
+    if (thumbPreview) URL.revokeObjectURL(thumbPreview)
     setThumbPreview(null)
     setServiceNote('')
   }
@@ -618,7 +617,6 @@ export default function CustomerPortal() {
           </button>
         </div>
 
-        {/* Add to Fleet */}
         {showAddFleet && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-orange-400 mb-1">Add Unit to Fleet</h2>
@@ -678,7 +676,6 @@ export default function CustomerPortal() {
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={e => setFleetThumb(e.target.files?.[0] || null)}
                   className="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
                 />
@@ -696,7 +693,6 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {/* Check-in form */}
         {showCheckIn && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-orange-400 mb-1">Check In a Unit</h2>
@@ -765,7 +761,6 @@ export default function CustomerPortal() {
                 <input
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={e => setPhotoFile(e.target.files?.[0] || null)}
                   className="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
                 />
@@ -793,7 +788,6 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {/* Unit detail panel */}
         {selectedUnit && (
           <div className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-6 space-y-4">
             <div className="flex items-start justify-between gap-3">
@@ -850,41 +844,39 @@ export default function CustomerPortal() {
 
             <div>
               <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                {(thumbPreview || selectedUnit.thumbnail_url) && (
+              <div className="flex flex-col gap-3">
+                {/* Only show a NEW pick preview here — current thumb is already at top */}
+                {thumbPreview && (
                   <img
-                    src={thumbPreview || selectedUnit.thumbnail_url!}
-                    alt=""
-                    className="h-20 w-20 object-cover rounded-lg border border-zinc-700"
+                    src={thumbPreview}
+                    alt="New thumbnail preview"
+                    className="h-24 w-24 object-cover rounded-lg border border-orange-500/50"
                   />
                 )}
-                <div className="flex flex-col gap-2">
-                  <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer">
-                    Choose Photo
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={e => onThumbPick(e.target.files?.[0] || null)}
-                    />
-                  </label>
-                  {thumbFile && (
-                    <button
-                      onClick={saveThumbnail}
-                      disabled={detailBusy}
-                      className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg"
-                    >
-                      {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
-                    </button>
-                  )}
-                  {thumbFile && (
-                    <p className="text-xs text-gray-400 truncate max-w-[200px]">{thumbFile.name}</p>
-                  )}
-                </div>
+                <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-full sm:w-auto">
+                  {thumbFile ? 'Choose Different Photo' : 'Choose Photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => onThumbPick(e.target.files?.[0] || null)}
+                  />
+                </label>
+                {thumbFile && (
+                  <button
+                    onClick={saveThumbnail}
+                    disabled={detailBusy}
+                    className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg w-full sm:w-auto"
+                  >
+                    {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
+                  </button>
+                )}
+                {thumbFile && (
+                  <p className="text-xs text-gray-400 truncate">{thumbFile.name}</p>
+                )}
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                This is the photo on your unit list (separate from service check-in photos).
+                Pick from library or take a new photo. Current thumbnail is shown at the top of this card.
               </p>
             </div>
 
@@ -957,7 +949,6 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {/* Active service units — always open */}
         <div>
           <h2 className="text-lg font-semibold text-orange-400 mb-3">
             In Service ({activeUnits.length})
@@ -973,7 +964,6 @@ export default function CustomerPortal() {
           )}
         </div>
 
-        {/* Fleet — collapsible */}
         <details className="group" open={fleetUnits.length > 0 && fleetUnits.length <= 6}>
           <summary className="cursor-pointer list-none flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 hover:border-orange-500/40 transition">
             <h2 className="text-lg font-semibold text-orange-300">
@@ -992,7 +982,6 @@ export default function CustomerPortal() {
           </div>
         </details>
 
-        {/* Other / completed — collapsible */}
         <details className="group">
           <summary className="cursor-pointer list-none flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 hover:border-orange-500/40 transition">
             <h2 className="text-lg font-semibold text-gray-300">
