@@ -18,10 +18,14 @@ type Unit = {
   problem_type: string | null
   equipment_type: string | null
   photo_url: string | null
+  thumbnail_url: string | null
   invoice_url: string | null
   created_at: string
   is_priority: boolean | null
   customer_id: string
+  nickname: string | null
+  archived: boolean | null
+  hour_meter: string | null
 }
 
 type Customer = {
@@ -39,8 +43,9 @@ export default function CustomerPortal() {
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
 
-  // Check-in form state
+  // Check-in form
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
   const [unitType, setUnitType] = useState('Chainsaw')
@@ -48,6 +53,12 @@ export default function CustomerPortal() {
   const [scheduled, setScheduled] = useState('')
   const [notes, setNotes] = useState('')
   const [photoFile, setPhotoFile] = useState<File | null>(null)
+
+  // Unit detail form
+  const [editNickname, setEditNickname] = useState('')
+  const [thumbFile, setThumbFile] = useState<File | null>(null)
+  const [serviceNote, setServiceNote] = useState('')
+  const [detailBusy, setDetailBusy] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -65,7 +76,6 @@ export default function CustomerPortal() {
 
     setUserEmail(user.email ?? null)
 
-    // Find customer by email
     const { data: cust } = await supabase
       .from('customers')
       .select('id, name, email')
@@ -85,6 +95,7 @@ export default function CustomerPortal() {
       .from('units')
       .select('*')
       .eq('customer_id', cust.id)
+      .or('archived.is.null,archived.eq.false')
       .order('created_at', { ascending: false })
 
     setUnits(unitData || [])
@@ -96,6 +107,19 @@ export default function CustomerPortal() {
     router.push('/login')
   }
 
+  async function uploadFile(file: File, prefix: string) {
+    const fileName = `${prefix}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+    const { error } = await supabase.storage
+      .from('invoices')
+      .upload(fileName, file, {
+        contentType: file.type || 'image/jpeg',
+        upsert: false,
+      })
+    if (error) throw error
+    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+    return publicUrl
+  }
+
   async function handleCheckIn(e: React.FormEvent) {
     e.preventDefault()
     if (!customer || !serial.trim()) return
@@ -105,22 +129,8 @@ export default function CustomerPortal() {
 
     try {
       let photoUrl: string | null = null
-
       if (photoFile) {
-        const fileName = `${customer.id}-${Date.now()}-${photoFile.name}`
-        const { error: uploadError } = await supabase.storage
-          .from('invoices')
-          .upload(fileName, photoFile, {
-            contentType: photoFile.type || 'image/jpeg',
-            upsert: false,
-          })
-
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('invoices')
-            .getPublicUrl(fileName)
-          photoUrl = publicUrl
-        }
+        photoUrl = await uploadFile(photoFile, customer.id)
       }
 
       const createdAt = scheduled
@@ -134,9 +144,11 @@ export default function CustomerPortal() {
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
         photo_url: photoUrl,
+        thumbnail_url: photoUrl, // first photo also becomes thumbnail if none set
         customer_id: customer.id,
         status: 'Repair Requested',
         decision_seen: true,
+        archived: false,
         created_at: createdAt,
       })
 
@@ -147,7 +159,6 @@ export default function CustomerPortal() {
         return
       }
 
-      // Reset form
       setSerial('')
       setModel('')
       setUnitType('Chainsaw')
@@ -164,6 +175,131 @@ export default function CustomerPortal() {
     }
 
     setSubmitting(false)
+  }
+
+  function openUnit(unit: Unit) {
+    setSelectedUnit(unit)
+    setEditNickname(unit.nickname || '')
+    setThumbFile(null)
+    setServiceNote('')
+    setMessage(null)
+  }
+
+  function closeUnit() {
+    setSelectedUnit(null)
+    setThumbFile(null)
+    setServiceNote('')
+  }
+
+  async function saveNickname() {
+    if (!selectedUnit) return
+    setDetailBusy(true)
+    const { error } = await supabase
+      .from('units')
+      .update({ nickname: editNickname.trim() || null })
+      .eq('id', selectedUnit.id)
+    setDetailBusy(false)
+    if (error) {
+      setMessage('Could not save nickname.')
+      return
+    }
+    setMessage('Nickname saved.')
+    await loadData()
+    setSelectedUnit(prev => prev ? { ...prev, nickname: editNickname.trim() || null } : null)
+  }
+
+  async function saveThumbnail() {
+    if (!selectedUnit || !thumbFile) return
+    setDetailBusy(true)
+    try {
+      const url = await uploadFile(thumbFile, `thumb-${selectedUnit.id}`)
+      const { error } = await supabase
+        .from('units')
+        .update({ thumbnail_url: url })
+        .eq('id', selectedUnit.id)
+      if (error) throw error
+      setMessage('Thumbnail updated.')
+      setThumbFile(null)
+      await loadData()
+      setSelectedUnit(prev => prev ? { ...prev, thumbnail_url: url } : null)
+    } catch (err) {
+      console.error(err)
+      setMessage('Could not upload thumbnail.')
+    }
+    setDetailBusy(false)
+  }
+
+  async function requestService() {
+    if (!selectedUnit || !customer) return
+    setDetailBusy(true)
+
+    const name = customer.name || userEmail || 'Customer'
+    const note = serviceNote.trim() || 'Customer requested tune-up / service'
+    const historyLine = `${new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    })} — Service requested by ${name}: ${note}`
+
+    const { data: existing } = await supabase
+      .from('units')
+      .select('notes, history')
+      .eq('id', selectedUnit.id)
+      .single()
+
+    const { error } = await supabase
+      .from('units')
+      .update({
+        status: 'Repair Requested',
+        problem_type: note,
+        notes: existing?.notes ? `${note}\n${existing.notes}` : note,
+        decision_seen: true,
+        history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
+      })
+      .eq('id', selectedUnit.id)
+
+    setDetailBusy(false)
+    if (error) {
+      console.error(error)
+      setMessage('Could not request service.')
+      return
+    }
+    setMessage('Service requested. Jesse has been notified.')
+    await loadData()
+    closeUnit()
+  }
+
+  async function archiveUnit() {
+    if (!selectedUnit || !customer) return
+    if (!confirm('Remove this unit from your list? Jesse will still keep a history of it.')) return
+
+    setDetailBusy(true)
+    const name = customer.name || userEmail || 'Customer'
+    const historyLine = `${new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    })} — Archived by ${name} (removed from customer list)`
+
+    const { data: existing } = await supabase
+      .from('units')
+      .select('history')
+      .eq('id', selectedUnit.id)
+      .single()
+
+    const { error } = await supabase
+      .from('units')
+      .update({
+        archived: true,
+        history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
+      })
+      .eq('id', selectedUnit.id)
+
+    setDetailBusy(false)
+    if (error) {
+      console.error(error)
+      setMessage('Could not remove unit.')
+      return
+    }
+    setMessage('Unit removed from your list.')
+    closeUnit()
+    await loadData()
   }
 
   async function handleDecision(unitId: string, decision: 'approve' | 'upgrade' | 'equivalent' | 'deny') {
@@ -194,10 +330,7 @@ export default function CustomerPortal() {
       .single()
 
     const historyLine = `${new Date().toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     })} — ${note}`
 
     const { error } = await supabase
@@ -206,9 +339,7 @@ export default function CustomerPortal() {
         status,
         notes: existing?.notes ? `${note}\n${existing.notes}` : note,
         decision_seen: false,
-        history: existing?.history
-          ? `${historyLine}\n${existing.history}`
-          : historyLine,
+        history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
       })
       .eq('id', unitId)
 
@@ -234,6 +365,14 @@ export default function CustomerPortal() {
   const completed = units.filter(u =>
     ['Completed', 'Ready for Pickup'].includes(u.status)
   ).length
+
+  function displayName(u: Unit) {
+    return u.nickname || u.serial_number
+  }
+
+  function unitImage(u: Unit) {
+    return u.thumbnail_url || u.photo_url
+  }
 
   if (loading) {
     return (
@@ -270,7 +409,6 @@ export default function CustomerPortal() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
-      {/* Header */}
       <header className="border-b border-zinc-800 px-4 sm:px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -298,7 +436,6 @@ export default function CustomerPortal() {
       </header>
 
       <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
-        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
             <p className="text-xs text-gray-500 uppercase">Total Units</p>
@@ -324,17 +461,18 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {/* Check-in toggle */}
         <div className="flex justify-end">
           <button
-            onClick={() => setShowCheckIn(!showCheckIn)}
+            onClick={() => {
+              setShowCheckIn(!showCheckIn)
+              closeUnit()
+            }}
             className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
           >
             {showCheckIn ? 'Close Check-In' : 'Check In a Unit'}
           </button>
         </div>
 
-        {/* Check-in form */}
         {showCheckIn && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
             <h2 className="text-lg font-semibold text-orange-400 mb-1">Check In a Unit</h2>
@@ -349,7 +487,6 @@ export default function CustomerPortal() {
                   value={serial}
                   onChange={e => setSerial(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Serial number"
                 />
               </div>
               <div>
@@ -387,7 +524,7 @@ export default function CustomerPortal() {
                   value={problem}
                   onChange={e => setProblem(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Won't start, loss of power, etc."
+                  placeholder="Won't start, tune-up, etc."
                 />
               </div>
               <div>
@@ -431,6 +568,155 @@ export default function CustomerPortal() {
           </div>
         )}
 
+        {/* Unit detail panel */}
+        {selectedUnit && (
+          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex gap-3 min-w-0">
+                {unitImage(selectedUnit) ? (
+                  <img
+                    src={unitImage(selectedUnit)!}
+                    alt=""
+                    className="h-16 w-16 object-cover rounded-lg border border-zinc-700 shrink-0"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <p className="font-semibold text-lg truncate">{displayName(selectedUnit)}</p>
+                  <p className="text-sm text-gray-400">
+                    S/N: {selectedUnit.serial_number}
+                    {selectedUnit.model ? ` · ${selectedUnit.model}` : ''}
+                  </p>
+                  <span className={`inline-block mt-1 text-xs px-2.5 py-1 rounded-full font-medium ${
+                    selectedUnit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
+                      : selectedUnit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
+                      : selectedUnit.status === 'Completed' || selectedUnit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                      : 'bg-orange-500/20 text-orange-400'
+                  }`}>{selectedUnit.status}</span>
+                </div>
+              </div>
+              <button
+                onClick={closeUnit}
+                className="text-gray-400 hover:text-white text-sm border border-zinc-700 rounded-lg px-3 py-1.5"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Nickname */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nickname (your label)</label>
+              <div className="flex gap-2">
+                <input
+                  value={editNickname}
+                  onChange={e => setEditNickname(e.target.value)}
+                  placeholder="e.g. Shop mower #2"
+                  className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={saveNickname}
+                  disabled={detailBusy}
+                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+
+            {/* Thumbnail */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={e => setThumbFile(e.target.files?.[0] || null)}
+                  className="text-sm text-gray-400 file:mr-2 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
+                />
+                <button
+                  onClick={saveThumbnail}
+                  disabled={!thumbFile || detailBusy}
+                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg"
+                >
+                  Upload Thumbnail
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">This is the photo shown on your unit list (separate from service check-in photos).</p>
+            </div>
+
+            {/* Request service / tune-up */}
+            {(selectedUnit.status === 'Fleet' ||
+              selectedUnit.status === 'Completed' ||
+              selectedUnit.status === 'Registered') && (
+              <div className="border-t border-zinc-800 pt-4">
+                <label className="block text-xs text-gray-500 mb-1">Request service / tune-up</label>
+                <input
+                  value={serviceNote}
+                  onChange={e => setServiceNote(e.target.value)}
+                  placeholder="e.g. Due for 3-month tune-up, blade sharpening..."
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"
+                />
+                <button
+                  onClick={requestService}
+                  disabled={detailBusy}
+                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                >
+                  Schedule Service
+                </button>
+              </div>
+            )}
+
+            {/* Approval decisions */}
+            {selectedUnit.status === 'Needs Approval' && (
+              <div className="border-t border-zinc-800 pt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleDecision(selectedUnit.id, 'approve')}
+                  className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                >
+                  Approve Repair
+                </button>
+                <button
+                  onClick={() => handleDecision(selectedUnit.id, 'upgrade')}
+                  className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                >
+                  Upgrade
+                </button>
+                <button
+                  onClick={() => handleDecision(selectedUnit.id, 'equivalent')}
+                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                >
+                  Same / Equivalent
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('Deny this repair? A $49.99 diagnosis fee will be charged.')) {
+                      handleDecision(selectedUnit.id, 'deny')
+                    }
+                  }}
+                  className="bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                >
+                  Deny ($49.99 diag)
+                </button>
+              </div>
+            )}
+
+            {/* Remove from list */}
+            <div className="border-t border-zinc-800 pt-4">
+              <button
+                onClick={archiveUnit}
+                disabled={detailBusy}
+                className="text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
+              >
+                Remove from my list
+              </button>
+              <p className="text-xs text-gray-500 mt-1">
+                Removes it from your view only. Jesse keeps a service history.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Unit list */}
         <div>
           <h2 className="text-lg font-semibold text-orange-400 mb-3">Your Units</h2>
@@ -439,37 +725,38 @@ export default function CustomerPortal() {
           ) : (
             <div className="space-y-3">
               {units.map(unit => (
-                <div
+                <button
                   key={unit.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex gap-4"
+                  type="button"
+                  onClick={() => openUnit(unit)}
+                  className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-4 flex gap-4 transition"
                 >
-                  {/* Photo */}
                   <div className="shrink-0">
-                    {unit.photo_url ? (
-                      <a href={unit.photo_url} target="_blank" rel="noreferrer">
-                        <img
-                          src={unit.photo_url}
-                          alt=""
-                          className="h-16 w-16 sm:h-20 sm:w-20 object-cover rounded-lg border border-zinc-700"
-                        />
-                      </a>
+                    {unitImage(unit) ? (
+                      <img
+                        src={unitImage(unit)!}
+                        alt=""
+                        className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg border border-zinc-700"
+                      />
                     ) : (
-                      <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-lg border border-zinc-700 bg-zinc-800" />
+                      <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-lg border border-zinc-700 bg-zinc-800" />
                     )}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <p className="font-semibold text-lg">{unit.serial_number}</p>
-                      {unit.is_priority && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">
-                          PRIORITY
-                        </span>
+                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                      <p className="font-semibold text-base sm:text-lg truncate">
+                        {displayName(unit)}
+                      </p>
+                      {unit.nickname && (
+                        <span className="text-xs text-gray-500 truncate">S/N {unit.serial_number}</span>
                       )}
                       <span
                         className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                           unit.status === 'Needs Approval'
                             ? 'bg-yellow-500/20 text-yellow-400'
+                            : unit.status === 'Fleet'
+                            ? 'bg-zinc-600 text-gray-300'
                             : unit.status === 'Completed' || unit.status === 'Ready for Pickup'
                             ? 'bg-green-500/20 text-green-400'
                             : unit.status === 'In Repair'
@@ -486,62 +773,17 @@ export default function CustomerPortal() {
                       {unit.model || '—'}
                       {unit.equipment_type ? ` · ${unit.equipment_type}` : ''}
                     </p>
-                    {unit.problem_type && (
+                    {unit.problem_type && unit.status !== 'Fleet' && (
                       <p className="text-sm text-gray-500 mt-0.5">Problem: {unit.problem_type}</p>
                     )}
-                    {unit.notes && (
-                      <p className="text-sm text-gray-400 mt-1 line-clamp-2">{unit.notes}</p>
-                    )}
-                    {unit.invoice_url && (
-                      <a
-                        href={unit.invoice_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-block mt-2 text-xs text-orange-400 hover:text-orange-300"
-                      >
-                        View invoice / photo →
-                      </a>
-                    )}
-
-                    {/* Decision buttons when Needs Approval */}
                     {unit.status === 'Needs Approval' && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleDecision(unit.id, 'approve')}
-                          className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                        >
-                          Approve Repair
-                        </button>
-                        <button
-                          onClick={() => handleDecision(unit.id, 'upgrade')}
-                          className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                        >
-                          Upgrade
-                        </button>
-                        <button
-                          onClick={() => handleDecision(unit.id, 'equivalent')}
-                          className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                        >
-                          Same / Equivalent
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (
-                              confirm(
-                                'Deny this repair? A $49.99 diagnosis fee will be charged.'
-                              )
-                            ) {
-                              handleDecision(unit.id, 'deny')
-                            }
-                          }}
-                          className="bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                        >
-                          Deny ($49.99 diag)
-                        </button>
-                      </div>
+                      <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide →</p>
+                    )}
+                    {(unit.status === 'Fleet' || unit.status === 'Completed') && (
+                      <p className="text-xs text-gray-500 mt-1">Tap to schedule service or edit →</p>
                     )}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
