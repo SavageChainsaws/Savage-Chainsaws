@@ -26,6 +26,7 @@ export default function SignupPage() {
 
     const cleanEmail = email.trim().toLowerCase()
     const cleanName = companyName.trim()
+    const cleanPhone = phone.trim() || null
 
     if (!cleanName) {
       setError('Business / company name is required.')
@@ -45,7 +46,7 @@ export default function SignupPage() {
       options: {
         data: {
           company_name: cleanName,
-          phone: phone.trim() || null,
+          phone: cleanPhone,
         },
       },
     })
@@ -58,10 +59,11 @@ export default function SignupPage() {
 
     const userId = authData.user?.id ?? null
 
-    // 2) Create customer row (name + email + auth_user_id)
+    // 2) Create company row so portal works immediately
     const { error: customerError } = await supabase.from('customers').insert({
       name: cleanName,
       email: cleanEmail,
+      phone: cleanPhone,
       auth_user_id: userId,
     })
 
@@ -69,20 +71,20 @@ export default function SignupPage() {
       const msg = (customerError.message || '').toLowerCase()
       if (!msg.includes('duplicate') && !msg.includes('unique')) {
         setError(
-          `Account created, but company record failed: ${customerError.message}. Tell Jesse to add ${cleanEmail} in the customers table.`
+          `Account created, but company setup failed: ${customerError.message}. Contact Jesse with this email: ${cleanEmail}`
         )
         setLoading(false)
         return
       }
     }
 
-    // 3) Continue
+    // 3) Into the portal (or login if email confirm is on)
     if (authData.session) {
       router.push('/customer')
       router.refresh()
     } else {
       setLoading(false)
-      alert('Account created. Check your email if confirmation is required, then log in.')
+      alert('Account created. Log in to open your portal.')
       router.push('/login')
     }
   }
@@ -158,7 +160,7 @@ export default function SignupPage() {
           </div>
 
           <p className="text-xs text-gray-500 bg-zinc-800/80 rounded-lg px-3 py-2">
-            Jesse will see your company in the admin list so he can start adding your units.
+            After you create this account you can open your portal right away. Jesse will see your company and can add units.
           </p>
 
           {error && (
