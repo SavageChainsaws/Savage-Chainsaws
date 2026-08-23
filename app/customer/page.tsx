@@ -741,6 +741,7 @@ export default function CustomerPortal() {
           >
             {showAddFleet ? 'Close' : 'Add to Fleet'}
           </button>
+<AppNav mode="customer" />
           <button
             onClick={() => {
               setShowCheckIn(!showCheckIn)

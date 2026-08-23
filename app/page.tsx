@@ -1,3 +1,5 @@
+'use client'
+
 import { createClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { Suspense } from 'react'
@@ -7,6 +9,7 @@ import LastViewedBanner from './components/LastViewedBanner'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
+import AppNav from './components/AppNav'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -477,6 +480,7 @@ export default async function Home({
               </select>
               <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Switch</button>
             </form>
+<AppNav mode="admin" />
             <AdminLogout />
           </div>
         </div>
