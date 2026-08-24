@@ -33,7 +33,13 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/customer')
+         const { data: userData } = await supabase.auth.getUser()
+      const email = userData.user?.email?.toLowerCase() || ''
+      if (email === 'jess.baldonado@me.com') {
+        router.push('/')
+      } else {
+        router.push('/customer')
+      }
   }
 
   return (

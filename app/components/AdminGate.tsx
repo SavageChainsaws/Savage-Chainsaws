@@ -19,19 +19,17 @@ export default function AdminGate() {
   useEffect(() => {
     async function check() {
       const { data } = await supabase.auth.getUser()
-      const email = data.user?.email?.toLowerCase()
-      if (!email) return
+      const user = data.user
+      const email = user?.email?.toLowerCase() || ''
+
+      if (!user || !email) {
+        router.replace('/login')
+        return
+      }
+
       if (ADMIN_EMAILS.includes(email)) return
 
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('id')
-        .or(`email.ilike.${email},auth_user_id.eq.${data.user.id}`)
-        .maybeSingle()
-
-      if (customer) {
-        router.replace('/customer')
-      }
+      router.replace('/customer')
     }
 
     check()
