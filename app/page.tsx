@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { Suspense } from 'react'
 import Link from 'next/link'
 import InactivityRedirect from './components/InactivityRedirect'
+import AdminGate from './components/AdminGate'
 import LastViewedBanner from './components/LastViewedBanner'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
@@ -460,6 +461,7 @@ export default async function Home({
   return (
     <main className="min-h-screen bg-transparent text-white p-4 sm:p-6 md:p-10">
       <Suspense fallback={null}><InactivityRedirect /></Suspense>
+<AdminGate />
 
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 md:mb-10">
