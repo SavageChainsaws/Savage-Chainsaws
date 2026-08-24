@@ -4,8 +4,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Savage Chainsaws',
     short_name: 'Savage Chainsaws',
-    description: 'Unit Tracking Dashboard for Savage Chainsaws',
-    start_url: '/',
+    description: 'Unit tracking for Savage Chainsaws customers',
+    start_url: '/login',
     display: 'standalone',
     background_color: '#000000',
     theme_color: '#f97316',
