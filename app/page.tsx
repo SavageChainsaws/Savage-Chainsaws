@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient } from '@supabase/supabase-js'
-import { revalidatePath } from 'next/cache'
+
 import { Suspense } from 'react'
 import Link from 'next/link'
 import InactivityRedirect from './components/InactivityRedirect'
