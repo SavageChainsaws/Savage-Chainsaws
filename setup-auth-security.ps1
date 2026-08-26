@@ -1,4 +1,224 @@
-﻿import { revalidatePath } from 'next/cache'
+# Savage Chainsaws - auth security update
+# Run this from inside your project folder:
+#   cd "C:\Users\JessB\savage-chainsaws"
+# then paste this whole script into PowerShell and press Enter.
+
+Write-Host "Creating folders..." -ForegroundColor Cyan
+New-Item -ItemType Directory -Force -Path "lib\supabase" | Out-Null
+New-Item -ItemType Directory -Force -Path "app\login" | Out-Null
+
+Write-Host "Writing lib\supabase\client.ts..." -ForegroundColor Cyan
+$lib_supabase_client_ts = @'
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+'@
+Set-Content -Path "lib\supabase\client.ts" -Value $lib_supabase_client_ts -Encoding UTF8
+
+Write-Host "Writing lib\supabase\server.ts..." -ForegroundColor Cyan
+$lib_supabase_server_ts = @'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // setAll called from a Server Component — safe to ignore,
+            // middleware.ts below handles refreshing the session.
+          }
+        },
+      },
+    }
+  )
+}
+
+// Returns { user, isAdmin } for use in Server Components / Server Actions.
+export async function getSessionInfo() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { supabase, user: null, isAdmin: false }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  return { supabase, user, isAdmin: profile?.role === 'admin' }
+}
+'@
+Set-Content -Path "lib\supabase\server.ts" -Value $lib_supabase_server_ts -Encoding UTF8
+
+Write-Host "Writing middleware.ts..." -ForegroundColor Cyan
+$middleware_ts = @'
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({ request })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          response = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  // Refreshes the session cookie if needed — required for SSR auth to work.
+  await supabase.auth.getUser()
+
+  return response
+}
+
+export const config = {
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|images/).*)',
+  ],
+}
+'@
+Set-Content -Path "middleware.ts" -Value $middleware_ts -Encoding UTF8
+
+Write-Host "Writing app\login\page.tsx..." -ForegroundColor Cyan
+$login_page_tsx = @'
+'use client'
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+
+const supabase = createClient()
+
+export default function LoginPage() {
+  const router = useRouter()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (error) {
+      setError(error.message)
+      setLoading(false)
+      return
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setError('Login failed. Please try again.')
+      setLoading(false)
+      return
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    router.push(profile?.role === 'admin' ? '/' : '/customer')
+    router.refresh()
+  }
+
+  return (
+    <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <img src="/images/logo.png" alt="Savage Chainsaws" className="h-16 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold">
+            SAVAGE <span className="text-orange-500">CHAINSAWS</span>
+          </h1>
+          <p className="text-gray-400 mt-1 text-sm">Customer Login</p>
+        </div>
+        <form onSubmit={handleLogin} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Email</label>
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
+              placeholder="you@company.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Password</label>
+            <input
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500"
+              placeholder="Your password"
+            />
+          </div>
+          {error && (
+            <p className="text-red-400 text-sm">{error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition"
+          >
+            {loading ? 'Logging in...' : 'Log In'}
+          </button>
+          <p className="text-center text-sm text-gray-500">
+            Don&apos;t have an account?{' '}
+            <Link href="/signup" className="text-orange-400 hover:text-orange-300">
+              Sign up
+            </Link>
+          </p>
+        </form>
+      </div>
+    </main>
+  )
+}
+'@
+Set-Content -Path "app\login\page.tsx" -Value $login_page_tsx -Encoding UTF8
+
+Write-Host "Writing app\page.tsx..." -ForegroundColor Cyan
+$page_tsx = @'
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import Link from 'next/link'
@@ -10,7 +230,7 @@ import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
 
 function stampHistory(existing: string | null, entry: string) {
-  const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} â€” ${entry}`
+  const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${entry}`
   return existing ? `${line}\n${existing}` : line
 }
 
@@ -31,7 +251,7 @@ async function addUnit(formData: FormData) {
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const expediteFee = expediteFeeRaw ? Number(expediteFeeRaw) : null
-  const history = stampHistory(null, `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` â€” ${problemType}` : ''}`)
+  const history = stampHistory(null, `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` — ${problemType}` : ''}`)
   await supabase.from('units').insert({
     serial_number: serial,
     model: model || null,
@@ -155,7 +375,7 @@ async function returnToFleet(formData: FormData) {
     status: 'Fleet',
     decision_seen: true,
     problem_type: null,
-    history: stampHistory(existing?.history, 'Withdrawn from shop â€” returned to fleet'),
+    history: stampHistory(existing?.history, 'Withdrawn from shop — returned to fleet'),
   }).eq('id', id)
 
   revalidatePath('/')
@@ -181,7 +401,7 @@ async function updateStatus(formData: FormData) {
     updateData.expedite_fee = Number(expediteFeeRaw)
   }
   if (existing && existing.status !== status) {
-    updateData.history = stampHistory(existing.history, `Status â†’ ${status}`)
+    updateData.history = stampHistory(existing.history, `Status → ${status}`)
   }
   if (status === 'Completed' || status === 'Ready for Pickup') {
     updateData.last_service_date = new Date().toISOString().split('T')[0]
@@ -276,11 +496,11 @@ function groupLabel(n: number) {
   return 'Trimmers & Misc'
 }
 
-// Model Â· Type first â€” never lead with serial
+// Model · Type first — never lead with serial
 function unitLabel(unit: any) {
   const model = (unit.model || '').trim()
   const type = (unit.equipment_type || '').trim()
-  if (model && type) return `${model} Â· ${type}`
+  if (model && type) return `${model} · ${type}`
   if (model) return model
   if (type) return type
   return unit.nickname || unit.serial_number || 'No model'
@@ -374,13 +594,13 @@ export default async function Home({
   const repairUnits = units?.filter(u => u.status !== 'Fleet') || []
 
   function formatDate(dateString: string | null) {
-    if (!dateString) return 'â€”'
+    if (!dateString) return '—'
     return new Date(dateString).toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
     })
   }
   function formatShortDate(dateString: string | null) {
-    if (!dateString) return 'â€”'
+    if (!dateString) return '—'
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
     })
@@ -417,8 +637,8 @@ export default async function Home({
                 }`}>{unit.status}</span>
               </div>
               <p className="text-sm text-gray-400">
-                Serial: {unit.serial_number || 'â€”'}
-                {unit.nickname ? ` Â· ${unit.nickname}` : ''}
+                Serial: {unit.serial_number || '—'}
+                {unit.nickname ? ` · ${unit.nickname}` : ''}
               </p>
               <p className="text-sm text-orange-400 font-medium">{company}</p>
               {children}
@@ -426,7 +646,7 @@ export default async function Home({
                 <span>Checked in: {formatDate(unit.created_at)}</span>
                 {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
               </div>
-              <p className="text-xs text-orange-400 mt-2">Tap card to open unit â†’</p>
+              <p className="text-xs text-orange-400 mt-2">Tap card to open unit →</p>
             </div>
           </div>
         </Link>
@@ -446,7 +666,7 @@ export default async function Home({
         </div>
         <details className="mt-2 group/notes ml-[calc(3.5rem+0.75rem)] sm:ml-[calc(6rem+1rem)]">
           <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
-            Notes {unit.notes ? 'Â· has notes' : ''}
+            Notes {unit.notes ? '· has notes' : ''}
           </summary>
           <form action={updateNotes} className="mt-2">
             <input type="hidden" name="id" value={unit.id} />
@@ -543,7 +763,7 @@ export default async function Home({
                 href={selectedCustomerId ? `/?customer=${selectedCustomerId}` : '/'}
                 className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition"
               >
-                â† Back to {selectedCustomerId ? 'customer' : 'Action Center'}
+                ← Back to {selectedCustomerId ? 'customer' : 'Action Center'}
               </Link>
             </div>
             {statusFilteredUnits.length === 0 ? (
@@ -567,8 +787,8 @@ export default async function Home({
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold truncate">{unitLabel(unit)}</p>
                         <p className="text-sm text-gray-400 truncate">
-                          Serial: {unit.serial_number || 'â€”'}
-                          {unit.nickname ? ` Â· ${unit.nickname}` : ''}
+                          Serial: {unit.serial_number || '—'}
+                          {unit.nickname ? ` · ${unit.nickname}` : ''}
                         </p>
                         <p className="text-sm text-orange-400 truncate">{company}</p>
                         {unit.problem_type && (
@@ -707,8 +927,8 @@ export default async function Home({
               open={!!openUnitId && repairUnits.some(u => u.id === openUnitId)}
             >
               <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-                <h2 className="font-semibold text-orange-400">All Units â€” Repair Flow ({repairUnits.length})</h2>
-                <span className="text-gray-500 text-sm group-open:rotate-180 transition">â–¼</span>
+                <h2 className="font-semibold text-orange-400">All Units — Repair Flow ({repairUnits.length})</h2>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">▼</span>
               </summary>
               <div className="border-t border-zinc-800 divide-y divide-zinc-800">
                 {repairUnits.length === 0 && (
@@ -741,8 +961,8 @@ export default async function Home({
                             }`}>{unit.status}</span>
                           </div>
                           <p className="text-xs text-gray-500">
-                            Serial: {unit.serial_number || 'â€”'}
-                            {unit.nickname ? ` Â· ${unit.nickname}` : ''}
+                            Serial: {unit.serial_number || '—'}
+                            {unit.nickname ? ` · ${unit.nickname}` : ''}
                           </p>
                         </div>
                       </summary>
@@ -776,7 +996,7 @@ export default async function Home({
                             </div>
                           )}
                           {unit.invoice_url && (
-                            <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file â†’</a>
+                            <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file →</a>
                           )}
                         </form>
 
@@ -784,7 +1004,7 @@ export default async function Home({
                           <form action={returnToFleet} className="pt-3">
                             <input type="hidden" name="id" value={unit.id} />
                             <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg">
-                              Withdraw â†’ Return to Fleet
+                              Withdraw → Return to Fleet
                             </button>
                           </form>
                         )}
@@ -806,9 +1026,9 @@ export default async function Home({
               <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
                 <div className="flex items-center gap-3">
                   <h2 className="font-semibold text-orange-300">Fleet Units ({sortedFleet.length})</h2>
-                  <span className="text-xs text-gray-500 hidden sm:inline">ðŸŸ¢ Serviced Â· ðŸŸ  Known Â· ðŸ”´ Due</span>
+                  <span className="text-xs text-gray-500 hidden sm:inline">🟢 Serviced · 🟠 Known · 🔴 Due</span>
                 </div>
-                <span className="text-gray-500 text-sm group-open:rotate-180 transition">â–¼</span>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">▼</span>
               </summary>
               <div className="border-t border-zinc-800">
                 <details className="border-b border-zinc-800">
@@ -892,7 +1112,7 @@ export default async function Home({
                           <details className="group/fleet">
                             <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/40 transition flex items-center justify-between gap-2">
                               <div className="flex items-center gap-3 min-w-0">
-                                <span>{color === 'red' ? 'ðŸ”´' : color === 'green' ? 'ðŸŸ¢' : 'ðŸŸ '}</span>
+                                <span>{color === 'red' ? '🔴' : color === 'green' ? '🟢' : '🟠'}</span>
                                 {img ? (
                                   <img src={img} alt="" className="h-10 w-10 object-cover rounded-lg border border-zinc-700 shrink-0" />
                                 ) : (
@@ -901,9 +1121,9 @@ export default async function Home({
                                 <div className="min-w-0">
                                   <p className="font-medium truncate">{unitLabel(unit)}</p>
                                   <p className="text-xs text-gray-500 truncate">
-                                    Serial: {unit.serial_number || 'â€”'}
-                                    {unit.nickname ? ` Â· ${unit.nickname}` : ''}
-                                    {unit.hour_meter ? ` Â· ${unit.hour_meter} hrs` : ''}
+                                    Serial: {unit.serial_number || '—'}
+                                    {unit.nickname ? ` · ${unit.nickname}` : ''}
+                                    {unit.hour_meter ? ` · ${unit.hour_meter} hrs` : ''}
                                   </p>
                                 </div>
                               </div>
@@ -985,3 +1205,11 @@ export default async function Home({
     </main>
   )
 }
+'@
+Set-Content -Path "app\page.tsx" -Value $page_tsx -Encoding UTF8
+
+Write-Host ""
+Write-Host "Done. Installing @supabase/ssr..." -ForegroundColor Cyan
+npm install @supabase/ssr
+Write-Host ""
+Write-Host "All set. Review the changes with: git status" -ForegroundColor Green
