@@ -11,6 +11,7 @@ import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
 import AppNav from './components/AppNav'
+import ForceLogout from './components/ForceLogout'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -461,6 +462,7 @@ export default async function Home({
   return (
     <main className="min-h-screen bg-transparent text-white p-4 sm:p-6 md:p-10">
       <Suspense fallback={null}><InactivityRedirect /></Suspense>
+<ForceLogout />
 <AdminGate />
 
       <div className="max-w-6xl mx-auto">
