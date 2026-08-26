@@ -1,13 +1,10 @@
-'use client'
+﻿'use client'
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient()
 
 export default function CheckInForm({
   customerId,
@@ -151,13 +148,13 @@ export default function CheckInForm({
           className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500"
         />
         <p className="text-xs text-gray-500 mt-1">
-          {uploading ? 'Uploading photo…' : photoUrl ? '✓ Photo ready' : 'Take photo or choose from library'}
+          {uploading ? 'Uploading photoâ€¦' : photoUrl ? 'âœ“ Photo ready' : 'Take photo or choose from library'}
         </p>
         {photoUrl && (
           <img src={photoUrl} alt="Preview" className="mt-2 h-24 w-24 object-cover rounded-lg border border-zinc-700" />
         )}
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
-        {success && <p className="text-xs text-green-400 mt-1">✓ Unit checked in</p>}
+        {success && <p className="text-xs text-green-400 mt-1">âœ“ Unit checked in</p>}
       </div>
 
       <div className="md:col-span-2 lg:col-span-3">
@@ -171,7 +168,7 @@ export default function CheckInForm({
           disabled={uploading || submitting}
           className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium px-6 py-2.5 rounded-lg transition"
         >
-          {submitting ? 'Checking in…' : uploading ? 'Uploading…' : 'Check In Unit'}
+          {submitting ? 'Checking inâ€¦' : uploading ? 'Uploadingâ€¦' : 'Check In Unit'}
         </button>
       </div>
     </form>
