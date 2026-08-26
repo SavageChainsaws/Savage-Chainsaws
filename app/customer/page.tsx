@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
+import AppNav from '../components/AppNav'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
