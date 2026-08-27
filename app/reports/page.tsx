@@ -1,12 +1,8 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
 export default async function ReportsPage() {
+  const supabase = await createClient()
   const { data: customers } = await supabase.from('customers').select('id, name').order('name')
   const { data: units } = await supabase
     .from('units')
