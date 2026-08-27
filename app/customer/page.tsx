@@ -49,17 +49,36 @@ const ACTIVE_STATUSES = [
   'Ready for Pickup',
 ]
 
-const UNIT_TYPES = [
+const STIHL_PREFIX_MAP: Record<string, string> = {
+  FC: 'Edger',
+  FS: 'String Trimmer',
+  MS: 'Chainsaw',
+  HL: 'Hedge Trimmer',
+  HT: 'Pole Saw',
+  TS: 'Cut Quik Saw',
+  KM: 'Kombi Unit',
+  HS: 'Handheld Hedge Trimmer',
+  BR: 'Backpack Blower',
+  BG: 'Handheld Blower',
+  RB: 'Pressure Washer',
+  RZ: 'Riding Lawn Mower',
+  SR: 'Backpack Sprayer',
+}
+
+const EQUIPMENT_CATEGORIES = [
   'Chainsaw',
   'Pole Saw',
   'String Trimmer',
   'Hedge Trimmer',
-  'Blower',
-  'Backpack Blower',
-  'Riding Mower',
-  'Walk-Behind Mower',
+  'Handheld Hedge Trimmer',
   'Edger',
-  'Cutquik',
+  'Cut Quik Saw',
+  'Kombi Unit',
+  'Backpack Blower',
+  'Handheld Blower',
+  'Pressure Washer',
+  'Riding Lawn Mower',
+  'Backpack Sprayer',
   'Other',
 ]
 
@@ -78,7 +97,9 @@ export default function CustomerPortal() {
 
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
-  const [unitType, setUnitType] = useState('Chainsaw')
+  const [unitType, setUnitType] = useState('')
+  const [customUnitType, setCustomUnitType] = useState('')
+  const [unitTypeManuallySet, setUnitTypeManuallySet] = useState(false)
   const [problem, setProblem] = useState('')
   const [scheduled, setScheduled] = useState('')
   const [notes, setNotes] = useState('')
@@ -86,7 +107,9 @@ export default function CustomerPortal() {
 
   const [fleetSerial, setFleetSerial] = useState('')
   const [fleetModel, setFleetModel] = useState('')
-  const [fleetType, setFleetType] = useState('Chainsaw')
+  const [fleetType, setFleetType] = useState('')
+  const [fleetCustomType, setFleetCustomType] = useState('')
+  const [fleetTypeManuallySet, setFleetTypeManuallySet] = useState(false)
   const [fleetNickname, setFleetNickname] = useState('')
   const [fleetHours, setFleetHours] = useState('')
   const [fleetThumb, setFleetThumb] = useState<File | null>(null)
@@ -94,7 +117,9 @@ export default function CustomerPortal() {
   const [editNickname, setEditNickname] = useState('')
   const [editSerial, setEditSerial] = useState('')
   const [editModel, setEditModel] = useState('')
-  const [editType, setEditType] = useState('Chainsaw')
+  const [editType, setEditType] = useState('')
+  const [editCustomType, setEditCustomType] = useState('')
+  const [editTypeManuallySet, setEditTypeManuallySet] = useState(false)
   const [editHours, setEditHours] = useState('')
   const [thumbFile, setThumbFile] = useState<File | null>(null)
   const [thumbPreview, setThumbPreview] = useState<string | null>(null)
@@ -105,6 +130,45 @@ export default function CustomerPortal() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [logoBusy, setLogoBusy] = useState(false)
 
+  function handleModelChange(value: string) {
+    const upper = value.toUpperCase()
+    setModel(upper)
+    if (unitTypeManuallySet) return
+    const prefix = upper.trim().slice(0, 2)
+    setUnitType(STIHL_PREFIX_MAP[prefix] || (upper.trim() ? 'Other' : ''))
+  }
+
+  function handleUnitTypeChange(value: string) {
+    setUnitTypeManuallySet(true)
+    setUnitType(value)
+  }
+
+  function handleFleetModelChange(value: string) {
+    const upper = value.toUpperCase()
+    setFleetModel(upper)
+    if (fleetTypeManuallySet) return
+    const prefix = upper.trim().slice(0, 2)
+    setFleetType(STIHL_PREFIX_MAP[prefix] || (upper.trim() ? 'Other' : ''))
+  }
+
+  function handleFleetTypeChange(value: string) {
+    setFleetTypeManuallySet(true)
+    setFleetType(value)
+  }
+
+  function handleEditModelChange(value: string) {
+    const upper = value.toUpperCase()
+    setEditModel(upper)
+    if (editTypeManuallySet) return
+    const prefix = upper.trim().slice(0, 2)
+    setEditType(STIHL_PREFIX_MAP[prefix] || (upper.trim() ? 'Other' : ''))
+  }
+
+  function handleEditTypeChange(value: string) {
+    setEditTypeManuallySet(true)
+    setEditType(value)
+  }
+
   useEffect(() => {
     loadData()
   }, [])
@@ -114,10 +178,16 @@ export default function CustomerPortal() {
     setMessage(null)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      router.push('/login')
+      router.push('/customer/login')
       return
     }
     setUserEmail(user.email ?? null)
+
+    // Links this auth user to a matching, not-yet-linked customers row (by
+    // verified email) so RLS on units - which checks auth_user_id, not
+    // email - can see their existing records. No-ops if already linked or
+    // no match exists.
+    await supabase.rpc('link_customer_account')
 
     const { data: cust } = await supabase
       .from('customers')
@@ -219,10 +289,11 @@ export default function CustomerPortal() {
       const createdAt = scheduled
         ? new Date(scheduled).toISOString()
         : new Date().toISOString()
+      const finalUnitType = unitType === 'Other' && customUnitType.trim() ? customUnitType.trim() : unitType
       const { error } = await supabase.from('units').insert({
         serial_number: serial.trim(),
         model: model.trim() || null,
-        equipment_type: unitType || null,
+        equipment_type: finalUnitType || null,
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
         photo_url: photoUrl,
@@ -241,7 +312,9 @@ export default function CustomerPortal() {
       }
       setSerial('')
       setModel('')
-      setUnitType('Chainsaw')
+      setUnitType('')
+      setCustomUnitType('')
+      setUnitTypeManuallySet(false)
       setProblem('')
       setScheduled('')
       setNotes('')
@@ -264,12 +337,13 @@ export default function CustomerPortal() {
     try {
       let thumbUrl: string | null = null
       if (fleetThumb) thumbUrl = await uploadFile(fleetThumb, `fleet-${customer.id}`)
+      const finalFleetType = fleetType === 'Other' && fleetCustomType.trim() ? fleetCustomType.trim() : fleetType
       const { error } = await supabase.from('units').insert({
         serial_number: fleetSerial.trim(),
         model: fleetModel.trim() || null,
-        equipment_type: fleetType || null,
+        equipment_type: finalFleetType || null,
         nickname: fleetNickname.trim() || null,
-        hour_meter: fleetHours.trim() || null,
+        hour_meter: fleetType === 'Riding Lawn Mower' ? (fleetHours.trim() || null) : null,
         thumbnail_url: thumbUrl,
         customer_id: customer.id,
         status: 'Fleet',
@@ -287,7 +361,9 @@ export default function CustomerPortal() {
       }
       setFleetSerial('')
       setFleetModel('')
-      setFleetType('Chainsaw')
+      setFleetType('')
+      setFleetCustomType('')
+      setFleetTypeManuallySet(false)
       setFleetNickname('')
       setFleetHours('')
       setFleetThumb(null)
@@ -306,7 +382,9 @@ export default function CustomerPortal() {
     setEditNickname(unit.nickname || '')
     setEditSerial(unit.serial_number || '')
     setEditModel(unit.model || '')
-    setEditType(unit.equipment_type || 'Chainsaw')
+    setEditType(unit.equipment_type || '')
+    setEditCustomType('')
+    setEditTypeManuallySet(false)
     setEditHours(unit.hour_meter || '')
     setThumbFile(null)
     if (thumbPreview) URL.revokeObjectURL(thumbPreview)
@@ -338,14 +416,16 @@ export default function CustomerPortal() {
       return
     }
     setDetailBusy(true)
+    const finalEditType = editType === 'Other' && editCustomType.trim() ? editCustomType.trim() : editType
+    const finalEditHours = editType === 'Riding Lawn Mower' ? (editHours.trim() || null) : null
     const { error } = await supabase
       .from('units')
       .update({
         nickname: editNickname.trim() || null,
         serial_number: editSerial.trim(),
         model: editModel.trim() || null,
-        equipment_type: editType || null,
-        hour_meter: editHours.trim() || null,
+        equipment_type: finalEditType || null,
+        hour_meter: finalEditHours,
       })
       .eq('id', selectedUnit.id)
     setDetailBusy(false)
@@ -363,8 +443,8 @@ export default function CustomerPortal() {
             nickname: editNickname.trim() || null,
             serial_number: editSerial.trim(),
             model: editModel.trim() || null,
-            equipment_type: editType || null,
-            hour_meter: editHours.trim() || null,
+            equipment_type: finalEditType || null,
+            hour_meter: finalEditHours,
           }
         : null
     )
@@ -807,7 +887,7 @@ export default function CustomerPortal() {
                 <label className="block text-xs text-gray-500 mb-1">Model</label>
                 <input
                   value={fleetModel}
-                  onChange={e => setFleetModel(e.target.value)}
+                  onChange={e => handleFleetModelChange(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                   placeholder="e.g. MS 462"
                 />
@@ -825,13 +905,22 @@ export default function CustomerPortal() {
                 <label className="block text-xs text-gray-500 mb-1">Unit Type</label>
                 <select
                   value={fleetType}
-                  onChange={e => setFleetType(e.target.value)}
+                  onChange={e => handleFleetTypeChange(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 >
-                  {UNIT_TYPES.map(t => (
-                    <option key={t}>{t}</option>
+                  <option value="">Select equipment type</option>
+                  {EQUIPMENT_CATEGORIES.map(t => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
+                {fleetType === 'Other' && (
+                  <input
+                    value={fleetCustomType}
+                    onChange={e => setFleetCustomType(e.target.value)}
+                    placeholder="Describe equipment type (e.g. battery unit)"
+                    className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  />
+                )}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
@@ -842,16 +931,18 @@ export default function CustomerPortal() {
                   placeholder="e.g. Shop mower #2"
                 />
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Hour meter (optional)</label>
-                <input
-                  value={fleetHours}
-                  onChange={e => setFleetHours(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  placeholder="e.g. 142.5"
-                  inputMode="decimal"
-                />
-              </div>
+              {fleetType === 'Riding Lawn Mower' && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Hour meter (optional)</label>
+                  <input
+                    value={fleetHours}
+                    onChange={e => setFleetHours(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    placeholder="e.g. 142.5"
+                    inputMode="decimal"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Thumbnail photo (optional)</label>
                 <input
@@ -885,7 +976,7 @@ export default function CustomerPortal() {
                 <label className="block text-xs text-gray-500 mb-1">Model</label>
                 <input
                   value={model}
-                  onChange={e => setModel(e.target.value)}
+                  onChange={e => handleModelChange(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                   placeholder="e.g. MS 462"
                 />
@@ -903,13 +994,22 @@ export default function CustomerPortal() {
                 <label className="block text-xs text-gray-500 mb-1">Unit Type</label>
                 <select
                   value={unitType}
-                  onChange={e => setUnitType(e.target.value)}
+                  onChange={e => handleUnitTypeChange(e.target.value)}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 >
-                  {UNIT_TYPES.map(t => (
-                    <option key={t}>{t}</option>
+                  <option value="">Select equipment type</option>
+                  {EQUIPMENT_CATEGORIES.map(t => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
+                {unitType === 'Other' && (
+                  <input
+                    value={customUnitType}
+                    onChange={e => setCustomUnitType(e.target.value)}
+                    placeholder="Describe equipment type (e.g. battery unit)"
+                    className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                  />
+                )}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">What's wrong</label>
@@ -996,7 +1096,7 @@ export default function CustomerPortal() {
                     <label className="block text-xs text-gray-500 mb-1">Model</label>
                     <input
                       value={editModel}
-                      onChange={e => setEditModel(e.target.value)}
+                      onChange={e => handleEditModelChange(e.target.value)}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
@@ -1012,13 +1112,22 @@ export default function CustomerPortal() {
                     <label className="block text-xs text-gray-500 mb-1">Unit Type</label>
                     <select
                       value={editType}
-                      onChange={e => setEditType(e.target.value)}
+                      onChange={e => handleEditTypeChange(e.target.value)}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                     >
-                      {UNIT_TYPES.map(t => (
-                        <option key={t}>{t}</option>
+                      <option value="">Select equipment type</option>
+                      {EQUIPMENT_CATEGORIES.map(t => (
+                        <option key={t} value={t}>{t}</option>
                       ))}
                     </select>
+                    {editType === 'Other' && (
+                      <input
+                        value={editCustomType}
+                        onChange={e => setEditCustomType(e.target.value)}
+                        placeholder="Describe equipment type (e.g. battery unit)"
+                        className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Nickname</label>
@@ -1029,16 +1138,18 @@ export default function CustomerPortal() {
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">Hour meter</label>
-                    <input
-                      value={editHours}
-                      onChange={e => setEditHours(e.target.value)}
-                      placeholder="e.g. 142.5"
-                      inputMode="decimal"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
+                  {editType === 'Riding Lawn Mower' && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs text-gray-500 mb-1">Hour meter</label>
+                      <input
+                        value={editHours}
+                        onChange={e => setEditHours(e.target.value)}
+                        placeholder="e.g. 142.5"
+                        inputMode="decimal"
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={saveUnitDetails}
