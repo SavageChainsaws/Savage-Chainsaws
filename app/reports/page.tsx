@@ -1,6 +1,7 @@
 import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { resolveUnitParts } from '@/lib/parts'
 
 export default async function ReportsPage() {
   const { supabase, user, isAdmin } = await getSessionInfo()
@@ -9,11 +10,13 @@ export default async function ReportsPage() {
   const { data: customers } = await supabase.from('customers').select('id, name').order('name')
   const { data: units } = await supabase
     .from('units')
-    .select('id, customer_id, status, created_at, last_service_date, is_priority')
+    .select('id, model, customer_id, status, created_at, last_service_date, is_priority')
   const { data: feedback } = await supabase
     .from('feedback')
     .select('id, seen, type, created_at')
     .order('created_at', { ascending: false })
+  const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
+  const { data: unitOverridesAll } = await supabase.from('unit_part_overrides').select('*')
 
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -43,6 +46,24 @@ export default async function ReportsPage() {
   const unreadFeedback = (feedback || []).filter(f => !f.seen).length
   const totalThisMonth = (units || []).filter(u => new Date(u.created_at) >= monthStart).length
   const totalUnits = (units || []).length
+
+  const allResolvedParts = (units || []).flatMap(u =>
+    resolveUnitParts(u, modelPartsAll || [], unitOverridesAll || [])
+  )
+  const totalOEM = allResolvedParts.filter(p => p.sku_type === 'OEM').length
+  const totalAftermarket = allResolvedParts.filter(p => p.sku_type === 'Aftermarket').length
+
+  const byPartName = new Map<string, { part_name: string; oem: number; aftermarket: number }>()
+  for (const p of allResolvedParts) {
+    const key = p.part_name.toLowerCase()
+    if (!byPartName.has(key)) byPartName.set(key, { part_name: p.part_name, oem: 0, aftermarket: 0 })
+    const row = byPartName.get(key)!
+    if (p.sku_type === 'Aftermarket') row.aftermarket++
+    else row.oem++
+  }
+  const partsBreakdown = Array.from(byPartName.values()).sort(
+    (a, b) => (b.oem + b.aftermarket) - (a.oem + a.aftermarket)
+  )
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white p-4 sm:p-6 md:p-10">
@@ -148,6 +169,60 @@ export default async function ReportsPage() {
         <p className="text-xs text-gray-500">
           Green month count (15+) = incentive threshold idea. Adjust later when you set promo rules.
         </p>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
+            <h2 className="text-lg font-semibold text-orange-400">Parts usage: OEM vs Aftermarket</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Based on the SKU currently assigned to every unit — model defaults plus per-unit overrides.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 p-4 sm:px-6">
+            <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
+              <p className="text-xs text-gray-500 uppercase">OEM parts assigned</p>
+              <p className="text-3xl font-bold text-white">{totalOEM}</p>
+            </div>
+            <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
+              <p className="text-xs text-gray-500 uppercase">Aftermarket parts assigned</p>
+              <p className="text-3xl font-bold text-purple-400">{totalAftermarket}</p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
+                  <th className="px-4 sm:px-6 py-3">Part</th>
+                  <th className="px-3 py-3 text-right">OEM</th>
+                  <th className="px-3 py-3 text-right">Aftermarket</th>
+                  <th className="px-3 py-3 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {partsBreakdown.map(row => (
+                  <tr key={row.part_name} className="hover:bg-zinc-800/40">
+                    <td className="px-4 sm:px-6 py-3 font-medium">{row.part_name}</td>
+                    <td className="px-3 py-3 text-right text-gray-300">{row.oem}</td>
+                    <td className="px-3 py-3 text-right text-purple-400">{row.aftermarket}</td>
+                    <td className="px-3 py-3 text-right text-gray-400">{row.oem + row.aftermarket}</td>
+                  </tr>
+                ))}
+                {partsBreakdown.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-gray-500 text-center">
+                      No parts/SKUs set up yet. Add them from the{' '}
+                      <Link href="/parts" className="text-orange-400 hover:text-orange-300">
+                        Parts Catalog
+                      </Link>
+                      .
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </main>
   )

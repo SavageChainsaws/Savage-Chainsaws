@@ -2,6 +2,7 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
+import UppercaseInput from '../components/UppercaseInput'
 
 async function upsertModelPart(formData: FormData) {
   'use server'
@@ -11,24 +12,26 @@ async function upsertModelPart(formData: FormData) {
   const id = (formData.get('id') as string) || null
   const model = (formData.get('model') as string || '').trim()
   const partName = (formData.get('part_name') as string || '').trim()
-  const sku = (formData.get('sku') as string || '').trim()
+  const sku = (formData.get('sku') as string || '').trim().toUpperCase()
+  const skuType = (formData.get('sku_type') as string) === 'Aftermarket' ? 'Aftermarket' : 'OEM'
   if (!model || !partName || !sku) return
 
   if (id) {
     await supabase
       .from('model_parts')
-      .update({ model, part_name: partName, sku, updated_at: new Date().toISOString() })
+      .update({ model, part_name: partName, sku, sku_type: skuType, updated_at: new Date().toISOString() })
       .eq('id', id)
   } else {
     await supabase
       .from('model_parts')
       .upsert(
-        { model, part_name: partName, sku },
+        { model, part_name: partName, sku, sku_type: skuType },
         { onConflict: 'model_key,part_name_key' }
       )
   }
   revalidatePath('/parts')
   revalidatePath('/')
+  revalidatePath('/reports')
 }
 
 async function deleteModelPart(formData: FormData) {
@@ -98,7 +101,7 @@ export default async function PartsPage() {
             Set the default SKU every unit of a model uses (e.g. the stock blade on every RZ 752i). Individual
             units can still override this on their own detail page.
           </p>
-          <form action={upsertModelPart} className="grid sm:grid-cols-3 gap-3">
+          <form action={upsertModelPart} className="grid sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Model *</label>
               <input
@@ -123,14 +126,25 @@ export default async function PartsPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">SKU *</label>
-              <input
+              <UppercaseInput
                 name="sku"
                 required
                 placeholder="e.g. BLD-RZ752-001"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                className="w-full font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
               />
             </div>
-            <div className="sm:col-span-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Type</label>
+              <select
+                name="sku_type"
+                defaultValue="OEM"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="OEM">OEM</option>
+                <option value="Aftermarket">Aftermarket</option>
+              </select>
+            </div>
+            <div className="sm:col-span-4">
               <button
                 type="submit"
                 className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg"
@@ -171,11 +185,19 @@ export default async function PartsPage() {
                           defaultValue={p.part_name}
                           className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
                         />
-                        <input
+                        <UppercaseInput
                           name="sku"
                           defaultValue={p.sku}
                           className="flex-1 min-w-[140px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
                         />
+                        <select
+                          name="sku_type"
+                          defaultValue={p.sku_type}
+                          className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
+                        >
+                          <option value="OEM">OEM</option>
+                          <option value="Aftermarket">Aftermarket</option>
+                        </select>
                         <button
                           type="submit"
                           className="text-xs border border-zinc-600 hover:border-orange-500 px-3 py-1.5 rounded-lg"

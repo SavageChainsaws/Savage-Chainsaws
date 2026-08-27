@@ -9,6 +9,8 @@ import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
+import UppercaseInput from './components/UppercaseInput'
+import { resolveUnitParts } from '@/lib/parts'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -259,24 +261,40 @@ async function upsertUnitPartOverride(formData: FormData) {
   if (!isAdmin) throw new Error('Not authorized')
   const id = (formData.get('id') as string) || null
   const unitId = formData.get('unit_id') as string
+  const unitModel = (formData.get('unit_model') as string) || null
   const partName = (formData.get('part_name') as string || '').trim()
-  const sku = (formData.get('sku') as string || '').trim()
+  const sku = (formData.get('sku') as string || '').trim().toUpperCase()
+  const skuType = (formData.get('sku_type') as string) === 'Aftermarket' ? 'Aftermarket' : 'OEM'
   if (!unitId || !partName || !sku) return
 
   if (id) {
     await supabase
       .from('unit_part_overrides')
-      .update({ part_name: partName, sku, updated_at: new Date().toISOString() })
+      .update({ part_name: partName, sku, sku_type: skuType, updated_at: new Date().toISOString() })
       .eq('id', id)
   } else {
     await supabase
       .from('unit_part_overrides')
       .upsert(
-        { unit_id: unitId, part_name: partName, sku },
+        { unit_id: unitId, part_name: partName, sku, sku_type: skuType },
         { onConflict: 'unit_id,part_name_key' }
       )
   }
+
+  // OEM SKUs become the shared default for every unit of the same model
+  // (re-running this on every save, including edits, keeps the default in
+  // sync). Aftermarket SKUs are unit-only and never touch model_parts.
+  if (skuType === 'OEM' && unitModel) {
+    await supabase
+      .from('model_parts')
+      .upsert(
+        { model: unitModel, part_name: partName, sku, sku_type: 'OEM' },
+        { onConflict: 'model_key,part_name_key' }
+      )
+  }
   revalidatePath('/')
+  revalidatePath('/parts')
+  revalidatePath('/reports')
 }
 
 async function deleteUnitPartOverride(formData: FormData) {
@@ -330,42 +348,6 @@ function isUnderWarranty(unit: any): boolean {
   if (!unit.warranty_end) return false
   const today = new Date().toISOString().slice(0, 10)
   return unit.warranty_end >= today
-}
-
-function normalizeModelKey(model: string | null): string {
-  return (model || '').toUpperCase().replace(/\s+/g, '')
-}
-
-// Merges a unit's model-level default parts with any unit-specific
-// overrides. Matching is by normalized model/part-name key (mirrors the
-// DB's generated model_key/part_name_key columns) so casing/spacing
-// differences in how a model was typed don't split one physical model
-// into separate part sets. A unit override always wins over its model
-// default; an override with no matching model default still shows, as a
-// part unique to that one unit.
-function resolveUnitParts(unit: any, modelPartsAll: any[], unitOverridesAll: any[]) {
-  const modelKey = normalizeModelKey(unit.model)
-  const defaults = modelPartsAll.filter(p => p.model_key === modelKey)
-  const overrides = unitOverridesAll.filter(o => o.unit_id === unit.id)
-  const overrideByKey = new Map(overrides.map(o => [o.part_name_key, o]))
-
-  const resolved: { id: string; part_name: string; sku: string; isOverride: boolean; hasDefault: boolean }[] = []
-  for (const d of defaults) {
-    const override = overrideByKey.get(d.part_name_key)
-    resolved.push({
-      id: override ? override.id : d.id,
-      part_name: override ? override.part_name : d.part_name,
-      sku: override ? override.sku : d.sku,
-      isOverride: !!override,
-      hasDefault: true,
-    })
-  }
-  const defaultKeys = new Set(defaults.map(d => d.part_name_key))
-  for (const o of overrides) {
-    if (defaultKeys.has(o.part_name_key)) continue
-    resolved.push({ id: o.id, part_name: o.part_name, sku: o.sku, isOverride: true, hasDefault: false })
-  }
-  return resolved.sort((a, b) => a.part_name.localeCompare(b.part_name))
 }
 
 export default async function Home({
@@ -542,6 +524,11 @@ export default async function Home({
               <div key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-gray-300 w-28 shrink-0">{p.part_name}</span>
                 <span className="font-mono text-orange-300">{p.sku}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  p.sku_type === 'Aftermarket' ? 'bg-purple-500/20 text-purple-400' : 'bg-zinc-700 text-gray-300'
+                }`}>
+                  {p.sku_type}
+                </span>
                 {p.isOverride ? (
                   <>
                     <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-400">
@@ -567,6 +554,7 @@ export default async function Home({
           </summary>
           <form action={upsertUnitPartOverride} className="mt-2 flex flex-wrap gap-2">
             <input type="hidden" name="unit_id" value={unit.id} />
+            <input type="hidden" name="unit_model" value={unit.model || ''} />
             <input
               name="part_name"
               list={`parts-${unit.id}`}
@@ -576,11 +564,19 @@ export default async function Home({
             <datalist id={`parts-${unit.id}`}>
               {parts.map(p => <option key={p.id} value={p.part_name} />)}
             </datalist>
-            <input
+            <UppercaseInput
               name="sku"
               placeholder="SKU"
               className="flex-1 min-w-[140px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
+            <select
+              name="sku_type"
+              defaultValue="OEM"
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            >
+              <option value="OEM">OEM (sets default for this model)</option>
+              <option value="Aftermarket">Aftermarket (this unit only)</option>
+            </select>
             <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
               Save
             </button>
