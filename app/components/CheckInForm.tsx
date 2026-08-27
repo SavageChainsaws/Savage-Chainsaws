@@ -6,6 +6,39 @@ import { createClient } from '@/lib/supabase/client'
 
 const supabase = createClient()
 
+const STIHL_PREFIX_MAP: Record<string, string> = {
+  FC: 'Edger',
+  FS: 'String Trimmer',
+  MS: 'Chainsaw',
+  HL: 'Hedge Trimmer',
+  HT: 'Pole Saw',
+  TS: 'Cut Quik Saw',
+  KM: 'Kombi Unit',
+  HS: 'Handheld Hedge Trimmer',
+  BR: 'Backpack Blower',
+  BG: 'Handheld Blower',
+  RB: 'Pressure Washer',
+  RZ: 'Riding Lawn Mower',
+  SR: 'Backpack Sprayer',
+}
+
+const EQUIPMENT_CATEGORIES = [
+  'Chainsaw',
+  'Pole Saw',
+  'String Trimmer',
+  'Hedge Trimmer',
+  'Handheld Hedge Trimmer',
+  'Edger',
+  'Cut Quik Saw',
+  'Kombi Unit',
+  'Backpack Blower',
+  'Handheld Blower',
+  'Pressure Washer',
+  'Riding Lawn Mower',
+  'Backpack Sprayer',
+  'Other',
+]
+
 export default function CheckInForm({
   customerId,
   addUnitAction,
@@ -20,6 +53,23 @@ export default function CheckInForm({
   const [photoUrl, setPhotoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  const [model, setModel] = useState('')
+  const [equipmentType, setEquipmentType] = useState('')
+  const [customType, setCustomType] = useState('')
+  const [typeManuallySet, setTypeManuallySet] = useState(false)
+
+  function handleModelChange(value: string) {
+    setModel(value)
+    if (typeManuallySet) return
+    const prefix = value.trim().slice(0, 2).toUpperCase()
+    setEquipmentType(STIHL_PREFIX_MAP[prefix] || (value.trim() ? 'Other' : ''))
+  }
+
+  function handleTypeChange(value: string) {
+    setTypeManuallySet(true)
+    setEquipmentType(value)
+  }
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -67,9 +117,16 @@ export default function CheckInForm({
     }
     formData.delete('photo')
 
+    const finalType = equipmentType === 'Other' && customType.trim() ? customType.trim() : equipmentType
+    formData.set('equipment_type', finalType)
+
     try {
       await addUnitAction(formData)
       setPhotoUrl(null)
+      setModel('')
+      setEquipmentType('')
+      setCustomType('')
+      setTypeManuallySet(false)
       setSuccess(true)
       formRef.current?.reset()
       router.refresh()
@@ -86,7 +143,13 @@ export default function CheckInForm({
 
       <div>
         <label className="block text-xs text-gray-500 mb-1">Model</label>
-        <input name="model" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. MS 462" />
+        <input
+          name="model"
+          value={model}
+          onChange={e => handleModelChange(e.target.value)}
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+          placeholder="e.g. MS 462"
+        />
       </div>
 
       <div>
@@ -95,16 +158,31 @@ export default function CheckInForm({
       </div>
 
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Equipment Type</label>
-        <select name="equipment_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500">
-          <option value="Chainsaw">Chainsaw</option>
-          <option value="Pole Saw">Pole Saw</option>
-          <option value="Blower">Blower</option>
-          <option value="Trimmer">Trimmer</option>
-          <option value="Lawnmower">Lawnmower</option>
-          <option value="Hedge Trimmer">Hedge Trimmer</option>
-          <option value="Other">Other</option>
+        <label className="block text-xs text-gray-500 mb-1">
+          Equipment Type
+          {typeManuallySet ? null : equipmentType && equipmentType !== 'Other' ? (
+            <span className="text-orange-400 normal-case"> (auto-detected from model)</span>
+          ) : null}
+        </label>
+        <select
+          name="equipment_type"
+          value={equipmentType}
+          onChange={e => handleTypeChange(e.target.value)}
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+        >
+          <option value="">Select equipment type</option>
+          {EQUIPMENT_CATEGORIES.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
         </select>
+        {equipmentType === 'Other' && (
+          <input
+            value={customType}
+            onChange={e => setCustomType(e.target.value)}
+            placeholder="Describe equipment type (e.g. battery unit)"
+            className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+          />
+        )}
       </div>
 
       <div>

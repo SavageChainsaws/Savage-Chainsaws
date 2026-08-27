@@ -394,7 +394,6 @@ export default async function Home({
   }
 
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
-    const company = customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'
     return (
       <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
         <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="block">
@@ -418,7 +417,6 @@ export default async function Home({
                 Serial: {unit.serial_number || '-'}
                 {unit.nickname ? ` - ${unit.nickname}` : ''}
               </p>
-              <p className="text-sm text-orange-400 font-medium">{company}</p>
               {children}
               <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 mt-0.5">
                 <span>Checked in: {formatDate(unit.created_at)}</span>
@@ -453,6 +451,64 @@ export default async function Home({
           </form>
         </details>
       </div>
+    )
+  }
+
+  function groupUnitsByCustomer(unitList: any[]) {
+    const groups = new Map<string, { customer: any; units: any[] }>()
+    for (const unit of unitList) {
+      const key = unit.customer_id || 'unknown'
+      if (!groups.has(key)) {
+        groups.set(key, { customer: customers?.find(c => c.id === unit.customer_id) || null, units: [] })
+      }
+      groups.get(key)!.units.push(unit)
+    }
+    return Array.from(groups.values()).sort((a, b) => {
+      if (b.units.length !== a.units.length) return b.units.length - a.units.length
+      return (a.customer?.name || 'Unknown').localeCompare(b.customer?.name || 'Unknown')
+    })
+  }
+
+  function CustomerGroupHeader({ customer, count }: { customer: any; count: number }) {
+    return (
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-zinc-800/60">
+        {customer?.logo_url ? (
+          <img
+            src={customer.logo_url}
+            alt={customer.name}
+            className="h-9 w-9 rounded-lg object-contain bg-zinc-900 border border-zinc-700 shrink-0"
+          />
+        ) : null}
+        <h3 className="text-lg sm:text-xl font-bold text-white truncate">{customer?.name || 'Unknown Customer'}</h3>
+        <span className="text-xs text-gray-400 shrink-0 ml-auto">{count} unit{count !== 1 ? 's' : ''}</span>
+      </div>
+    )
+  }
+
+  function GroupedActionList({
+    units: list,
+    borderColor,
+    renderExtra,
+  }: {
+    units: any[]
+    borderColor: string
+    renderExtra?: (unit: any) => React.ReactNode
+  }) {
+    return (
+      <>
+        {groupUnitsByCustomer(list).map(group => (
+          <div key={group.customer?.id || 'unknown'}>
+            <CustomerGroupHeader customer={group.customer} count={group.units.length} />
+            <div className="divide-y divide-zinc-800/60">
+              {group.units.map(unit => (
+                <ActionCard key={unit.id} unit={unit} borderColor={borderColor}>
+                  {renderExtra?.(unit)}
+                </ActionCard>
+              ))}
+            </div>
+          </div>
+        ))}
+      </>
     )
   }
 
@@ -560,35 +616,38 @@ export default async function Home({
               <p className="px-6 py-8 text-gray-500 text-sm">No units found.</p>
             ) : (
               <div className="divide-y divide-zinc-800">
-                {statusFilteredUnits.map(unit => {
-                  const company = customers?.find(c => c.id === unit.customer_id)?.name
-                  return (
-                    <Link
-                      key={unit.id}
-                      href={`/?customer=${unit.customer_id}&open=${unit.id}`}
-                      className="px-6 py-4 flex items-center gap-3 hover:bg-zinc-800/50 transition block"
-                    >
-                      <UnitPhoto unit={unit} size="h-12 w-12" />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold truncate">{unitLabel(unit)}</p>
-                        <p className="text-sm text-gray-400 truncate">
-                          Serial: {unit.serial_number || '-'}
-                          {unit.nickname ? ` - ${unit.nickname}` : ''}
-                        </p>
-                        <p className="text-sm text-orange-400 truncate">{company}</p>
-                        {unit.problem_type && (
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">{unit.problem_type}</p>
-                        )}
-                      </div>
-                      <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
-                        unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                          : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                          : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                          : 'bg-orange-500/20 text-orange-400'
-                      }`}>{unit.status}</span>
-                    </Link>
-                  )
-                })}
+                {groupUnitsByCustomer(statusFilteredUnits).map(group => (
+                  <div key={group.customer?.id || 'unknown'}>
+                    <CustomerGroupHeader customer={group.customer} count={group.units.length} />
+                    <div className="divide-y divide-zinc-800/60">
+                      {group.units.map(unit => (
+                        <Link
+                          key={unit.id}
+                          href={`/?customer=${unit.customer_id}&open=${unit.id}`}
+                          className="px-6 py-4 flex items-center gap-3 hover:bg-zinc-800/50 transition block"
+                        >
+                          <UnitPhoto unit={unit} size="h-12 w-12" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold truncate">{unitLabel(unit)}</p>
+                            <p className="text-sm text-gray-400 truncate">
+                              Serial: {unit.serial_number || '-'}
+                              {unit.nickname ? ` - ${unit.nickname}` : ''}
+                            </p>
+                            {unit.problem_type && (
+                              <p className="text-xs text-gray-500 mt-0.5 truncate">{unit.problem_type}</p>
+                            )}
+                          </div>
+                          <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
+                            unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                              : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                              : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                              : 'bg-orange-500/20 text-orange-400'
+                          }`}>{unit.status}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -600,11 +659,13 @@ export default async function Home({
               <div className="bg-zinc-900 border border-orange-500/50 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Priority Units ({priorityUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
-                  {priorityUnits.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-orange-500">
+                  <GroupedActionList
+                    units={priorityUnits}
+                    borderColor="border-orange-500"
+                    renderExtra={unit => (
                       <p className="text-sm text-orange-300">{unit.expedite_fee ? `Expedite fee: $${Number(unit.expedite_fee).toFixed(2)}` : 'Priority flag set'}</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -612,11 +673,13 @@ export default async function Home({
               <div className="bg-zinc-900 border border-green-500/40 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-300">Ready for Pickup ({readyForPickupUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
-                  {readyForPickupUnits.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-green-400">
+                  <GroupedActionList
+                    units={readyForPickupUnits}
+                    borderColor="border-green-400"
+                    renderExtra={unit => (
                       <p className="text-sm text-green-300">{unit.notes || 'Ready for customer pickup'}</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -624,11 +687,13 @@ export default async function Home({
               <div className="bg-zinc-900 border border-blue-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-blue-300">Repair Requested ({repairRequestedUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
-                  {repairRequestedUnits.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-blue-400">
+                  <GroupedActionList
+                    units={repairRequestedUnits}
+                    borderColor="border-blue-400"
+                    renderExtra={unit => (
                       <p className="text-sm text-blue-300">{unit.notes || unit.problem_type || 'Customer requested repair'}</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -636,11 +701,13 @@ export default async function Home({
               <div className="bg-zinc-900 border border-orange-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Diagnosing ({diagnosingUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
-                  {diagnosingUnits.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-orange-500">
+                  <GroupedActionList
+                    units={diagnosingUnits}
+                    borderColor="border-orange-500"
+                    renderExtra={unit => (
                       <p className="text-sm text-orange-300">{unit.problem_type || unit.notes || 'In diagnosis'}</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -651,11 +718,13 @@ export default async function Home({
                   <p className="text-xs text-red-300/80">Over 7 days with no action</p>
                 </div>
                 <div className="divide-y divide-zinc-800">
-                  {staleUnits.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-red-500">
+                  <GroupedActionList
+                    units={staleUnits}
+                    borderColor="border-red-500"
+                    renderExtra={unit => (
                       <p className="text-sm text-red-400 font-medium">No action for {unit.daysSinceCheckIn} days</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -663,11 +732,13 @@ export default async function Home({
               <div className="bg-zinc-900 border border-green-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-400">Customer Approved ({approvedDecisions.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
-                  {approvedDecisions.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-green-500">
+                  <GroupedActionList
+                    units={approvedDecisions}
+                    borderColor="border-green-500"
+                    renderExtra={unit => (
                       <p className="text-sm text-green-300 font-medium">{unit.notes}</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -675,11 +746,13 @@ export default async function Home({
               <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
                 <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-red-400">Customer Denied ({deniedDecisions.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
-                  {deniedDecisions.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-red-500">
+                  <GroupedActionList
+                    units={deniedDecisions}
+                    borderColor="border-red-500"
+                    renderExtra={unit => (
                       <p className="text-sm text-red-300 font-medium">{unit.notes}</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               </div>
             )}
@@ -689,11 +762,13 @@ export default async function Home({
                 <p className="px-6 py-8 text-gray-500 text-sm">No units currently waiting on customer approval.</p>
               ) : (
                 <div className="divide-y divide-zinc-800">
-                  {waitingOnCustomer.map(unit => (
-                    <ActionCard key={unit.id} unit={unit} borderColor="border-yellow-500">
+                  <GroupedActionList
+                    units={waitingOnCustomer}
+                    borderColor="border-yellow-500"
+                    renderExtra={() => (
                       <p className="text-sm text-yellow-300">Waiting for customer decision</p>
-                    </ActionCard>
-                  ))}
+                    )}
+                  />
                 </div>
               )}
             </div>
