@@ -190,10 +190,12 @@ export default function CheckInForm({
         <input name="problem_type" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Won't start, loss of power, etc." />
       </div>
 
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Hour Meter (optional)</label>
-        <input name="hour_meter" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. 142.5" />
-      </div>
+      {equipmentType === 'Riding Lawn Mower' && (
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Hour Meter (optional)</label>
+          <input name="hour_meter" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="e.g. 142.5" />
+        </div>
+      )}
 
       <div>
         <label className="block text-xs text-gray-500 mb-1">Part Number (optional)</label>

@@ -396,8 +396,8 @@ export default async function Home({
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
     return (
       <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
-        <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="block">
-          <div className="flex gap-3 sm:gap-4">
+        <div className="flex items-start gap-3">
+          <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="flex gap-3 sm:gap-4 flex-1 min-w-0">
             <UnitPhoto unit={unit} size="h-14 w-14 sm:h-24 sm:w-24" emptyContent="No photo" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -424,21 +424,21 @@ export default async function Home({
               </div>
               <p className="text-xs text-orange-400 mt-2">Tap card to open unit {'->'}</p>
             </div>
-          </div>
-        </Link>
-        <div className="flex flex-wrap gap-2 mt-3 ml-[calc(3.5rem+0.75rem)] sm:ml-[calc(6rem+1rem)]">
-          <form action={snoozeUnit}>
-            <input type="hidden" name="id" value={unit.id} />
-            <input type="hidden" name="days" value="7" />
-            <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Delay 7 Days</button>
-          </form>
-          {(approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)) && (
-            <form action={markDecisionSeen}>
+          </Link>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <form action={snoozeUnit}>
               <input type="hidden" name="id" value={unit.id} />
-              <button type="submit" className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Mark Seen</button>
+              <input type="hidden" name="days" value="7" />
+              <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Delay 7 Days</button>
             </form>
-          )}
-          <DeleteUnitButton id={unit.id} />
+            {(approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)) && (
+              <form action={markDecisionSeen}>
+                <input type="hidden" name="id" value={unit.id} />
+                <button type="submit" className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Mark Seen</button>
+              </form>
+            )}
+            <DeleteUnitButton id={unit.id} />
+          </div>
         </div>
         <details className="mt-2 group/notes ml-[calc(3.5rem+0.75rem)] sm:ml-[calc(6rem+1rem)]">
           <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
@@ -471,7 +471,7 @@ export default async function Home({
 
   function CustomerGroupHeader({ customer, count }: { customer: any; count: number }) {
     return (
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-zinc-800/60">
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-zinc-800 border-b border-zinc-700">
         {customer?.logo_url ? (
           <img
             src={customer.logo_url}
@@ -496,8 +496,8 @@ export default async function Home({
   }) {
     return (
       <>
-        {groupUnitsByCustomer(list).map(group => (
-          <div key={group.customer?.id || 'unknown'}>
+        {groupUnitsByCustomer(list).map((group, i) => (
+          <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'border-t-4 border-zinc-950' : ''}>
             <CustomerGroupHeader customer={group.customer} count={group.units.length} />
             <div className="divide-y divide-zinc-800/60">
               {group.units.map(unit => (
@@ -532,7 +532,7 @@ export default async function Home({
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 md:mb-10 bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
           <div className="flex items-center gap-4">
-            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-12 w-12 md:h-14 md:w-14 object-contain" />
+            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-16 w-16 md:h-20 md:w-20 object-contain" />
             <div>
               <h1 className="text-2xl md:text-4xl font-bold tracking-tight">
                 SAVAGE <span className="text-orange-500">CHAINSAWS</span>
@@ -616,8 +616,8 @@ export default async function Home({
               <p className="px-6 py-8 text-gray-500 text-sm">No units found.</p>
             ) : (
               <div className="divide-y divide-zinc-800">
-                {groupUnitsByCustomer(statusFilteredUnits).map(group => (
-                  <div key={group.customer?.id || 'unknown'}>
+                {groupUnitsByCustomer(statusFilteredUnits).map((group, i) => (
+                  <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'border-t-4 border-zinc-950' : ''}>
                     <CustomerGroupHeader customer={group.customer} count={group.units.length} />
                     <div className="divide-y divide-zinc-800/60">
                       {group.units.map(unit => (
