@@ -8,6 +8,7 @@ import LastViewedBanner from './components/LastViewedBanner'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
+import { UnitPhoto } from './components/UnitPhoto'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -296,10 +297,6 @@ function isUnderWarranty(unit: any): boolean {
   return unit.warranty_end >= today
 }
 
-function unitImage(unit: any) {
-  return unit.thumbnail_url || unit.photo_url || null
-}
-
 export default async function Home({
   searchParams,
 }: {
@@ -397,21 +394,12 @@ export default async function Home({
   }
 
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
-    const img = unitImage(unit)
     const company = customers?.find(c => c.id === unit.customer_id)?.name || 'Unknown'
     return (
       <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
         <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="block">
           <div className="flex gap-3 sm:gap-4">
-            <div className="shrink-0">
-              {img ? (
-                <img src={img} alt="" className="h-14 w-14 sm:h-24 sm:w-24 object-cover rounded-lg border border-zinc-700" />
-              ) : (
-                <div className="h-14 w-14 sm:h-24 sm:w-24 rounded-lg border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-600 text-[10px] sm:text-xs">
-                  No photo
-                </div>
-              )}
-            </div>
+            <UnitPhoto unit={unit} size="h-14 w-14 sm:h-24 sm:w-24" emptyContent="No photo" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-base sm:text-xl font-semibold truncate">{unitLabel(unit)}</p>
@@ -573,7 +561,6 @@ export default async function Home({
             ) : (
               <div className="divide-y divide-zinc-800">
                 {statusFilteredUnits.map(unit => {
-                  const img = unitImage(unit)
                   const company = customers?.find(c => c.id === unit.customer_id)?.name
                   return (
                     <Link
@@ -581,11 +568,7 @@ export default async function Home({
                       href={`/?customer=${unit.customer_id}&open=${unit.id}`}
                       className="px-6 py-4 flex items-center gap-3 hover:bg-zinc-800/50 transition block"
                     >
-                      {img ? (
-                        <img src={img} alt="" className="h-12 w-12 object-cover rounded-lg border border-zinc-700 shrink-0" />
-                      ) : (
-                        <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
-                      )}
+                      <UnitPhoto unit={unit} size="h-12 w-12" />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold truncate">{unitLabel(unit)}</p>
                         <p className="text-sm text-gray-400 truncate">
@@ -737,7 +720,6 @@ export default async function Home({
                   <p className="px-6 py-8 text-gray-500 text-sm">No active repair units.</p>
                 )}
                 {repairUnits.map(unit => {
-                  const img = unitImage(unit)
                   return (
                     <details
                       key={unit.id}
@@ -746,11 +728,7 @@ export default async function Home({
                       id={`unit-${unit.id}`}
                     >
                       <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
-                        {img ? (
-                          <img src={img} alt="" className="h-12 w-12 object-cover rounded-lg border border-zinc-700 shrink-0" />
-                        ) : (
-                          <div className="h-12 w-12 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
-                        )}
+                        <UnitPhoto unit={unit} size="h-12 w-12" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium truncate">{unitLabel(unit)}</p>
@@ -911,7 +889,6 @@ export default async function Home({
                       const showHeader = g !== lastGroup
                       if (showHeader) lastGroup = g
                       const color = getFleetColor(unit)
-                      const img = unitImage(unit)
                       return (
                         <div key={unit.id}>
                           {showHeader && (
@@ -923,11 +900,7 @@ export default async function Home({
                             <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/40 transition flex items-center justify-between gap-2">
                               <div className="flex items-center gap-3 min-w-0">
                                 <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${color === 'red' ? 'bg-red-500' : color === 'green' ? 'bg-green-500' : 'bg-orange-500'}`} />
-                                {img ? (
-                                  <img src={img} alt="" className="h-10 w-10 object-cover rounded-lg border border-zinc-700 shrink-0" />
-                                ) : (
-                                  <div className="h-10 w-10 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
-                                )}
+                                <UnitPhoto unit={unit} size="h-10 w-10" />
                                 <div className="min-w-0">
                                   <p className="font-medium truncate">{unitLabel(unit)}</p>
                                   <p className="text-xs text-gray-500 truncate">

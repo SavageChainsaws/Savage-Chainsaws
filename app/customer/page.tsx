@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppNav from '../components/AppNav'
+import { UnitPhoto } from '../components/UnitPhoto'
 
 const supabase = createClient()
 
@@ -561,10 +562,6 @@ export default function CustomerPortal() {
     return u.nickname || u.serial_number || 'No model'
   }
 
-  function unitImage(u: Unit) {
-    return u.thumbnail_url || u.photo_url
-  }
-
   function UnitCard({ unit }: { unit: Unit }) {
     return (
       <button
@@ -572,17 +569,7 @@ export default function CustomerPortal() {
         onClick={() => openUnit(unit)}
         className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-4 flex gap-4 transition"
       >
-        <div className="shrink-0">
-          {unitImage(unit) ? (
-            <img
-              src={unitImage(unit)!}
-              alt=""
-              className="h-14 w-14 sm:h-16 sm:w-16 object-cover rounded-lg border border-zinc-700"
-            />
-          ) : (
-            <div className="h-14 w-14 sm:h-16 sm:w-16 rounded-lg border border-zinc-700 bg-zinc-800" />
-          )}
-        </div>
+        <UnitPhoto unit={unit} size="h-14 w-14 sm:h-16 sm:w-16" />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-0.5">
             <p className="font-semibold text-base sm:text-lg truncate">{displayName(unit)}</p>
@@ -978,15 +965,7 @@ export default function CustomerPortal() {
           <div className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-6 space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="flex gap-3 min-w-0">
-                {unitImage(selectedUnit) ? (
-                  <img
-                    src={unitImage(selectedUnit)!}
-                    alt=""
-                    className="h-16 w-16 object-cover rounded-lg border border-zinc-700 shrink-0"
-                  />
-                ) : (
-                  <div className="h-16 w-16 rounded-lg border border-zinc-700 bg-zinc-800 shrink-0" />
-                )}
+                <UnitPhoto unit={selectedUnit} size="h-16 w-16" />
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{displayName(selectedUnit)}</p>
                   <p className="text-sm text-gray-400">

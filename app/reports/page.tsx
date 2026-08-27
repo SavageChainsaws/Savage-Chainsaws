@@ -1,8 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { getSessionInfo } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
 export default async function ReportsPage() {
-  const supabase = await createClient()
+  const { supabase, user, isAdmin } = await getSessionInfo()
+  if (!user || !isAdmin) redirect('/login')
+
   const { data: customers } = await supabase.from('customers').select('id, name').order('name')
   const { data: units } = await supabase
     .from('units')
