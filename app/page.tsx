@@ -253,6 +253,41 @@ async function updateNotes(formData: FormData) {
   revalidatePath('/')
 }
 
+async function upsertUnitPartOverride(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = (formData.get('id') as string) || null
+  const unitId = formData.get('unit_id') as string
+  const partName = (formData.get('part_name') as string || '').trim()
+  const sku = (formData.get('sku') as string || '').trim()
+  if (!unitId || !partName || !sku) return
+
+  if (id) {
+    await supabase
+      .from('unit_part_overrides')
+      .update({ part_name: partName, sku, updated_at: new Date().toISOString() })
+      .eq('id', id)
+  } else {
+    await supabase
+      .from('unit_part_overrides')
+      .upsert(
+        { unit_id: unitId, part_name: partName, sku },
+        { onConflict: 'unit_id,part_name_key' }
+      )
+  }
+  revalidatePath('/')
+}
+
+async function deleteUnitPartOverride(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  await supabase.from('unit_part_overrides').delete().eq('id', id)
+  revalidatePath('/')
+}
+
 function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -297,6 +332,42 @@ function isUnderWarranty(unit: any): boolean {
   return unit.warranty_end >= today
 }
 
+function normalizeModelKey(model: string | null): string {
+  return (model || '').toUpperCase().replace(/\s+/g, '')
+}
+
+// Merges a unit's model-level default parts with any unit-specific
+// overrides. Matching is by normalized model/part-name key (mirrors the
+// DB's generated model_key/part_name_key columns) so casing/spacing
+// differences in how a model was typed don't split one physical model
+// into separate part sets. A unit override always wins over its model
+// default; an override with no matching model default still shows, as a
+// part unique to that one unit.
+function resolveUnitParts(unit: any, modelPartsAll: any[], unitOverridesAll: any[]) {
+  const modelKey = normalizeModelKey(unit.model)
+  const defaults = modelPartsAll.filter(p => p.model_key === modelKey)
+  const overrides = unitOverridesAll.filter(o => o.unit_id === unit.id)
+  const overrideByKey = new Map(overrides.map(o => [o.part_name_key, o]))
+
+  const resolved: { id: string; part_name: string; sku: string; isOverride: boolean; hasDefault: boolean }[] = []
+  for (const d of defaults) {
+    const override = overrideByKey.get(d.part_name_key)
+    resolved.push({
+      id: override ? override.id : d.id,
+      part_name: override ? override.part_name : d.part_name,
+      sku: override ? override.sku : d.sku,
+      isOverride: !!override,
+      hasDefault: true,
+    })
+  }
+  const defaultKeys = new Set(defaults.map(d => d.part_name_key))
+  for (const o of overrides) {
+    if (defaultKeys.has(o.part_name_key)) continue
+    resolved.push({ id: o.id, part_name: o.part_name, sku: o.sku, isOverride: true, hasDefault: false })
+  }
+  return resolved.sort((a, b) => a.part_name.localeCompare(b.part_name))
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -312,6 +383,8 @@ export default async function Home({
 
   const { data: customers } = await supabase.from('customers').select('*').order('name')
   const { data: allUnits } = await supabase.from('units').select('*').order('created_at', { ascending: false })
+  const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
+  const { data: unitOverridesAll } = await supabase.from('unit_part_overrides').select('*')
 
   let units = allUnits
   if (selectedCustomerId && !statusFilter) {
@@ -454,6 +527,69 @@ export default async function Home({
     )
   }
 
+  function UnitPartsSection({ unit }: { unit: any }) {
+    const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
+    return (
+      <div className="mt-4 border-t border-zinc-800 pt-3">
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Parts &amp; SKUs (admin only)</p>
+        {parts.length === 0 ? (
+          <p className="text-xs text-gray-500 mb-2">
+            No default parts set for this model yet. <Link href="/parts" className="text-orange-400 hover:text-orange-300">Add one in the Parts Catalog</Link>.
+          </p>
+        ) : (
+          <div className="space-y-1.5 mb-2">
+            {parts.map(p => (
+              <div key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-gray-300 w-28 shrink-0">{p.part_name}</span>
+                <span className="font-mono text-orange-300">{p.sku}</span>
+                {p.isOverride ? (
+                  <>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-400">
+                      {p.hasDefault ? 'Overridden' : 'Unit-only'}
+                    </span>
+                    <form action={deleteUnitPartOverride}>
+                      <input type="hidden" name="id" value={p.id} />
+                      <button type="submit" className="text-xs text-red-400 hover:text-red-300">
+                        {p.hasDefault ? 'Reset to default' : 'Remove'}
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-600">Model default</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <details className="group/parts">
+          <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
+            Override or add a part for this unit
+          </summary>
+          <form action={upsertUnitPartOverride} className="mt-2 flex flex-wrap gap-2">
+            <input type="hidden" name="unit_id" value={unit.id} />
+            <input
+              name="part_name"
+              list={`parts-${unit.id}`}
+              placeholder="Part name (e.g. Blade)"
+              className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
+            <datalist id={`parts-${unit.id}`}>
+              {parts.map(p => <option key={p.id} value={p.part_name} />)}
+            </datalist>
+            <input
+              name="sku"
+              placeholder="SKU"
+              className="flex-1 min-w-[140px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
+            <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
+              Save
+            </button>
+          </form>
+        </details>
+      </div>
+    )
+  }
+
   function groupUnitsByCustomer(unitList: any[]) {
     const groups = new Map<string, { customer: any; units: any[] }>()
     for (const unit of unitList) {
@@ -559,6 +695,12 @@ export default async function Home({
               className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
             >
               Inventory
+            </Link>
+            <Link
+              href="/parts"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Parts
             </Link>
             <AdminLogout />
           </div>
@@ -870,6 +1012,8 @@ export default async function Home({
                             <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
                           </div>
                         )}
+
+                        <UnitPartsSection unit={unit} />
                       </div>
                     </details>
                   )
@@ -1043,6 +1187,8 @@ export default async function Home({
                                   <DeleteUnitButton id={unit.id} />
                                 </div>
                               </form>
+
+                              <UnitPartsSection unit={unit} />
 
                               {unit.status === 'Fleet' && (
                                 <form action={scheduleFleetService} className="border-t border-zinc-800 pt-3 space-y-2">
