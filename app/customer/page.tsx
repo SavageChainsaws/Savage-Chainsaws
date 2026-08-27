@@ -91,6 +91,7 @@ export default function CustomerPortal() {
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [showAddFleet, setShowAddFleet] = useState(false)
   const [showLogoUpload, setShowLogoUpload] = useState(false)
+  const [showMyFleet, setShowMyFleet] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
@@ -394,6 +395,7 @@ export default function CustomerPortal() {
     setShowCheckIn(false)
     setShowAddFleet(false)
     setShowLogoUpload(false)
+    setShowMyFleet(false)
   }
 
   function closeUnit() {
@@ -800,6 +802,7 @@ export default function CustomerPortal() {
               setShowLogoUpload(!showLogoUpload)
               setShowAddFleet(false)
               setShowCheckIn(false)
+              setShowMyFleet(false)
               closeUnit()
             }}
             className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -808,9 +811,22 @@ export default function CustomerPortal() {
           </button>
           <button
             onClick={() => {
+              setShowMyFleet(!showMyFleet)
+              setShowAddFleet(false)
+              setShowCheckIn(false)
+              setShowLogoUpload(false)
+              closeUnit()
+            }}
+            className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            {showMyFleet ? 'Close' : 'My Fleet'}
+          </button>
+          <button
+            onClick={() => {
               setShowAddFleet(!showAddFleet)
               setShowCheckIn(false)
               setShowLogoUpload(false)
+              setShowMyFleet(false)
               closeUnit()
             }}
             className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -823,6 +839,7 @@ export default function CustomerPortal() {
               setShowCheckIn(!showCheckIn)
               setShowAddFleet(false)
               setShowLogoUpload(false)
+              setShowMyFleet(false)
               closeUnit()
             }}
             className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -830,6 +847,61 @@ export default function CustomerPortal() {
             {showCheckIn ? 'Close Check-In' : 'Check In a Unit'}
           </button>
         </div>
+
+        {showMyFleet && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
+              <h2 className="text-lg font-semibold text-orange-400">My Fleet</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Every unit on your account, active or not - keep your serial numbers on hand in case a unit is ever lost or stolen and you need to report it.
+              </p>
+            </div>
+            {units.length === 0 ? (
+              <p className="px-4 sm:px-6 py-8 text-gray-500 text-sm">No units on your account yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
+                      <th className="px-4 sm:px-6 py-3">Model</th>
+                      <th className="px-3 py-3">Category</th>
+                      <th className="px-3 py-3">Serial Number</th>
+                      <th className="px-3 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {[...units]
+                      .sort((a, b) => (a.model || a.nickname || '').localeCompare(b.model || b.nickname || ''))
+                      .map(unit => (
+                        <tr key={unit.id} className="hover:bg-zinc-800/40">
+                          <td className="px-4 sm:px-6 py-3 font-medium">
+                            {unit.model || '-'}
+                            {unit.nickname && (
+                              <span className="block text-xs text-gray-500 font-normal">{unit.nickname}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-gray-300">{unit.equipment_type || '-'}</td>
+                          <td className="px-3 py-3 font-mono text-orange-300">{unit.serial_number || '-'}</td>
+                          <td className="px-3 py-3">
+                            <span className={`inline-block text-xs px-2.5 py-1 rounded-full font-medium ${
+                              unit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
+                                : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
+                                : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                                : 'bg-orange-500/20 text-orange-400'
+                            }`}>{unit.status}</span>
+                            <span className="block text-xs text-gray-500 mt-1">
+                              {ACTIVE_STATUSES.includes(unit.status) ? 'In for service' : 'With you'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {showLogoUpload && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 space-y-4">
