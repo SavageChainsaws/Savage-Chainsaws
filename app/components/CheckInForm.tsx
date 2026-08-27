@@ -60,10 +60,11 @@ export default function CheckInForm({
   const [typeManuallySet, setTypeManuallySet] = useState(false)
 
   function handleModelChange(value: string) {
-    setModel(value)
+    const upper = value.toUpperCase()
+    setModel(upper)
     if (typeManuallySet) return
-    const prefix = value.trim().slice(0, 2).toUpperCase()
-    setEquipmentType(STIHL_PREFIX_MAP[prefix] || (value.trim() ? 'Other' : ''))
+    const prefix = upper.trim().slice(0, 2)
+    setEquipmentType(STIHL_PREFIX_MAP[prefix] || (upper.trim() ? 'Other' : ''))
   }
 
   function handleTypeChange(value: string) {
