@@ -121,6 +121,7 @@ export default function CustomerPortal() {
   const [unitType, setUnitType] = useState('')
   const [customUnitType, setCustomUnitType] = useState('')
   const [unitTypeManuallySet, setUnitTypeManuallySet] = useState(false)
+  const [hours, setHours] = useState('')
   const [problem, setProblem] = useState('')
   const [scheduled, setScheduled] = useState('')
   const [notes, setNotes] = useState('')
@@ -315,6 +316,7 @@ export default function CustomerPortal() {
         serial_number: serial.trim(),
         model: model.trim() || null,
         equipment_type: finalUnitType || null,
+        hour_meter: unitType === 'Riding Lawn Mower' ? (hours.trim() || null) : null,
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
         photo_url: photoUrl,
@@ -336,6 +338,7 @@ export default function CustomerPortal() {
       setUnitType('')
       setCustomUnitType('')
       setUnitTypeManuallySet(false)
+      setHours('')
       setProblem('')
       setScheduled('')
       setNotes('')
@@ -1129,6 +1132,18 @@ export default function CustomerPortal() {
                   />
                 )}
               </div>
+              {unitType === 'Riding Lawn Mower' && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Hour meter (optional)</label>
+                  <input
+                    value={hours}
+                    onChange={e => setHours(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    placeholder="e.g. 142.5"
+                    inputMode="decimal"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-gray-500 mb-1">What's wrong</label>
                 <input
