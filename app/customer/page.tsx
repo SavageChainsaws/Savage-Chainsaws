@@ -26,12 +26,32 @@ type Unit = {
   archived: boolean | null
   hour_meter: string | null
   warranty_end: string | null
+  last_service_date: string | null
 }
 
 function isUnderWarranty(unit: { warranty_end: string | null }): boolean {
   if (!unit.warranty_end) return false
   const today = new Date().toISOString().slice(0, 10)
   return unit.warranty_end >= today
+}
+
+// Mirrors the admin dashboard's last_service_date convention (stamped
+// whenever a unit's status moves to Completed/Ready for Pickup). A unit
+// currently checked in doesn't need a reminder - it's already being
+// serviced - and one with no service history yet has nothing to measure
+// from, so neither case shows the indicator.
+function needsMaintenanceReminder(unit: { status: string; last_service_date: string | null }): boolean {
+  if (ACTIVE_STATUSES.includes(unit.status)) return false
+  if (!unit.last_service_date) return false
+  const fourMonthsAgo = new Date()
+  fourMonthsAgo.setMonth(fourMonthsAgo.getMonth() - 4)
+  return new Date(unit.last_service_date) < fourMonthsAgo
+}
+
+function monthsSince(dateString: string): number {
+  const then = new Date(dateString)
+  const now = new Date()
+  return (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth())
 }
 
 type Customer = {
@@ -867,6 +887,7 @@ export default function CustomerPortal() {
                       <th className="px-3 py-3">Category</th>
                       <th className="px-3 py-3">Serial Number</th>
                       <th className="px-3 py-3">Status</th>
+                      <th className="px-3 py-3">Maintenance</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800">
@@ -893,6 +914,24 @@ export default function CustomerPortal() {
                             <span className="block text-xs text-gray-500 mt-1">
                               {ACTIVE_STATUSES.includes(unit.status) ? 'In for service' : 'With you'}
                             </span>
+                          </td>
+                          <td className="px-3 py-3">
+                            {needsMaintenanceReminder(unit) ? (
+                              <div
+                                className="inline-flex flex-col"
+                                title="It's been a while since this unit's last service. Regular maintenance helps avoid bigger, costlier repairs down the road."
+                              >
+                                <span className="inline-flex items-center gap-1.5 w-fit text-xs px-2.5 py-1 rounded-full font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                                  Checkup Recommended
+                                </span>
+                                <span className="text-xs text-gray-500 mt-1">
+                                  {monthsSince(unit.last_service_date!)}+ months since last service
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-600">-</span>
+                            )}
                           </td>
                         </tr>
                       ))}
