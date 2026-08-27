@@ -10,7 +10,7 @@ import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
 
 function stampHistory(existing: string | null, entry: string) {
-  const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} â€” ${entry}`
+  const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
   return existing ? `${line}\n${existing}` : line
 }
 
@@ -31,7 +31,7 @@ async function addUnit(formData: FormData) {
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const expediteFee = expediteFeeRaw ? Number(expediteFeeRaw) : null
-  const history = stampHistory(null, `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` â€” ${problemType}` : ''}`)
+  const history = stampHistory(null, `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` - ${problemType}` : ''}`)
   await supabase.from('units').insert({
     serial_number: serial,
     model: model || null,
@@ -64,6 +64,7 @@ async function addFleetUnit(formData: FormData) {
   const hourMeter = formData.get('hour_meter') as string
   const purchaseDate = formData.get('purchase_date') as string
   const lastServiceDate = formData.get('last_service_date') as string
+  const warrantyEnd = formData.get('warranty_end') as string
   const fleetNotes = formData.get('fleet_notes') as string
   const partNumbers = formData.get('part_numbers') as string
   const nickname = formData.get('nickname') as string
@@ -78,6 +79,7 @@ async function addFleetUnit(formData: FormData) {
     hour_meter: hourMeter || null,
     purchase_date: purchaseDate || null,
     last_service_date: lastServiceDate || null,
+    warranty_end: warrantyEnd || null,
     fleet_notes: fleetNotes || null,
     part_numbers: partNumbers || null,
     nickname: nickname || null,
@@ -95,6 +97,7 @@ async function updateFleetUnit(formData: FormData) {
   const partNumbers = formData.get('part_numbers') as string
   const lastServiceDate = formData.get('last_service_date') as string
   const purchaseDate = formData.get('purchase_date') as string
+  const warrantyEnd = formData.get('warranty_end') as string
   const hourMeter = formData.get('hour_meter') as string
   const nickname = formData.get('nickname') as string
   const serial = formData.get('serial') as string
@@ -104,6 +107,7 @@ async function updateFleetUnit(formData: FormData) {
     part_numbers: partNumbers || null,
     last_service_date: lastServiceDate || null,
     purchase_date: purchaseDate || null,
+    warranty_end: warrantyEnd || null,
     hour_meter: hourMeter || null,
     nickname: nickname || null,
   }
@@ -155,7 +159,7 @@ async function returnToFleet(formData: FormData) {
     status: 'Fleet',
     decision_seen: true,
     problem_type: null,
-    history: stampHistory(existing?.history, 'Withdrawn from shop â€” returned to fleet'),
+    history: stampHistory(existing?.history, 'Withdrawn from shop - returned to fleet'),
   }).eq('id', id)
 
   revalidatePath('/')
@@ -181,7 +185,7 @@ async function updateStatus(formData: FormData) {
     updateData.expedite_fee = Number(expediteFeeRaw)
   }
   if (existing && existing.status !== status) {
-    updateData.history = stampHistory(existing.history, `Status â†’ ${status}`)
+    updateData.history = stampHistory(existing.history, `Status -> ${status}`)
   }
   if (status === 'Completed' || status === 'Ready for Pickup') {
     updateData.last_service_date = new Date().toISOString().split('T')[0]
@@ -276,14 +280,20 @@ function groupLabel(n: number) {
   return 'Trimmers & Misc'
 }
 
-// Model Â· Type first â€” never lead with serial
+// Model - Type first - never lead with serial
 function unitLabel(unit: any) {
   const model = (unit.model || '').trim()
   const type = (unit.equipment_type || '').trim()
-  if (model && type) return `${model} Â· ${type}`
+  if (model && type) return `${model} - ${type}`
   if (model) return model
   if (type) return type
   return unit.nickname || unit.serial_number || 'No model'
+}
+
+function isUnderWarranty(unit: any): boolean {
+  if (!unit.warranty_end) return false
+  const today = new Date().toISOString().slice(0, 10)
+  return unit.warranty_end >= today
 }
 
 function unitImage(unit: any) {
@@ -374,13 +384,13 @@ export default async function Home({
   const repairUnits = units?.filter(u => u.status !== 'Fleet') || []
 
   function formatDate(dateString: string | null) {
-    if (!dateString) return 'â€”'
+    if (!dateString) return '-'
     return new Date(dateString).toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
     })
   }
   function formatShortDate(dateString: string | null) {
-    if (!dateString) return 'â€”'
+    if (!dateString) return '-'
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
     })
@@ -417,8 +427,8 @@ export default async function Home({
                 }`}>{unit.status}</span>
               </div>
               <p className="text-sm text-gray-400">
-                Serial: {unit.serial_number || 'â€”'}
-                {unit.nickname ? ` Â· ${unit.nickname}` : ''}
+                Serial: {unit.serial_number || '-'}
+                {unit.nickname ? ` - ${unit.nickname}` : ''}
               </p>
               <p className="text-sm text-orange-400 font-medium">{company}</p>
               {children}
@@ -426,7 +436,7 @@ export default async function Home({
                 <span>Checked in: {formatDate(unit.created_at)}</span>
                 {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
               </div>
-              <p className="text-xs text-orange-400 mt-2">Tap card to open unit â†’</p>
+              <p className="text-xs text-orange-400 mt-2">Tap card to open unit {'->'}</p>
             </div>
           </div>
         </Link>
@@ -446,7 +456,7 @@ export default async function Home({
         </div>
         <details className="mt-2 group/notes ml-[calc(3.5rem+0.75rem)] sm:ml-[calc(6rem+1rem)]">
           <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
-            Notes {unit.notes ? 'Â· has notes' : ''}
+            Notes {unit.notes ? '- has notes' : ''}
           </summary>
           <form action={updateNotes} className="mt-2">
             <input type="hidden" name="id" value={unit.id} />
@@ -494,6 +504,18 @@ export default async function Home({
               </select>
               <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition">Switch</button>
             </form>
+            <Link
+              href="/reports"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Reports
+            </Link>
+            <Link
+              href="/inventory"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Inventory
+            </Link>
             <AdminLogout />
           </div>
         </div>
@@ -543,7 +565,7 @@ export default async function Home({
                 href={selectedCustomerId ? `/?customer=${selectedCustomerId}` : '/'}
                 className="text-sm text-gray-400 hover:text-white border border-zinc-700 rounded-lg px-4 py-2 transition"
               >
-                â† Back to {selectedCustomerId ? 'customer' : 'Action Center'}
+                {'<-'} Back to {selectedCustomerId ? 'customer' : 'Action Center'}
               </Link>
             </div>
             {statusFilteredUnits.length === 0 ? (
@@ -567,8 +589,8 @@ export default async function Home({
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold truncate">{unitLabel(unit)}</p>
                         <p className="text-sm text-gray-400 truncate">
-                          Serial: {unit.serial_number || 'â€”'}
-                          {unit.nickname ? ` Â· ${unit.nickname}` : ''}
+                          Serial: {unit.serial_number || '-'}
+                          {unit.nickname ? ` - ${unit.nickname}` : ''}
                         </p>
                         <p className="text-sm text-orange-400 truncate">{company}</p>
                         {unit.problem_type && (
@@ -707,8 +729,8 @@ export default async function Home({
               open={!!openUnitId && repairUnits.some(u => u.id === openUnitId)}
             >
               <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-                <h2 className="font-semibold text-orange-400">All Units â€” Repair Flow ({repairUnits.length})</h2>
-                <span className="text-gray-500 text-sm group-open:rotate-180 transition">â–¼</span>
+                <h2 className="font-semibold text-orange-400">All Units - Repair Flow ({repairUnits.length})</h2>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
               </summary>
               <div className="border-t border-zinc-800 divide-y divide-zinc-800">
                 {repairUnits.length === 0 && (
@@ -741,8 +763,8 @@ export default async function Home({
                             }`}>{unit.status}</span>
                           </div>
                           <p className="text-xs text-gray-500">
-                            Serial: {unit.serial_number || 'â€”'}
-                            {unit.nickname ? ` Â· ${unit.nickname}` : ''}
+                            Serial: {unit.serial_number || '-'}
+                            {unit.nickname ? ` - ${unit.nickname}` : ''}
                           </p>
                         </div>
                       </summary>
@@ -776,7 +798,7 @@ export default async function Home({
                             </div>
                           )}
                           {unit.invoice_url && (
-                            <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file â†’</a>
+                            <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file {'->'}</a>
                           )}
                         </form>
 
@@ -784,7 +806,7 @@ export default async function Home({
                           <form action={returnToFleet} className="pt-3">
                             <input type="hidden" name="id" value={unit.id} />
                             <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg">
-                              Withdraw â†’ Return to Fleet
+                              Withdraw {'->'} Return to Fleet
                             </button>
                           </form>
                         )}
@@ -806,9 +828,13 @@ export default async function Home({
               <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
                 <div className="flex items-center gap-3">
                   <h2 className="font-semibold text-orange-300">Fleet Units ({sortedFleet.length})</h2>
-                  <span className="text-xs text-gray-500 hidden sm:inline">ðŸŸ¢ Serviced Â· ðŸŸ  Known Â· ðŸ”´ Due</span>
+                  <span className="text-xs text-gray-500 hidden sm:inline inline-flex items-center gap-3">
+                    <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-green-500" />Serviced</span>
+                    <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-orange-500" />Known</span>
+                    <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-500" />Due</span>
+                  </span>
                 </div>
-                <span className="text-gray-500 text-sm group-open:rotate-180 transition">â–¼</span>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
               </summary>
               <div className="border-t border-zinc-800">
                 <details className="border-b border-zinc-800">
@@ -855,6 +881,10 @@ export default async function Home({
                       <input type="date" name="last_service_date" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div>
+                      <label className="block text-xs text-gray-500 mb-1">Warranty End Date</label>
+                      <input type="date" name="warranty_end" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
                       <label className="block text-xs text-gray-500 mb-1">Hour Meter</label>
                       <input name="hour_meter" placeholder="e.g. 12.5" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
@@ -892,7 +922,7 @@ export default async function Home({
                           <details className="group/fleet">
                             <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/40 transition flex items-center justify-between gap-2">
                               <div className="flex items-center gap-3 min-w-0">
-                                <span>{color === 'red' ? 'ðŸ”´' : color === 'green' ? 'ðŸŸ¢' : 'ðŸŸ '}</span>
+                                <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${color === 'red' ? 'bg-red-500' : color === 'green' ? 'bg-green-500' : 'bg-orange-500'}`} />
                                 {img ? (
                                   <img src={img} alt="" className="h-10 w-10 object-cover rounded-lg border border-zinc-700 shrink-0" />
                                 ) : (
@@ -901,22 +931,28 @@ export default async function Home({
                                 <div className="min-w-0">
                                   <p className="font-medium truncate">{unitLabel(unit)}</p>
                                   <p className="text-xs text-gray-500 truncate">
-                                    Serial: {unit.serial_number || 'â€”'}
-                                    {unit.nickname ? ` Â· ${unit.nickname}` : ''}
-                                    {unit.hour_meter ? ` Â· ${unit.hour_meter} hrs` : ''}
+                                    Serial: {unit.serial_number || '-'}
+                                    {unit.nickname ? ` - ${unit.nickname}` : ''}
+                                    {unit.hour_meter ? ` - ${unit.hour_meter} hrs` : ''}
                                   </p>
                                 </div>
                               </div>
-                              <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
-                                unit.status === 'Fleet' ? 'bg-zinc-700 text-gray-300'
-                                  : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                                  : 'bg-orange-500/20 text-orange-400'
-                              }`}>{unit.status}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isUnderWarranty(unit) && (
+                                  <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400">Under Warranty</span>
+                                )}
+                                <span className={`text-xs px-2.5 py-1 rounded-full ${
+                                  unit.status === 'Fleet' ? 'bg-zinc-700 text-gray-300'
+                                    : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-orange-500/20 text-orange-400'
+                                }`}>{unit.status}</span>
+                              </div>
                             </summary>
                             <div className="px-4 sm:px-6 pb-4 space-y-3">
                               <div className="flex flex-wrap gap-4 text-xs text-gray-500">
                                 <span>Purchased: {formatShortDate(unit.purchase_date)}</span>
                                 <span>Last service: {formatShortDate(unit.last_service_date)}</span>
+                                <span>Warranty end: {formatShortDate(unit.warranty_end)}</span>
                               </div>
                               <form action={updateFleetUnit} className="space-y-3">
                                 <input type="hidden" name="id" value={unit.id} />
@@ -936,6 +972,10 @@ export default async function Home({
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Last Service Date</label>
                                     <input type="date" name="last_service_date" defaultValue={unit.last_service_date || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Warranty End Date</label>
+                                    <input type="date" name="warranty_end" defaultValue={unit.warranty_end || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                                   </div>
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Hour Meter</label>

@@ -24,6 +24,13 @@ type Unit = {
   nickname: string | null
   archived: boolean | null
   hour_meter: string | null
+  warranty_end: string | null
+}
+
+function isUnderWarranty(unit: { warranty_end: string | null }): boolean {
+  if (!unit.warranty_end) return false
+  const today = new Date().toISOString().slice(0, 10)
+  return unit.warranty_end >= today
 }
 
 type Customer = {
@@ -269,7 +276,7 @@ export default function CustomerPortal() {
         archived: false,
         history: `${new Date().toLocaleString('en-US', {
           month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-        })} â€” Added to fleet by customer`,
+        })} - Added to fleet by customer`,
       })
       if (error) {
         console.error(error)
@@ -390,7 +397,7 @@ export default function CustomerPortal() {
     const note = serviceNote.trim() || 'Customer requested tune-up / service'
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} â€” Service requested by ${name}: ${note}`
+    })} - Service requested by ${name}: ${note}`
     const { data: existing } = await supabase
       .from('units')
       .select('notes, history')
@@ -424,7 +431,7 @@ export default function CustomerPortal() {
     const name = customer.name || userEmail || 'Customer'
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} â€” Service withdrawn by ${name} â€” returned to fleet`
+    })} - Service withdrawn by ${name} - returned to fleet`
     const { data: existing } = await supabase
       .from('units')
       .select('history')
@@ -457,7 +464,7 @@ export default function CustomerPortal() {
     const name = customer.name || userEmail || 'Customer'
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} â€” Archived by ${name} (removed from customer list)`
+    })} - Archived by ${name} (removed from customer list)`
     const { data: existing } = await supabase
       .from('units')
       .select('history')
@@ -497,7 +504,7 @@ export default function CustomerPortal() {
       note = `Equivalent replacement requested by ${name}`
     } else {
       status = 'Completed'
-      note = `Denied by ${name} â€” diagnosis fee $49.99 will apply`
+      note = `Denied by ${name} - diagnosis fee $49.99 will apply`
     }
     const { data: existing } = await supabase
       .from('units')
@@ -506,7 +513,7 @@ export default function CustomerPortal() {
       .single()
     const historyLine = `${new Date().toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} â€” ${note}`
+    })} - ${note}`
     const { error } = await supabase
       .from('units')
       .update({
@@ -548,7 +555,7 @@ export default function CustomerPortal() {
   function displayName(u: Unit) {
     const model = (u.model || '').trim()
     const type = (u.equipment_type || '').trim()
-    if (model && type) return `${model} Â· ${type}`
+    if (model && type) return `${model} - ${type}`
     if (model) return model
     if (type) return type
     return u.nickname || u.serial_number || 'No model'
@@ -593,25 +600,29 @@ export default function CustomerPortal() {
               }`}
             >
               {unit.status}
-              {unit.status === 'Needs Approval' && ' ðŸš©'}
             </span>
+            {isUnderWarranty(unit) && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-500/20 text-blue-400">
+                Under Warranty
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-400">
-            Serial: {unit.serial_number || 'â€”'}
-            {unit.nickname ? ` Â· ${unit.nickname}` : ''}
-            {unit.hour_meter ? ` Â· ${unit.hour_meter} hrs` : ''}
+            Serial: {unit.serial_number || '-'}
+            {unit.nickname ? ` - ${unit.nickname}` : ''}
+            {unit.hour_meter ? ` - ${unit.hour_meter} hrs` : ''}
           </p>
           {unit.problem_type && unit.status !== 'Fleet' && (
             <p className="text-sm text-gray-500 mt-0.5">Problem: {unit.problem_type}</p>
           )}
           {unit.status === 'Needs Approval' && (
-            <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide â†’</p>
+            <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide {'->'}</p>
           )}
           {(unit.status === 'Fleet' || unit.status === 'Completed') && (
-            <p className="text-xs text-gray-500 mt-1">Tap to edit or schedule service â†’</p>
+            <p className="text-xs text-gray-500 mt-1">Tap to edit or schedule service {'->'}</p>
           )}
           {(unit.status === 'Repair Requested' || unit.status === 'Diagnosing') && (
-            <p className="text-xs text-gray-500 mt-1">Tap to view or withdraw service â†’</p>
+            <p className="text-xs text-gray-500 mt-1">Tap to view or withdraw service {'->'}</p>
           )}
         </div>
       </button>
@@ -979,8 +990,8 @@ export default function CustomerPortal() {
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{displayName(selectedUnit)}</p>
                   <p className="text-sm text-gray-400">
-                    Serial: {selectedUnit.serial_number || 'â€”'}
-                    {selectedUnit.nickname ? ` Â· ${selectedUnit.nickname}` : ''}
+                    Serial: {selectedUnit.serial_number || '-'}
+                    {selectedUnit.nickname ? ` - ${selectedUnit.nickname}` : ''}
                   </p>
                   <span className={`inline-block mt-1 text-xs px-2.5 py-1 rounded-full font-medium ${
                     selectedUnit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
@@ -1138,7 +1149,7 @@ export default function CustomerPortal() {
                   disabled={detailBusy}
                   className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
                 >
-                  Withdraw Service â†’ Back to Fleet
+                  Withdraw Service {'->'} Back to Fleet
                 </button>
               </div>
             )}
@@ -1208,7 +1219,7 @@ export default function CustomerPortal() {
             <h2 className="text-lg font-semibold text-orange-300">
               Fleet ({fleetUnits.length})
             </h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">â–¼</span>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
           </summary>
           <div className="mt-3 space-y-3">
             {fleetUnits.length === 0 ? (
@@ -1226,7 +1237,7 @@ export default function CustomerPortal() {
             <h2 className="text-lg font-semibold text-gray-300">
               Other Units ({otherUnits.length})
             </h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">â–¼</span>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
           </summary>
           <div className="mt-3 space-y-3">
             {otherUnits.length === 0 ? (

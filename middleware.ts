@@ -23,7 +23,7 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Refreshes the session cookie if needed â€” required for SSR auth to work.
+  // Refreshes the session cookie if needed - required for SSR auth to work.
   await supabase.auth.getUser()
 
   return response
