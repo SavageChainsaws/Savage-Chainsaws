@@ -470,11 +470,11 @@ export default async function Home({
   ]
 
   return (
-    <main className="min-h-screen bg-transparent text-white p-4 sm:p-6 md:p-10">
+    <main className="min-h-screen bg-zinc-950 text-white p-4 sm:p-6 md:p-10">
       <Suspense fallback={null}><InactivityRedirect /></Suspense>
 
       <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 md:mb-10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 md:mb-10 bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
           <div className="flex items-center gap-4">
             <img src="/images/logo.png" alt="Savage Chainsaws" className="h-12 w-12 md:h-14 md:w-14 object-contain" />
             <div>
