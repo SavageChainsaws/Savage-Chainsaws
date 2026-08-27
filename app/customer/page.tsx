@@ -904,13 +904,20 @@ export default function CustomerPortal() {
                           <td className="px-3 py-3 text-gray-300">{unit.equipment_type || '-'}</td>
                           <td className="px-3 py-3 font-mono text-orange-300">{unit.serial_number || '-'}</td>
                           <td className="px-3 py-3">
-                            <span className={`inline-block text-xs px-2.5 py-1 rounded-full font-medium ${
-                              unit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
-                                : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
-                                : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                                : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                                : 'bg-orange-500/20 text-orange-400'
-                            }`}>{unit.status}</span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`inline-block text-xs px-2.5 py-1 rounded-full font-medium ${
+                                unit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
+                                  : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
+                                  : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                  : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                                  : 'bg-orange-500/20 text-orange-400'
+                              }`}>{unit.status}</span>
+                              {isUnderWarranty(unit) && (
+                                <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-500/20 text-blue-400">
+                                  Under Warranty
+                                </span>
+                              )}
+                            </div>
                             <span className="block text-xs text-gray-500 mt-1">
                               {ACTIVE_STATUSES.includes(unit.status) ? 'In for service' : 'With you'}
                             </span>
