@@ -178,7 +178,9 @@ async function updateStatus(formData: FormData) {
   const file = formData.get('invoice') as File
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
-  const { data: existing } = await supabase.from('units').select('status, history, is_priority').eq('id', id).single()
+  const serviceCostRaw = formData.get('service_cost') as string
+  const { data: existing } = await supabase.from('units').select('status, history, is_priority, problem_type').eq('id', id).single()
+  const wasAlreadyDone = existing ? ['Completed', 'Ready for Pickup'].includes(existing.status) : false
   const updateData: any = {
     status,
     notes: notes || null,
@@ -192,6 +194,19 @@ async function updateStatus(formData: FormData) {
   }
   if (status === 'Completed' || status === 'Ready for Pickup') {
     updateData.last_service_date = new Date().toISOString().split('T')[0]
+    // Log a service history entry the first time a unit reaches a
+    // completed state (not on a later Completed <-> Ready for Pickup edit
+    // of the same visit, and not on a resubmit that leaves status
+    // unchanged) - covers a unit closed out right at check-in, mid-repair,
+    // or through the normal completion flow, since they all pass through
+    // this same status update.
+    if (!wasAlreadyDone) {
+      await supabase.from('service_history').insert({
+        unit_id: id,
+        description: notes || existing?.problem_type || 'Service completed',
+        cost: serviceCostRaw ? Number(serviceCostRaw) : null,
+      })
+    }
   }
   if (file && typeof file === 'object' && 'size' in file && file.size > 0) {
     try {
@@ -306,6 +321,33 @@ async function deleteUnitPartOverride(formData: FormData) {
   revalidatePath('/')
 }
 
+async function addServiceHistoryEntry(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const unitId = formData.get('unit_id') as string
+  const serviceDate = formData.get('service_date') as string
+  const description = (formData.get('description') as string || '').trim()
+  const costRaw = formData.get('cost') as string
+  if (!unitId || !description) return
+  await supabase.from('service_history').insert({
+    unit_id: unitId,
+    service_date: serviceDate || new Date().toISOString().split('T')[0],
+    description,
+    cost: costRaw ? Number(costRaw) : null,
+  })
+  revalidatePath('/')
+}
+
+async function deleteServiceHistoryEntry(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  await supabase.from('service_history').delete().eq('id', id)
+  revalidatePath('/')
+}
+
 function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -367,6 +409,11 @@ export default async function Home({
   const { data: allUnits } = await supabase.from('units').select('*').order('created_at', { ascending: false })
   const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
   const { data: unitOverridesAll } = await supabase.from('unit_part_overrides').select('*')
+  const { data: serviceHistoryAll } = await supabase
+    .from('service_history')
+    .select('*')
+    .order('service_date', { ascending: false })
+    .order('created_at', { ascending: false })
 
   let units = allUnits
   if (selectedCustomerId && !statusFilter) {
@@ -577,6 +624,64 @@ export default async function Home({
               <option value="OEM">OEM (sets default for this model)</option>
               <option value="Aftermarket">Aftermarket (this unit only)</option>
             </select>
+            <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
+              Save
+            </button>
+          </form>
+        </details>
+      </div>
+    )
+  }
+
+  function ServiceHistorySection({ unit }: { unit: any }) {
+    const entries = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
+    return (
+      <div className="mt-4 border-t border-zinc-800 pt-3">
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Service History</p>
+        {entries.length === 0 ? (
+          <p className="text-xs text-gray-500 mb-2">
+            No service history yet. Entries are logged automatically when a unit is marked Completed / Ready for Pickup.
+          </p>
+        ) : (
+          <div className="space-y-1.5 mb-2">
+            {entries.map(e => (
+              <div key={e.id} className="flex flex-wrap items-start gap-2 text-sm">
+                <span className="text-gray-500 w-24 shrink-0">{formatShortDate(e.service_date)}</span>
+                <span className="text-gray-300 flex-1 min-w-[140px]">{e.description}</span>
+                <span className="font-mono text-orange-300">{e.cost != null ? `$${Number(e.cost).toFixed(2)}` : '-'}</span>
+                <form action={deleteServiceHistoryEntry}>
+                  <input type="hidden" name="id" value={e.id} />
+                  <button type="submit" className="text-xs text-red-400 hover:text-red-300">Remove</button>
+                </form>
+              </div>
+            ))}
+          </div>
+        )}
+        <details className="group/service-history">
+          <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
+            Add a service history entry
+          </summary>
+          <form action={addServiceHistoryEntry} className="mt-2 flex flex-wrap gap-2">
+            <input type="hidden" name="unit_id" value={unit.id} />
+            <input
+              name="service_date"
+              type="date"
+              defaultValue={new Date().toISOString().split('T')[0]}
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
+            <input
+              name="description"
+              placeholder="Work performed"
+              className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
+            <input
+              name="cost"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="Cost $"
+              className="w-28 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
             <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
               Save
             </button>
@@ -978,6 +1083,7 @@ export default async function Home({
                               Priority
                             </label>
                             <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+                            <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Completed / Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
                             <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
                             <DeleteUnitButton id={unit.id} />
                           </div>
@@ -1010,6 +1116,7 @@ export default async function Home({
                         )}
 
                         <UnitPartsSection unit={unit} />
+                        <ServiceHistorySection unit={unit} />
                       </div>
                     </details>
                   )
@@ -1185,6 +1292,7 @@ export default async function Home({
                               </form>
 
                               <UnitPartsSection unit={unit} />
+                              <ServiceHistorySection unit={unit} />
 
                               {unit.status === 'Fleet' && (
                                 <form action={scheduleFleetService} className="border-t border-zinc-800 pt-3 space-y-2">

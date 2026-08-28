@@ -48,10 +48,24 @@ function needsMaintenanceReminder(unit: { status: string; last_service_date: str
   return new Date(unit.last_service_date) < fourMonthsAgo
 }
 
+function formatShortDate(dateString: string | null): string {
+  if (!dateString) return '-'
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  })
+}
+
 function monthsSince(dateString: string): number {
   const then = new Date(dateString)
   const now = new Date()
   return (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth())
+}
+
+type ServiceHistoryEntry = {
+  id: string
+  service_date: string
+  description: string
+  cost: number | null
 }
 
 type Customer = {
@@ -115,6 +129,8 @@ export default function CustomerPortal() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
+  const [serviceHistory, setServiceHistory] = useState<ServiceHistoryEntry[]>([])
+  const [serviceHistoryLoading, setServiceHistoryLoading] = useState(false)
 
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
@@ -419,6 +435,19 @@ export default function CustomerPortal() {
     setShowAddFleet(false)
     setShowLogoUpload(false)
     setShowMyFleet(false)
+
+    setServiceHistory([])
+    setServiceHistoryLoading(true)
+    supabase
+      .from('service_history')
+      .select('id, service_date, description, cost')
+      .eq('unit_id', unit.id)
+      .order('service_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setServiceHistory(data || [])
+        setServiceHistoryLoading(false)
+      })
   }
 
   function closeUnit() {
@@ -427,6 +456,7 @@ export default function CustomerPortal() {
     if (thumbPreview) URL.revokeObjectURL(thumbPreview)
     setThumbPreview(null)
     setServiceNote('')
+    setServiceHistory([])
   }
 
   function onThumbPick(file: File | null) {
@@ -634,6 +664,17 @@ export default function CustomerPortal() {
       setMessage('Could not save decision. Try again.')
       return
     }
+    if (decision === 'deny') {
+      // Applies the existing $49.99 diagnostic/check-in fee as a real,
+      // itemized charge in Service History rather than just a note - this
+      // is the same fee already messaged above, now logged as the actual
+      // completed-service entry it represents.
+      await supabase.from('service_history').insert({
+        unit_id: unitId,
+        description: `Diagnostic fee - repair denied by ${name}`,
+        cost: 49.99,
+      })
+    }
     setMessage(
       decision === 'deny'
         ? 'Repair denied. A $49.99 diagnosis fee applies.'
@@ -799,9 +840,13 @@ export default function CustomerPortal() {
             <p className="text-xs text-gray-500 uppercase">Total Units</p>
             <p className="text-2xl font-bold text-orange-400">{total}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase">Needs Approval</p>
-            <p className="text-2xl font-bold text-yellow-400">{needsApproval}</p>
+          <div className={`rounded-xl p-4 ${
+            needsApproval > 0
+              ? 'bg-red-500/10 border border-red-500/50'
+              : 'bg-zinc-900 border border-zinc-800'
+          }`}>
+            <p className={`text-xs uppercase ${needsApproval > 0 ? 'text-red-400' : 'text-gray-500'}`}>Needs Approval</p>
+            <p className={`text-2xl font-bold ${needsApproval > 0 ? 'text-red-400' : 'text-yellow-400'}`}>{needsApproval}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
             <p className="text-xs text-gray-500 uppercase">In Progress</p>
@@ -840,9 +885,14 @@ export default function CustomerPortal() {
               setShowLogoUpload(false)
               closeUnit()
             }}
-            className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+            className="relative border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
           >
             {showMyFleet ? 'Close' : 'My Fleet'}
+            {needsApproval > 0 && (
+              <span className="absolute -top-2 -right-2 h-5 min-w-5 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-xs font-bold">
+                {needsApproval}
+              </span>
+            )}
           </button>
           <button
             onClick={() => {
@@ -1378,37 +1428,66 @@ export default function CustomerPortal() {
             )}
 
             {selectedUnit.status === 'Needs Approval' && (
-              <div className="border-t border-zinc-800 pt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={() => handleDecision(selectedUnit.id, 'approve')}
-                  className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                >
-                  Approve Repair
-                </button>
-                <button
-                  onClick={() => handleDecision(selectedUnit.id, 'upgrade')}
-                  className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                >
-                  Upgrade
-                </button>
-                <button
-                  onClick={() => handleDecision(selectedUnit.id, 'equivalent')}
-                  className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                >
-                  Same / Equivalent
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm('Deny this repair? A $49.99 diagnosis fee will be charged.')) {
-                      handleDecision(selectedUnit.id, 'deny')
-                    }
-                  }}
-                  className="bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                >
-                  Deny ($49.99 diag)
-                </button>
+              <div className="border-t border-zinc-800 pt-4 space-y-3">
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-3">
+                  <p className="text-xs text-yellow-400 uppercase tracking-wider mb-1">Repair decision needed</p>
+                  <p className="text-sm text-gray-200">
+                    {selectedUnit.notes || 'Jesse has a repair recommendation for this unit. Approve to proceed, or deny to pick it up as-is.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleDecision(selectedUnit.id, 'approve')}
+                    className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                  >
+                    Approve Repair
+                  </button>
+                  <button
+                    onClick={() => handleDecision(selectedUnit.id, 'upgrade')}
+                    className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                  >
+                    Upgrade
+                  </button>
+                  <button
+                    onClick={() => handleDecision(selectedUnit.id, 'equivalent')}
+                    className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                  >
+                    Same / Equivalent
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm('Deny this repair? A $49.99 diagnosis fee will be charged.')) {
+                        handleDecision(selectedUnit.id, 'deny')
+                      }
+                    }}
+                    className="bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                  >
+                    Deny ($49.99 diag)
+                  </button>
+                </div>
               </div>
             )}
+
+            <div className="border-t border-zinc-800 pt-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Service History</p>
+              {serviceHistoryLoading ? (
+                <p className="text-xs text-gray-500">Loading...</p>
+              ) : serviceHistory.length === 0 ? (
+                <p className="text-xs text-gray-500">
+                  No completed service logged yet for this unit.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {serviceHistory.map(e => (
+                    <div key={e.id} className="flex flex-wrap items-start gap-2 text-sm bg-zinc-950/60 border border-zinc-800 rounded-lg px-3 py-2">
+                      <span className="text-gray-500 w-24 shrink-0">{formatShortDate(e.service_date)}</span>
+                      <span className="text-gray-300 flex-1 min-w-[140px]">{e.description}</span>
+                      <span className="font-mono text-orange-300">{e.cost != null ? `$${Number(e.cost).toFixed(2)}` : '-'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="border-t border-zinc-800 pt-4">
               <button
