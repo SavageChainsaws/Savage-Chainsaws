@@ -156,6 +156,7 @@ async function updateFleetUnit(formData: FormData) {
   const hourMeter = formData.get('hour_meter') as string
   const nickname = formData.get('nickname') as string
   const serial = formData.get('serial') as string
+  const shortblockReplaced = formData.get('shortblock_replaced') === 'true'
 
   const update: any = {
     fleet_notes: fleetNotes || null,
@@ -165,8 +166,20 @@ async function updateFleetUnit(formData: FormData) {
     warranty_end: warrantyEnd || null,
     hour_meter: hourMeter || null,
     nickname: nickname || null,
+    shortblock_replaced: shortblockReplaced,
   }
+  // A shortblock swap doesn't come with a new serial - the unit keeps its
+  // existing record and serial number, this just flags that it happened.
   if (serial?.trim()) update.serial_number = serial.trim()
+
+  const { data: existing } = await supabase
+    .from('units')
+    .select('history, shortblock_replaced')
+    .eq('id', id)
+    .single()
+  if (shortblockReplaced && !existing?.shortblock_replaced) {
+    update.history = stampHistory(existing?.history, 'Shortblock replaced - serial number retained')
+  }
 
   await supabase.from('units').update(update).eq('id', id)
   revalidatePath('/')
@@ -1204,6 +1217,9 @@ export default async function Home({
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
                       <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                      <p className="text-xs text-gray-600 mt-1">
+                        Illegible plate? Use a custom ID instead (e.g. BR800CE-1) - tracked the same as a real serial.
+                      </p>
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
@@ -1289,6 +1305,9 @@ export default async function Home({
                                 {isUnderWarranty(unit) && (
                                   <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400">Under Warranty</span>
                                 )}
+                                {unit.shortblock_replaced && (
+                                  <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-400">Shortblock Replaced</span>
+                                )}
                                 <span className={`text-xs px-2.5 py-1 rounded-full ${
                                   unit.status === 'Fleet' ? 'bg-zinc-700 text-gray-300'
                                     : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
@@ -1312,6 +1331,9 @@ export default async function Home({
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Serial Number</label>
                                     <input name="serial" defaultValue={unit.serial_number || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      Illegible plate? Use a custom ID instead (e.g. BR800CE-1) - tracked the same as a real serial.
+                                    </p>
                                   </div>
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Purchase Date</label>
@@ -1338,6 +1360,21 @@ export default async function Home({
                                   <label className="block text-xs text-gray-500 mb-1">Fleet Notes</label>
                                   <textarea name="fleet_notes" rows={2} defaultValue={unit.fleet_notes || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                                 </div>
+                                <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    name="shortblock_replaced"
+                                    value="true"
+                                    defaultChecked={!!unit.shortblock_replaced}
+                                    className="mt-0.5 rounded border-zinc-600 bg-zinc-800 text-orange-500 focus:ring-orange-500"
+                                  />
+                                  <span>
+                                    <span className="text-orange-400 font-medium">Shortblock Replacement</span>
+                                    <span className="block text-xs text-gray-500">
+                                      Engine shortblock was swapped on this unit - keeps this same record and serial number rather than starting a new one.
+                                    </span>
+                                  </span>
+                                </label>
                                 <div className="flex gap-2">
                                   <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Save</button>
                                   <DeleteUnitButton id={unit.id} />

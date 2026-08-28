@@ -156,6 +156,9 @@ export default function CheckInForm({
       <div>
         <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
         <input name="serial" required className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="Serial number" />
+        <p className="text-xs text-gray-600 mt-1">
+          Plate worn or unreadable? Enter a custom ID instead (e.g. BR800CE-1) - it&apos;s tracked the same as a real serial.
+        </p>
       </div>
 
       <div>
