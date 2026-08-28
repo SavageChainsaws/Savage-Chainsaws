@@ -36,6 +36,17 @@ export default async function ReportsPage() {
     })
     .sort((a, b) => b.thisMonth - a.thisMonth || b.total - a.total)
 
+  // Ranked by units actually brought in for service - a unit still sitting
+  // at 'Fleet' with no last_service_date was only ever registered, never
+  // serviced, so it doesn't count toward this ranking.
+  const byServiceCount = (customers || [])
+    .map(c => {
+      const theirUnits = (units || []).filter(u => u.customer_id === c.id)
+      const serviced = theirUnits.filter(u => u.status !== 'Fleet' || !!u.last_service_date).length
+      return { id: c.id, name: c.name, serviced }
+    })
+    .sort((a, b) => b.serviced - a.serviced || a.name.localeCompare(b.name))
+
   const dueSoon = (units || []).filter(u => {
     if (!u.last_service_date) return false
     const last = new Date(u.last_service_date)
@@ -169,6 +180,50 @@ export default async function ReportsPage() {
         <p className="text-xs text-gray-500">
           Green month count (15+) = incentive threshold idea. Adjust later when you set promo rules.
         </p>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
+            <h2 className="text-lg font-semibold text-orange-400">Customers by units serviced</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Ranked by total units ever brought in for service, most first. Fleet equipment that&apos;s only ever
+              been registered - never actually checked in - doesn&apos;t count.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
+                  <th className="px-4 sm:px-6 py-3">Customer</th>
+                  <th className="px-3 py-3 text-right">Units serviced</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {byServiceCount.map(c => (
+                  <tr key={c.id} className="hover:bg-zinc-800/40">
+                    <td className="px-4 sm:px-6 py-3 font-medium">{c.name}</td>
+                    <td className="px-3 py-3 text-right text-orange-400 font-bold">{c.serviced}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/?customer=${c.id}`}
+                        className="text-xs text-orange-400 hover:text-orange-300"
+                      >
+                        Open →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {byServiceCount.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-8 text-gray-500 text-center">
+                      No customers yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
