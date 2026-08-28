@@ -330,21 +330,46 @@ export default function CustomerPortal() {
         ? new Date(scheduled).toISOString()
         : new Date().toISOString()
       const finalUnitType = unitType === 'Other' && customUnitType.trim() ? customUnitType.trim() : unitType
-      const { error } = await supabase.from('units').insert({
-        serial_number: serial.trim(),
+      const trimmedSerial = serial.trim()
+
+      // A unit already on this customer's fleet (same serial) gets linked
+      // and its status updated instead of creating a second, duplicate row.
+      const { data: existingMatches } = await supabase
+        .from('units')
+        .select('id')
+        .eq('customer_id', customer.id)
+        .ilike('serial_number', trimmedSerial)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      const existingUnit = existingMatches?.[0] || null
+
+      const checkInFields = {
+        serial_number: trimmedSerial,
         model: model.trim() || null,
         equipment_type: finalUnitType || null,
         hour_meter: unitType === 'Riding Lawn Mower' ? (hours.trim() || null) : null,
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
-        photo_url: photoUrl,
-        thumbnail_url: photoUrl,
-        customer_id: customer.id,
         status: 'Repair Requested',
         decision_seen: true,
         archived: false,
         created_at: createdAt,
-      })
+      }
+
+      const { error } = existingUnit
+        ? await supabase
+            .from('units')
+            .update({
+              ...checkInFields,
+              ...(photoUrl ? { photo_url: photoUrl, thumbnail_url: photoUrl } : {}),
+            })
+            .eq('id', existingUnit.id)
+        : await supabase.from('units').insert({
+            ...checkInFields,
+            photo_url: photoUrl,
+            thumbnail_url: photoUrl,
+            customer_id: customer.id,
+          })
       if (error) {
         console.error(error)
         setMessage('Could not check in this unit. Let Jesse know if this keeps happening.')

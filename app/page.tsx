@@ -36,25 +36,58 @@ async function addUnit(formData: FormData) {
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const expediteFee = expediteFeeRaw ? Number(expediteFeeRaw) : null
-  const history = stampHistory(null, `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` - ${problemType}` : ''}`)
-  await supabase.from('units').insert({
+  const trimmedSerial = serial.trim()
+  const createdAt = checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString()
+  const historyEntry = `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` - ${problemType}` : ''}`
+
+  // A unit already on this customer's fleet (same serial) gets linked and
+  // its status updated instead of creating a second, duplicate row.
+  let existingUnit: { id: string; history: string | null } | null = null
+  if (trimmedSerial) {
+    const { data: existingMatches } = await supabase
+      .from('units')
+      .select('id, history')
+      .eq('customer_id', customerId)
+      .ilike('serial_number', trimmedSerial)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    existingUnit = existingMatches?.[0] || null
+  }
+
+  const checkInFields = {
     serial_number: serial,
     model: model || null,
     problem_type: problemType || null,
     notes: customerNotes || null,
-    customer_id: customerId,
     status: 'Diagnosing',
     decision_seen: true,
-    photo_url: photoUrl,
-    thumbnail_url: photoUrl,
     equipment_type: equipmentType || null,
     hour_meter: hourMeter || null,
     part_number: partNumber || null,
     is_priority: isPriority,
     expedite_fee: expediteFee,
-    history,
-    created_at: checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString(),
-  })
+    created_at: createdAt,
+  }
+
+  if (existingUnit) {
+    await supabase
+      .from('units')
+      .update({
+        ...checkInFields,
+        ...(photoUrl ? { photo_url: photoUrl, thumbnail_url: photoUrl } : {}),
+        archived: false,
+        history: stampHistory(existingUnit.history, historyEntry),
+      })
+      .eq('id', existingUnit.id)
+  } else {
+    await supabase.from('units').insert({
+      ...checkInFields,
+      customer_id: customerId,
+      photo_url: photoUrl,
+      thumbnail_url: photoUrl,
+      history: stampHistory(null, historyEntry),
+    })
+  }
   revalidatePath('/')
 }
 
