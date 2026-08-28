@@ -63,11 +63,13 @@ function monthsSince(dateString: string): number {
   return (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth())
 }
 
+// Cost is intentionally left off this type/view - customers see date and
+// work performed only; cost stays admin-only (shown on the admin dashboard's
+// Service History section instead).
 type ServiceHistoryEntry = {
   id: string
   service_date: string
   description: string
-  cost: number | null
 }
 
 type Customer = {
@@ -487,7 +489,7 @@ export default function CustomerPortal() {
     setServiceHistoryLoading(true)
     supabase
       .from('service_history')
-      .select('id, service_date, description, cost')
+      .select('id, service_date, description')
       .eq('unit_id', unit.id)
       .order('service_date', { ascending: false })
       .order('created_at', { ascending: false })
@@ -1533,7 +1535,6 @@ export default function CustomerPortal() {
                     <div key={e.id} className="flex flex-wrap items-start gap-2 text-sm bg-zinc-950/60 border border-zinc-800 rounded-lg px-3 py-2">
                       <span className="text-gray-500 w-24 shrink-0">{formatShortDate(e.service_date)}</span>
                       <span className="text-gray-300 flex-1 min-w-[140px]">{e.description}</span>
-                      <span className="font-mono text-orange-300">{e.cost != null ? `$${Number(e.cost).toFixed(2)}` : '-'}</span>
                     </div>
                   ))}
                 </div>
