@@ -8,6 +8,26 @@ import SiteFooter from '../../components/SiteFooter'
 
 const supabase = createClient()
 
+// Supabase doesn't expose a stable error code across SDK versions for this,
+// so we match on status/message. Rate-limit errors are the ones customers
+// hit hardest (double-clicking "send" or trying resend right away), and the
+// raw message ("For security purposes, you can only request this after Ns")
+// reads like a developer error, not something a customer expects.
+function getFriendlyOtpError(err: unknown): string {
+  const status = (err as { status?: number })?.status
+  const code = ((err as { code?: string })?.code || '').toLowerCase()
+  const message = ((err as { message?: string })?.message || '').toLowerCase()
+  const isRateLimited =
+    status === 429 ||
+    code.includes('rate_limit') ||
+    message.includes('rate limit') ||
+    message.includes('security purposes')
+  if (isRateLimited) {
+    return "You've requested a login link recently. For security we limit how often we can send one - please wait about a minute and try again. Also worth checking your spam/junk folder for the earlier email."
+  }
+  return (err as { message?: string })?.message || 'Could not send a login link. Please try again in a moment.'
+}
+
 // useSearchParams() requires a Suspense boundary to opt this one small
 // piece out of static prerendering, so it's split out from the page body.
 function LinkExpiredNotice({ onError }: { onError: (message: string) => void }) {
@@ -29,13 +49,29 @@ export default function CustomerLogin() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleSendLink(e: React.FormEvent) {
-    e.preventDefault()
+  async function sendLoginLink(targetEmail: string) {
     setError('')
     setLoading(true)
 
+    // Check the email belongs to a known customer before sending anything -
+    // otherwise a typo'd or unregistered address still shows "check your
+    // email" even though nothing was actually sent.
+    const { data: knownEmail, error: lookupError } = await supabase.rpc('customer_email_exists', {
+      check_email: targetEmail,
+    })
+    if (lookupError) {
+      setError('Could not verify that email right now. Please try again in a moment.')
+      setLoading(false)
+      return
+    }
+    if (!knownEmail) {
+      setError("We don't have an account for that email. Double-check for typos, or create a new account below.")
+      setLoading(false)
+      return
+    }
+
     const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
+      email: targetEmail,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/customer`,
       },
@@ -43,10 +79,19 @@ export default function CustomerLogin() {
 
     setLoading(false)
     if (otpError) {
-      setError(otpError.message)
+      setError(getFriendlyOtpError(otpError))
       return
     }
     setLinkSent(true)
+  }
+
+  async function handleSendLink(e: React.FormEvent) {
+    e.preventDefault()
+    await sendLoginLink(email.trim())
+  }
+
+  async function handleResend() {
+    await sendLoginLink(email.trim())
   }
 
   async function handlePasswordLogin(e: React.FormEvent) {
@@ -93,6 +138,25 @@ export default function CustomerLogin() {
                 Check your email - we sent a login link to <span className="text-white">{email.trim()}</span>.
                 Click it to open your portal.
               </p>
+              <p className="text-xs text-gray-500">
+                Don&apos;t see it? Check your spam/junk folder, or resend below.
+              </p>
+
+              {error && (
+                <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={loading}
+                className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition"
+              >
+                {loading ? 'Resending...' : 'Resend login link'}
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
