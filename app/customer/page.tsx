@@ -118,6 +118,21 @@ const EQUIPMENT_CATEGORIES = [
   'Other',
 ]
 
+// Placeholder text customers/admin type when the real serial isn't known.
+// Never used to match an existing fleet unit - several different physical
+// units can share the same placeholder, so matching on it would silently
+// merge unrelated equipment into one record.
+const NON_IDENTIFYING_SERIALS = new Set(['unknown', 'n/a', 'na', 'none', 'unk', 'tbd', '-', '--', '?'])
+function isIdentifyingSerial(value: string) {
+  const normalized = value.trim().toLowerCase()
+  return normalized.length > 0 && !NON_IDENTIFYING_SERIALS.has(normalized)
+}
+// ilike treats % and _ as wildcards - escape them so a serial containing
+// either is matched literally instead of as a pattern.
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, '\\$&')
+}
+
 export default function CustomerPortal() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -334,14 +349,19 @@ export default function CustomerPortal() {
 
       // A unit already on this customer's fleet (same serial) gets linked
       // and its status updated instead of creating a second, duplicate row.
-      const { data: existingMatches } = await supabase
-        .from('units')
-        .select('id')
-        .eq('customer_id', customer.id)
-        .ilike('serial_number', trimmedSerial)
-        .order('created_at', { ascending: false })
-        .limit(1)
-      const existingUnit = existingMatches?.[0] || null
+      // Skipped for placeholder serials ("Unknown", "N/A", ...) since those
+      // aren't unique to one physical unit.
+      let existingUnit: { id: string } | null = null
+      if (isIdentifyingSerial(trimmedSerial)) {
+        const { data: existingMatches } = await supabase
+          .from('units')
+          .select('id')
+          .eq('customer_id', customer.id)
+          .ilike('serial_number', escapeLikePattern(trimmedSerial))
+          .order('created_at', { ascending: false })
+          .limit(1)
+        existingUnit = existingMatches?.[0] || null
+      }
 
       const checkInFields = {
         serial_number: trimmedSerial,
