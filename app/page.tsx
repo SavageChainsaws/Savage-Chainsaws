@@ -233,6 +233,34 @@ async function returnToFleet(formData: FormData) {
   revalidatePath('/')
 }
 
+async function markPickedUp(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const pickedUpBy = (formData.get('picked_up_by') as string || '').trim()
+  if (!id || !pickedUpBy) return
+
+  const { data: existing } = await supabase
+    .from('units')
+    .select('status, history')
+    .eq('id', id)
+    .single()
+  // Only allowed once the work is actually done - guards against a stale
+  // form being submitted against a unit that moved on in the meantime.
+  if (!existing || !['Ready for Pickup', 'Completed'].includes(existing.status)) return
+
+  await supabase.from('units').update({
+    status: 'Fleet',
+    decision_seen: true,
+    picked_up_by: pickedUpBy,
+    picked_up_at: new Date().toISOString(),
+    history: stampHistory(existing.history, `Picked up by ${pickedUpBy}`),
+  }).eq('id', id)
+
+  revalidatePath('/')
+}
+
 async function updateStatus(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -1174,6 +1202,32 @@ export default async function Home({
                           </form>
                         )}
 
+                        {(unit.status === 'Ready for Pickup' || unit.status === 'Completed') && (
+                          <details className="pt-3 group/pickup">
+                            <summary className="text-sm text-green-400 hover:text-green-300 cursor-pointer list-none select-none font-medium">
+                              Mark as Picked Up
+                            </summary>
+                            <form action={markPickedUp} className="mt-2 flex flex-wrap gap-2">
+                              <input type="hidden" name="id" value={unit.id} />
+                              <input
+                                name="picked_up_by"
+                                required
+                                placeholder="Name of person picking up"
+                                className="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+                              />
+                              <button type="submit" className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-1.5 rounded-lg">
+                                Confirm Picked Up
+                              </button>
+                            </form>
+                          </details>
+                        )}
+
+                        {unit.picked_up_by && (
+                          <p className="text-xs text-gray-500 pt-3">
+                            Picked up by <span className="text-gray-300">{unit.picked_up_by}</span> on {formatDate(unit.picked_up_at)}
+                          </p>
+                        )}
+
                         {unit.history && (
                           <div className="mt-4 border-t border-zinc-800 pt-3">
                             <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
@@ -1321,6 +1375,11 @@ export default async function Home({
                                 <span>Last service: {formatShortDate(unit.last_service_date)}</span>
                                 <span>Warranty end: {formatShortDate(unit.warranty_end)}</span>
                               </div>
+                              {unit.picked_up_by && (
+                                <p className="text-xs text-gray-500">
+                                  Picked up by <span className="text-gray-300">{unit.picked_up_by}</span> on {formatDate(unit.picked_up_at)}
+                                </p>
+                              )}
                               <form action={updateFleetUnit} className="space-y-3">
                                 <input type="hidden" name="id" value={unit.id} />
                                 <div className="grid sm:grid-cols-2 gap-3">
