@@ -49,6 +49,29 @@ export default function CustomerLogin() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const [showForgot, setShowForgot] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetError, setResetError] = useState('')
+
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault()
+    setResetError('')
+    setResetLoading(true)
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+    })
+    setResetLoading(false)
+    if (resetErr) {
+      setResetError(resetErr.message)
+      return
+    }
+    // Supabase intentionally doesn't reveal whether the email matched an
+    // account here, to avoid leaking which emails are registered - so this
+    // same message shows either way.
+    setResetSent(true)
+  }
+
   async function sendLoginLink(targetEmail: string) {
     setError('')
     setLoading(true)
@@ -225,6 +248,19 @@ export default function CustomerLogin() {
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500"
                       placeholder="••••••••"
                     />
+                    <div className="text-right mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForgot(!showForgot)
+                          setResetError('')
+                          setResetSent(false)
+                        }}
+                        className="text-xs text-orange-400 hover:text-orange-300"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
                   </div>
                   <button
                     type="submit"
@@ -233,6 +269,35 @@ export default function CustomerLogin() {
                   >
                     {loading ? 'Please wait...' : 'Log in with password'}
                   </button>
+
+                  {showForgot && (
+                    <div className="border-t border-zinc-800 pt-3 space-y-2">
+                      {resetSent ? (
+                        <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+                          If an account exists for that email, we&apos;ve sent a password reset link. Check your email (and spam folder).
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-gray-500">
+                            We&apos;ll email a reset link to the address entered above.
+                          </p>
+                          {resetError && (
+                            <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                              {resetError}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleForgotPassword}
+                            disabled={resetLoading || !email.trim()}
+                            className="w-full border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50 text-white text-sm font-medium py-2 rounded-lg transition"
+                          >
+                            {resetLoading ? 'Sending...' : 'Send password reset link'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </form>
               )}
             </>
