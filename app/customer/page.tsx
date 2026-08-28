@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppNav from '../components/AppNav'
 import { UnitPhoto } from '../components/UnitPhoto'
+import ContactLinksBar from '../components/ContactLinksBar'
+import SiteFooter from '../components/SiteFooter'
 
 const supabase = createClient()
 
@@ -791,6 +793,9 @@ export default function CustomerPortal() {
             Log out
           </button>
         </div>
+        <div className="max-w-lg mx-auto">
+          <SiteFooter />
+        </div>
       </main>
     )
   }
@@ -824,6 +829,7 @@ export default function CustomerPortal() {
             <div className="text-right hidden sm:block">
               <p className="font-medium">{userEmail}</p>
             </div>
+            <ContactLinksBar />
             <button
               onClick={handleLogout}
               className="border border-zinc-700 rounded-lg px-3 py-1.5 hover:bg-zinc-800 transition"
@@ -1549,6 +1555,8 @@ export default function CustomerPortal() {
             )}
           </div>
         </details>
+
+        <SiteFooter />
       </div>
     </main>
   )

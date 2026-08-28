@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import SiteFooter from '../components/SiteFooter'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -184,6 +185,7 @@ export default function SignupPage() {
             </Link>
           </p>
         </form>
+        <SiteFooter />
       </div>
     </main>
   )

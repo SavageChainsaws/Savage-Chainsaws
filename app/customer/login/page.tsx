@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import SiteFooter from '../../components/SiteFooter'
 
 const supabase = createClient()
 
@@ -180,6 +181,7 @@ export default function CustomerLogin() {
             Create account
           </Link>
         </p>
+        <SiteFooter />
       </div>
     </main>
   )

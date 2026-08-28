@@ -10,6 +10,8 @@ import DeleteUnitButton from './components/DeleteUnitButton'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
 import UppercaseInput from './components/UppercaseInput'
+import ContactLinksBar from './components/ContactLinksBar'
+import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
 
 function stampHistory(existing: string | null, entry: string) {
@@ -803,6 +805,7 @@ export default async function Home({
             >
               Parts
             </Link>
+            <ContactLinksBar />
             <AdminLogout />
           </div>
         </div>
@@ -1319,6 +1322,8 @@ export default async function Home({
             </details>
           </>
         )}
+
+        <SiteFooter />
       </div>
     </main>
   )

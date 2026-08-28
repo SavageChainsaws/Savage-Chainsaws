@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import SiteFooter from '../components/SiteFooter'
 
 const supabase = createClient()
 
@@ -96,6 +97,7 @@ export default function LoginPage() {
             </Link>
           </p>
         </form>
+        <SiteFooter />
       </div>
     </main>
   )
