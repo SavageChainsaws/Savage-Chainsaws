@@ -17,3 +17,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Brief "Saved" confirmation after a form submits - holds visible, then
+   fades. Driven by a key remount (see NotesForm) rather than a JS timer. */
+@keyframes fade-out-delayed {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-fade-out-delayed {
+  animation: fade-out-delayed 2.5s ease-out forwards;
+}

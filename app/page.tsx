@@ -5,8 +5,10 @@ import Link from 'next/link'
 import { createClient, getSessionInfo } from '@/lib/supabase/server'
 import InactivityRedirect from './components/InactivityRedirect'
 import LastViewedBanner from './components/LastViewedBanner'
+import ScrollToOpenUnit from './components/ScrollToOpenUnit'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
+import NotesForm from './components/NotesForm'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
 import UppercaseInput from './components/UppercaseInput'
@@ -353,7 +355,7 @@ async function snoozeUnit(formData: FormData) {
   revalidatePath('/')
 }
 
-async function updateNotes(formData: FormData) {
+async function updateNotes(_prevState: { savedAt: number } | null, formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
@@ -361,6 +363,7 @@ async function updateNotes(formData: FormData) {
   const notes = formData.get('notes') as string
   await supabase.from('units').update({ notes: notes || null }).eq('id', id)
   revalidatePath('/')
+  return { savedAt: Date.now() }
 }
 
 async function upsertUnitPartOverride(formData: FormData) {
@@ -639,11 +642,7 @@ export default async function Home({
           <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
             Notes {unit.notes ? '- has notes' : ''}
           </summary>
-          <form action={updateNotes} className="mt-2">
-            <input type="hidden" name="id" value={unit.id} />
-            <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Add internal notes..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
-            <button type="submit" className="mt-1.5 text-xs text-orange-400 hover:text-orange-300">Save Notes</button>
-          </form>
+          <NotesForm unitId={unit.id} initialNotes={unit.notes || ''} action={updateNotes} />
         </details>
       </div>
     )
@@ -858,6 +857,7 @@ export default async function Home({
   return (
     <main className="min-h-screen bg-zinc-950 text-white p-4 sm:p-6 md:p-10">
       <Suspense fallback={null}><InactivityRedirect /></Suspense>
+      <ScrollToOpenUnit unitId={openUnitId} />
 
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 md:mb-10 bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
