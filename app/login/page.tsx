@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SiteFooter from '../components/SiteFooter'
 import { notifyAuthChangedAcrossTabs, watchForAuthChangeAcrossTabs } from '@/lib/authTabSync'
+import { signInWithPasswordAction } from '../actions/auth'
 
 const supabase = createClient()
 
@@ -71,31 +72,16 @@ export default function LoginPage() {
     formInProgressRef.current = true
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    if (error) {
-      setError(error.message)
+
+    const result = await signInWithPasswordAction(email, password)
+    if (result.error) {
+      setError(result.error)
       setLoading(false)
       return
     }
-
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      setError('Login failed. Please try again.')
-      setLoading(false)
-      return
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
 
     notifyAuthChangedAcrossTabs()
-    router.push(profile?.role === 'admin' ? '/' : '/customer')
+    router.push(result.isAdmin ? '/' : '/customer')
     router.refresh()
   }
 

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import SiteFooter from '../../components/SiteFooter'
 import { notifyAuthChangedAcrossTabs, watchForAuthChangeAcrossTabs } from '@/lib/authTabSync'
+import { signInWithPasswordAction } from '../../actions/auth'
 
 const supabase = createClient()
 
@@ -151,13 +152,9 @@ export default function CustomerLogin() {
     setError('')
     setLoading(true)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
-
-    if (signInError) {
-      setError(signInError.message)
+    const result = await signInWithPasswordAction(email.trim(), password)
+    if (result.error) {
+      setError(result.error)
       setLoading(false)
       return
     }
