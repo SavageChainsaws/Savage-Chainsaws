@@ -86,6 +86,7 @@ async function addUnit(formData: FormData) {
     is_priority: isPriority,
     expedite_fee: expediteFee,
     created_at: createdAt,
+    status_since: createdAt,
   }
 
   if (existingUnit) {
@@ -205,6 +206,7 @@ async function scheduleFleetService(formData: FormData) {
 
   await supabase.from('units').update({
     status: 'Repair Requested',
+    status_since: new Date().toISOString(),
     decision_seen: true,
     problem_type: note.trim() || 'Service requested from fleet',
     notes: existing?.notes ? `${entry}\n${existing.notes}` : entry,
@@ -227,6 +229,7 @@ async function returnToFleet(formData: FormData) {
 
   await supabase.from('units').update({
     status: 'Fleet',
+    status_since: new Date().toISOString(),
     decision_seen: true,
     problem_type: null,
     history: stampHistory(existing?.history, 'Withdrawn from shop - returned to fleet'),
@@ -254,6 +257,7 @@ async function markPickedUp(formData: FormData) {
 
   await supabase.from('units').update({
     status: 'Fleet',
+    status_since: new Date().toISOString(),
     decision_seen: true,
     picked_up_by: pickedUpBy,
     picked_up_at: new Date().toISOString(),
@@ -286,6 +290,7 @@ async function updateStatus(formData: FormData) {
   }
   if (existing && existing.status !== status) {
     updateData.history = stampHistory(existing.history, `Status -> ${status}`)
+    updateData.status_since = new Date().toISOString()
   }
   if (status === 'Completed' || status === 'Ready for Pickup') {
     updateData.last_service_date = new Date().toISOString().split('T')[0]
@@ -545,26 +550,36 @@ export default async function Home({
   const now = new Date()
   const isSnoozed = (u: any) => u.snoozed_until && new Date(u.snoozed_until) > now
 
+  // "Stale" = sitting in the current status for 7+ days without a status
+  // change (status_since), not just time since original check-in - a unit
+  // that moved through several statuses quickly but is now stuck doesn't
+  // get penalized for its overall age, and one that's been stuck since day
+  // one looks the same either way.
+  type StaleCheck = { status_since?: string | null; created_at: string; snoozed_until?: string | null }
+  const daysInStatus = (u: StaleCheck) =>
+    Math.floor((now.getTime() - new Date(u.status_since || u.created_at).getTime()) / (1000 * 60 * 60 * 24))
+  const isStaleInStatus = (u: StaleCheck) => !isSnoozed(u) && daysInStatus(u) >= 7
+  // Stable sort - stale units bump to the top, but keep their existing
+  // (newest-check-in-first) relative order within each group.
+  const sortStaleFirst = <T extends StaleCheck>(list: T[]) =>
+    [...list].sort((a, b) => Number(isStaleInStatus(b)) - Number(isStaleInStatus(a)))
+
   const staleUnits = (units?.filter(u => {
     if (isSnoozed(u)) return false
     if (['Completed', 'Registered', 'Ready for Pickup', 'Fleet'].includes(u.status)) return false
-    const days = Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24))
-    return days >= 7
+    return daysInStatus(u) >= 7
   }) || []).map(u => ({
     ...u,
-    daysSinceCheckIn: Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24)),
+    daysSinceCheckIn: daysInStatus(u),
   }))
 
   const approvedDecisions = units?.filter(u => !u.decision_seen && u.notes?.includes('Approved by')) || []
   const deniedDecisions = units?.filter(u => !u.decision_seen && u.notes?.includes('Denied by')) || []
-  const waitingOnCustomer = units?.filter(u => u.status === 'Needs Approval' && !isSnoozed(u)) || []
-  const repairRequestedUnits = units?.filter(u => u.status === 'Repair Requested' && !isSnoozed(u)) || []
-  const diagnosingUnits = units?.filter(u =>
-    u.status === 'Diagnosing' && !isSnoozed(u) &&
-    Math.floor((now.getTime() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24)) < 7
-  ) || []
-  const readyForPickupUnits = units?.filter(u => u.status === 'Ready for Pickup' && !isSnoozed(u)) || []
-  const priorityUnits = units?.filter(u => u.is_priority && u.status !== 'Completed' && !isSnoozed(u)) || []
+  const waitingOnCustomer = sortStaleFirst(units?.filter(u => u.status === 'Needs Approval' && !isSnoozed(u)) || [])
+  const repairRequestedUnits = sortStaleFirst(units?.filter(u => u.status === 'Repair Requested' && !isSnoozed(u)) || [])
+  const diagnosingUnits = sortStaleFirst(units?.filter(u => u.status === 'Diagnosing' && !isSnoozed(u)) || [])
+  const readyForPickupUnits = sortStaleFirst(units?.filter(u => u.status === 'Ready for Pickup' && !isSnoozed(u)) || [])
+  const priorityUnits = sortStaleFirst(units?.filter(u => u.is_priority && u.status !== 'Completed' && !isSnoozed(u)) || [])
 
   const customerFleet = selectedCustomerId
     ? (allUnits?.filter(u => u.customer_id === selectedCustomerId) || [])
@@ -576,7 +591,7 @@ export default async function Home({
     return (a.serial_number || '').localeCompare(b.serial_number || '')
   })
 
-  const repairUnits = units?.filter(u => u.status !== 'Fleet') || []
+  const repairUnits = sortStaleFirst(units?.filter(u => u.status !== 'Fleet') || [])
 
   function formatDate(dateString: string | null) {
     if (!dateString) return '-'
@@ -602,6 +617,11 @@ export default async function Home({
                 <p className="text-base sm:text-xl font-semibold truncate">{unitLabel(unit)}</p>
                 {unit.is_priority && (
                   <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
+                )}
+                {isStaleInStatus(unit) && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
+                    NEEDS ATTENTION - {daysInStatus(unit)}d
+                  </span>
                 )}
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                   unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
@@ -1155,6 +1175,11 @@ export default async function Home({
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium truncate">{unitLabel(unit)}</p>
                             {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
+                            {isStaleInStatus(unit) && (
+                              <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
+                                NEEDS ATTENTION - {daysInStatus(unit)}d
+                              </span>
+                            )}
                             <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                               unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
                                 : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'

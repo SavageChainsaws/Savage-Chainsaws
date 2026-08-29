@@ -384,6 +384,7 @@ export default function CustomerPortal() {
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
         status: 'Repair Requested',
+        status_since: createdAt,
         decision_seen: true,
         archived: false,
         created_at: createdAt,
@@ -603,6 +604,7 @@ export default function CustomerPortal() {
       .from('units')
       .update({
         status: 'Repair Requested',
+        status_since: new Date().toISOString(),
         problem_type: note,
         notes: existing?.notes ? `${note}\n${existing.notes}` : note,
         decision_seen: true,
@@ -637,6 +639,7 @@ export default function CustomerPortal() {
       .from('units')
       .update({
         status: 'Fleet',
+        status_since: new Date().toISOString(),
         problem_type: null,
         decision_seen: true,
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
@@ -714,6 +717,7 @@ export default function CustomerPortal() {
       .from('units')
       .update({
         status,
+        status_since: new Date().toISOString(),
         notes: existing?.notes ? `${note}\n${existing.notes}` : note,
         decision_seen: false,
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
