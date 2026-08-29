@@ -920,7 +920,7 @@ export default async function Home({
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 md:gap-4 mb-8 md:mb-10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2 md:gap-3 mb-6 md:mb-8">
           {tiles.map(tile => {
             const href = selectedCustomerId
               ? `/?customer=${selectedCustomerId}&status=${encodeURIComponent(tile.key)}`
@@ -930,14 +930,14 @@ export default async function Home({
               <Link
                 key={tile.key}
                 href={href}
-                className={`bg-zinc-900 border rounded-xl p-4 md:p-5 transition hover:border-orange-500/60 flex flex-col items-center justify-between min-h-[88px] md:min-h-[100px] ${
+                className={`bg-zinc-900 border rounded-lg px-3 py-2 md:py-2.5 transition hover:border-orange-500/60 flex flex-col items-center justify-center gap-0.5 ${
                   active ? 'border-orange-500' : 'border-zinc-800'
                 }`}
               >
-                <p className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider text-center leading-tight min-h-[2rem] flex items-center justify-center">
+                <p className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider text-center leading-tight">
                   {tile.label}
                 </p>
-                <p className={`text-2xl md:text-3xl font-bold ${tile.color} text-center`}>{tile.count}</p>
+                <p className={`text-xl md:text-2xl font-bold ${tile.color} text-center leading-none`}>{tile.count}</p>
               </Link>
             )
           })}
