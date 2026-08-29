@@ -651,8 +651,13 @@ export default async function Home({
   function UnitPartsSection({ unit }: { unit: any }) {
     const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
     return (
-      <div className="mt-4 border-t border-zinc-800 pt-3">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Parts &amp; SKUs (admin only)</p>
+      <details className="mt-4 border-t border-zinc-800 pt-3 group/parts-panel">
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider">
+            Parts &amp; SKUs (admin only){parts.length > 0 ? ` (${parts.length})` : ''}
+          </span>
+          <span className="text-gray-500 text-xs group-open/parts-panel:rotate-180 transition">v</span>
+        </summary>
         {parts.length === 0 ? (
           <p className="text-xs text-gray-500 mb-2">
             No default parts set for this model yet. <Link href="/parts" className="text-orange-400 hover:text-orange-300">Add one in the Parts Catalog</Link>.
@@ -721,15 +726,20 @@ export default async function Home({
             </button>
           </form>
         </details>
-      </div>
+      </details>
     )
   }
 
   function ServiceHistorySection({ unit }: { unit: any }) {
     const entries = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
     return (
-      <div className="mt-4 border-t border-zinc-800 pt-3">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Service History</p>
+      <details className="mt-4 border-t border-zinc-800 pt-3 group/history-panel">
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider">
+            Service History{entries.length > 0 ? ` (${entries.length})` : ''}
+          </span>
+          <span className="text-gray-500 text-xs group-open/history-panel:rotate-180 transition">v</span>
+        </summary>
         {entries.length === 0 ? (
           <p className="text-xs text-gray-500 mb-2">
             No service history yet. Entries are logged automatically when a unit is marked Completed / Ready for Pickup.
@@ -779,7 +789,7 @@ export default async function Home({
             </button>
           </form>
         </details>
-      </div>
+      </details>
     )
   }
 
