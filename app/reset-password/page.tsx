@@ -40,7 +40,7 @@ export default function ResetPasswordPage() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
+    const { data: updateData, error: updateError } = await supabase.auth.updateUser({ password })
     if (updateError) {
       setError(updateError.message)
       setLoading(false)
@@ -48,19 +48,17 @@ export default function ResetPasswordPage() {
     }
 
     setSuccess(true)
-    setLoading(false)
 
-    const { data: { user } } = await supabase.auth.getUser()
+    // Straight into the dashboard in this same tab, no extra login step and
+    // no artificial pause - one continuous process rather than a dead end
+    // that leaves the customer wondering whether it actually worked.
     let isAdmin = false
-    if (user) {
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    if (updateData.user) {
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', updateData.user.id).single()
       isAdmin = profile?.role === 'admin'
     }
-
-    setTimeout(() => {
-      router.push(isAdmin ? '/' : '/customer')
-      router.refresh()
-    }, 1500)
+    router.push(isAdmin ? '/' : '/customer')
+    router.refresh()
   }
 
   return (
