@@ -1,22 +1,24 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 
 const supabase = createClient()
 
 export default function Logout() {
-  const router = useRouter()
-
   useEffect(() => {
     const performLogout = async () => {
       await supabase.auth.signOut()
-      router.push('/login')
+      notifyAuthChangedAcrossTabs()
+      // Full page reload (not router.push) so the next page starts with a
+      // completely fresh client/session state instead of racing signOut's
+      // cookie-clearing against an in-flight soft navigation.
+      window.location.href = '/login'
     }
-    
+
     performLogout()
-  }, )
+  }, [])
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center">

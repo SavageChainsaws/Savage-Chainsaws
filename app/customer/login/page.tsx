@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useEffect, Suspense } from 'react'
+import { useCallback, useRef, useState, useEffect, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -55,13 +55,27 @@ export default function CustomerLogin() {
   const [resetLoading, setResetLoading] = useState(false)
   const [resetError, setResetError] = useState('')
 
+  // Mirror of email/password, read (not subscribed to) by the cross-tab
+  // watcher below so it doesn't need to re-subscribe on every keystroke -
+  // it just needs the latest value at the moment it fires.
+  const formInProgressRef = useRef(false)
+  function markFormInProgress(nextEmail: string, nextPassword: string) {
+    formInProgressRef.current = nextEmail.trim().length > 0 || nextPassword.length > 0
+  }
+
   // If a customer finishes a password reset (or logs in) in a second tab -
   // e.g. one their email client opened for the reset link - this tab wakes
   // up and redirects instead of sitting stale on the old logged-out form.
+  // Never fires while this tab has its own login attempt in progress - a
+  // stale/leftover session from a previous account must not be able to
+  // hijack someone actively typing different credentials here.
   const redirectIfSignedIn = useCallback(async () => {
+    if (formInProgressRef.current) return
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    if (formInProgressRef.current) return
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    if (formInProgressRef.current) return
     router.push(profile?.role === 'admin' ? '/' : '/customer')
     router.refresh()
   }, [router])
@@ -133,6 +147,7 @@ export default function CustomerLogin() {
 
   async function handlePasswordLogin(e: React.FormEvent) {
     e.preventDefault()
+    formInProgressRef.current = true
     setError('')
     setLoading(true)
 
@@ -217,7 +232,7 @@ export default function CustomerLogin() {
                     type="email"
                     required
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
+                    onChange={e => { setEmail(e.target.value); markFormInProgress(e.target.value, password) }}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500"
                     placeholder="you@company.com"
                   />
@@ -259,7 +274,7 @@ export default function CustomerLogin() {
                       type="password"
                       required
                       value={password}
-                      onChange={e => setPassword(e.target.value)}
+                      onChange={e => { setPassword(e.target.value); markFormInProgress(email, e.target.value) }}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500"
                       placeholder="••••••••"
                     />
