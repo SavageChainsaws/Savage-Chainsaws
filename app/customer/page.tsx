@@ -7,6 +7,7 @@ import AppNav from '../components/AppNav'
 import { UnitPhoto } from '../components/UnitPhoto'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
+import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 
 const supabase = createClient()
 
@@ -239,6 +240,12 @@ export default function CustomerPortal() {
       return
     }
     setUserEmail(user.email ?? null)
+
+    // Wakes up any other tab still sitting on a login page - e.g. one a
+    // magic-link email was requested from, if the link itself got opened
+    // in a separate tab by the customer's email client - so it redirects
+    // instead of being left showing the old logged-out form.
+    notifyAuthChangedAcrossTabs()
 
     // Links this auth user to a matching, not-yet-linked customers row (by
     // verified email) so RLS on units - which checks auth_user_id, not

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import SiteFooter from '../components/SiteFooter'
+import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 
 const supabase = createClient()
 
@@ -48,6 +49,11 @@ export default function ResetPasswordPage() {
     }
 
     setSuccess(true)
+
+    // Wakes up any other tab still sitting on the login page (e.g. the one
+    // "Forgot password?" was originally clicked in) so it redirects too,
+    // instead of being left showing the old logged-out form.
+    notifyAuthChangedAcrossTabs()
 
     // Straight into the dashboard in this same tab, no extra login step and
     // no artificial pause - one continuous process rather than a dead end

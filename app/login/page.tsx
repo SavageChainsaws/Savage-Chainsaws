@@ -1,9 +1,10 @@
 ﻿'use client'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SiteFooter from '../components/SiteFooter'
+import { notifyAuthChangedAcrossTabs, watchForAuthChangeAcrossTabs } from '@/lib/authTabSync'
 
 const supabase = createClient()
 
@@ -18,6 +19,19 @@ export default function LoginPage() {
   const [resetSent, setResetSent] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetError, setResetError] = useState('')
+
+  // If a customer finishes a password reset (or logs in) in a second tab -
+  // e.g. one their email client opened for the reset link - this tab wakes
+  // up and redirects instead of sitting stale on the old logged-out form.
+  const redirectIfSignedIn = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    router.push(profile?.role === 'admin' ? '/' : '/customer')
+    router.refresh()
+  }, [router])
+
+  useEffect(() => watchForAuthChangeAcrossTabs(redirectIfSignedIn), [redirectIfSignedIn])
 
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault()
@@ -64,6 +78,7 @@ export default function LoginPage() {
       .eq('id', user.id)
       .single()
 
+    notifyAuthChangedAcrossTabs()
     router.push(profile?.role === 'admin' ? '/' : '/customer')
     router.refresh()
   }
