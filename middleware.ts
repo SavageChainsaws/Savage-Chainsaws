@@ -1,6 +1,15 @@
 ﻿import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Vercel kills a hung middleware invocation after 25s with a hard 504 - if
+// Supabase Auth is ever briefly slow (cold start, transient network blip),
+// that turns into every request on the site failing outright instead of
+// just this one auth refresh. Bail out well before that limit and let the
+// request through unauthenticated-cookie-as-is; the destination page's own
+// getSessionInfo()/getUser() call is the real auth check and will catch an
+// actually-invalid session on its own, one page load later, without a 504.
+const AUTH_CHECK_TIMEOUT_MS = 5000
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
@@ -24,7 +33,17 @@ export async function middleware(request: NextRequest) {
   )
 
   // Refreshes the session cookie if needed - required for SSR auth to work.
-  await supabase.auth.getUser()
+  try {
+    await Promise.race([
+      supabase.auth.getUser(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase auth check timed out in middleware')), AUTH_CHECK_TIMEOUT_MS)
+      ),
+    ])
+  } catch (err) {
+    console.error(err)
+    return NextResponse.next({ request })
+  }
 
   return response
 }
