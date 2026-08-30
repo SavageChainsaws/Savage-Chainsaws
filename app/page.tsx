@@ -18,6 +18,8 @@ import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
 import { sendEmail } from '@/lib/email'
+import { createAdminClient } from '@/lib/supabase/admin'
+import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -239,6 +241,62 @@ async function updateCustomerEmail(formData: FormData) {
   revalidatePath('/')
 }
 
+type CreateLoginState = { success: boolean; message: string; password?: string } | null
+
+function generateDefaultPassword() {
+  return `Savage${Math.floor(1000 + Math.random() * 9000)}!`
+}
+
+// Admin-controlled account creation - creates the Supabase Auth user
+// directly (via the service-role client, since the anon-key client can't
+// call auth.admin.createUser) rather than the customer signing up
+// themselves. link_customer_account (called from the customer portal on
+// login) picks up the auth_user_id <-> customers link automatically once
+// customers.email matches, same as the public signup flow.
+async function createCustomerLogin(_prevState: CreateLoginState, formData: FormData): Promise<CreateLoginState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const email = ((formData.get('email') as string) || '').trim()
+  const customerId = (formData.get('customer_id') as string) || ''
+  const newCustomerName = ((formData.get('new_customer_name') as string) || '').trim()
+  const passwordInput = ((formData.get('password') as string) || '').trim()
+
+  if (!email) return { success: false, message: 'Email is required.' }
+  if (!customerId && !newCustomerName) {
+    return { success: false, message: 'Choose an existing customer or enter a name for a new one.' }
+  }
+
+  const adminClient = createAdminClient()
+  if (!adminClient) {
+    return { success: false, message: 'SUPABASE_SERVICE_ROLE_KEY is not configured yet - cannot create login accounts.' }
+  }
+
+  const password = passwordInput || generateDefaultPassword()
+  const { error: createErr } = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  })
+  if (createErr) {
+    return { success: false, message: `Could not create account: ${createErr.message}` }
+  }
+
+  if (customerId) {
+    await supabase.from('customers').update({ email }).eq('id', customerId)
+  } else {
+    await supabase.from('customers').insert({ name: newCustomerName, email })
+  }
+
+  revalidatePath('/')
+  return {
+    success: true,
+    message: `Login created for ${email}.`,
+    password: passwordInput ? undefined : password,
+  }
+}
+
 async function scheduleFleetService(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -429,11 +487,17 @@ async function nudgeUnit(formData: FormData) {
 
   const { data: customer } = await supabase
     .from('customers')
-    .select('name, email')
+    .select('name, email, secondary_email')
     .eq('id', unit.customer_id)
     .single()
 
-  if (!customer?.email) {
+  // Sends to both the primary and secondary email when both are on file -
+  // e.g. an owner and a manager - not just whichever was set first.
+  const recipients = [customer?.email, customer?.secondary_email].filter(
+    (e): e is string => !!e
+  )
+
+  if (recipients.length === 0) {
     await supabase.from('units').update({
       history: stampHistory(unit.history, 'Nudge attempted - no email on file for customer'),
     }).eq('id', id)
@@ -443,15 +507,15 @@ async function nudgeUnit(formData: FormData) {
 
   const label = unitLabel(unit)
   const result = await sendEmail({
-    to: customer.email,
+    to: recipients,
     subject: `Reminder: ${label} at Savage Chainsaws`,
-    html: `<p>Hi ${customer.name || 'there'},</p><p>Just a quick reminder about your <strong>${label}</strong> - it's currently <strong>${unit.status}</strong>. Log in to your portal any time for the latest update.</p>`,
+    html: `<p>Hi ${customer?.name || 'there'},</p><p>Just a quick reminder about your <strong>${label}</strong> - it's currently <strong>${unit.status}</strong>. Log in to your portal any time for the latest update.</p>`,
   })
 
   await supabase.from('units').update({
     history: stampHistory(
       unit.history,
-      result.ok ? `Reminder emailed to ${customer.email}` : `Nudge attempted - ${result.error}`
+      result.ok ? `Reminder emailed to ${recipients.join(', ')}` : `Nudge attempted - ${result.error}`
     ),
   }).eq('id', id)
   revalidatePath('/')
@@ -1255,6 +1319,22 @@ export default async function Home({
             )
           })}
         </div>
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Create Customer Login</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <p className="text-xs text-gray-500 mb-3">
+              Creates the login for a customer directly (invite-only, not public signup). Links to an existing customer or creates a new one.
+            </p>
+            <CreateCustomerLoginForm
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
+              action={createCustomerLogin}
+            />
+          </div>
+        </details>
 
         {statusFilter && (
           <div className="bg-zinc-900 border border-orange-400/40 rounded-xl overflow-hidden mb-5">

@@ -11,12 +11,6 @@ export default function AppNav() {
       >
         Videos
       </Link>
-      <Link
-        href="/feedback"
-        className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
-      >
-        Messages
-      </Link>
     </div>
   )
 }

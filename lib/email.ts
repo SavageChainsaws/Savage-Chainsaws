@@ -1,4 +1,4 @@
-type SendEmailArgs = { to: string; subject: string; html: string }
+type SendEmailArgs = { to: string | string[]; subject: string; html: string }
 type SendEmailResult = { ok: true } | { ok: false; error: string }
 
 // Thin wrapper around Resend's HTTP API - no SDK dependency, just a plain

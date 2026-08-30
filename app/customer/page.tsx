@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import AppNav from '../components/AppNav'
 import { UnitPhoto } from '../components/UnitPhoto'
 import { UnitPhotoGallery } from '../components/UnitPhotoGallery'
@@ -84,6 +85,7 @@ type Customer = {
   id: string
   name: string
   email: string | null
+  secondary_email: string | null
   logo_url: string | null
 }
 
@@ -154,6 +156,8 @@ export default function CustomerPortal() {
   const [showAddFleet, setShowAddFleet] = useState(false)
   const [showLogoUpload, setShowLogoUpload] = useState(false)
   const [showMyFleet, setShowMyFleet] = useState(false)
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
@@ -196,6 +200,16 @@ export default function CustomerPortal() {
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [logoBusy, setLogoBusy] = useState(false)
+
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState(false)
+  const [passwordBusy, setPasswordBusy] = useState(false)
+
+  const [secondaryEmail, setSecondaryEmail] = useState('')
+  const [secondaryEmailBusy, setSecondaryEmailBusy] = useState(false)
+  const [secondaryEmailSaved, setSecondaryEmailSaved] = useState(false)
 
   function handleModelChange(value: string) {
     const upper = value.toUpperCase()
@@ -264,7 +278,7 @@ export default function CustomerPortal() {
 
     const { data: cust } = await supabase
       .from('customers')
-      .select('id, name, email, logo_url')
+      .select('id, name, email, secondary_email, logo_url')
       .ilike('email', user.email ?? '')
       .maybeSingle()
 
@@ -276,6 +290,7 @@ export default function CustomerPortal() {
     }
 
     setCustomer(cust)
+    setSecondaryEmail(cust.secondary_email || '')
     const { data: unitData } = await supabase
       .from('units')
       .select('*')
@@ -353,6 +368,50 @@ export default function CustomerPortal() {
     }
     setCustomer(prev => prev ? { ...prev, logo_url: null } : null)
     setMessage('Company logo removed.')
+  }
+
+  // Same validation as /reset-password (the flow this replaces the need
+  // for once a customer is already logged in - e.g. right after an
+  // admin-set default password).
+  async function handleChangePassword() {
+    setPasswordError('')
+    setPasswordSuccess(false)
+    if (newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters.')
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Passwords do not match.')
+      return
+    }
+    setPasswordBusy(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setPasswordBusy(false)
+    if (error) {
+      setPasswordError(error.message)
+      return
+    }
+    setPasswordSuccess(true)
+    setNewPassword('')
+    setConfirmNewPassword('')
+  }
+
+  async function handleSaveSecondaryEmail() {
+    if (!customer) return
+    setSecondaryEmailBusy(true)
+    setSecondaryEmailSaved(false)
+    const trimmed = secondaryEmail.trim()
+    const { error } = await supabase
+      .from('customers')
+      .update({ secondary_email: trimmed || null })
+      .eq('id', customer.id)
+    setSecondaryEmailBusy(false)
+    if (error) {
+      setMessage('Could not save secondary email.')
+      return
+    }
+    setCustomer(prev => prev ? { ...prev, secondary_email: trimmed || null } : null)
+    setSecondaryEmailSaved(true)
   }
 
   async function handleCheckIn(e: React.FormEvent) {
@@ -953,6 +1012,33 @@ export default function CustomerPortal() {
             >
               Log out
             </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                aria-label="Menu"
+                className="h-9 w-9 flex items-center justify-center rounded-lg border border-zinc-700 hover:border-orange-500 transition text-xl leading-none"
+              >
+                &#8942;
+              </button>
+              {showSettingsMenu && (
+                <div className="absolute right-0 top-full mt-2 w-40 bg-zinc-900 border border-zinc-700 rounded-lg shadow-lg overflow-hidden z-10">
+                  <button
+                    onClick={() => {
+                      setShowSettingsMenu(false)
+                      setShowSettings(!showSettings)
+                      setShowAddFleet(false)
+                      setShowCheckIn(false)
+                      setShowLogoUpload(false)
+                      setShowMyFleet(false)
+                      closeUnit()
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 transition"
+                  >
+                    Settings
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -994,6 +1080,7 @@ export default function CustomerPortal() {
               setShowAddFleet(false)
               setShowCheckIn(false)
               setShowMyFleet(false)
+              setShowSettings(false)
               closeUnit()
             }}
             className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -1006,6 +1093,7 @@ export default function CustomerPortal() {
               setShowAddFleet(false)
               setShowCheckIn(false)
               setShowLogoUpload(false)
+              setShowSettings(false)
               closeUnit()
             }}
             className="relative border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -1023,6 +1111,7 @@ export default function CustomerPortal() {
               setShowCheckIn(false)
               setShowLogoUpload(false)
               setShowMyFleet(false)
+              setShowSettings(false)
               closeUnit()
             }}
             className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -1036,6 +1125,7 @@ export default function CustomerPortal() {
               setShowAddFleet(false)
               setShowLogoUpload(false)
               setShowMyFleet(false)
+              setShowSettings(false)
               closeUnit()
             }}
             className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
@@ -1364,6 +1454,84 @@ export default function CustomerPortal() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {showSettings && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 space-y-5">
+            <h2 className="text-lg font-semibold text-orange-400">Settings</h2>
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-orange-300">Change Password</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="New password"
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={e => setConfirmNewPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              {passwordError && (
+                <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                  {passwordError}
+                </p>
+              )}
+              {passwordSuccess && (
+                <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+                  Password updated.
+                </p>
+              )}
+              <button
+                onClick={handleChangePassword}
+                disabled={passwordBusy}
+                className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+              >
+                {passwordBusy ? 'Updating...' : 'Update Password'}
+              </button>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-4 space-y-3">
+              <p className="text-sm font-medium text-orange-300">Secondary Email</p>
+              <p className="text-xs text-gray-500">
+                Add a second address (e.g. an owner or manager) to also receive reminders about your units.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="email"
+                  value={secondaryEmail}
+                  onChange={e => setSecondaryEmail(e.target.value)}
+                  placeholder="second-person@example.com"
+                  className="flex-1 min-w-[200px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={handleSaveSecondaryEmail}
+                  disabled={secondaryEmailBusy}
+                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                >
+                  {secondaryEmailBusy ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+              {secondaryEmailSaved && (
+                <p className="text-sm text-green-400">Secondary email saved.</p>
+              )}
+            </div>
+
+            <div className="border-t border-zinc-800 pt-4">
+              <Link
+                href="/feedback"
+                className="inline-block border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+              >
+                Messages
+              </Link>
+            </div>
           </div>
         )}
 
