@@ -225,6 +225,20 @@ async function updateFleetUnit(formData: FormData) {
   revalidatePath('/')
 }
 
+// Sets the email a customer logs into their portal with. link_customer_account
+// (called from the customer portal on load) matches against this same
+// column, so this is also what links a customer's portal account to their
+// records.
+async function updateCustomerEmail(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const email = ((formData.get('email') as string) || '').trim()
+  await supabase.from('customers').update({ email: email || null }).eq('id', id)
+  revalidatePath('/')
+}
+
 async function scheduleFleetService(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -1204,6 +1218,18 @@ export default async function Home({
           <div className="mb-3">
             <p className="text-xl font-semibold text-orange-400">{currentCustomer.name}</p>
             <p className="text-sm text-gray-400">Total Units: <span className="text-white font-medium">{units?.length || 0}</span></p>
+            <form action={updateCustomerEmail} className="flex flex-wrap items-center gap-2 mt-2">
+              <input type="hidden" name="id" value={currentCustomer.id} />
+              <label className="text-xs text-gray-500">Portal login email:</label>
+              <input
+                name="email"
+                type="email"
+                defaultValue={currentCustomer.email || ''}
+                placeholder="customer@example.com"
+                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm w-64"
+              />
+              <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Save</button>
+            </form>
           </div>
         )}
 
