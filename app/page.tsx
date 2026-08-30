@@ -255,7 +255,7 @@ async function markPickedUp(formData: FormData) {
     .single()
   // Only allowed once the work is actually done - guards against a stale
   // form being submitted against a unit that moved on in the meantime.
-  if (!existing || !['Ready for Pickup', 'Completed'].includes(existing.status)) return
+  if (!existing || existing.status !== 'Ready for Pickup') return
 
   await supabase.from('units').update({
     status: 'Fleet',
@@ -281,7 +281,7 @@ async function updateStatus(formData: FormData) {
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const serviceCostRaw = formData.get('service_cost') as string
   const { data: existing } = await supabase.from('units').select('status, history, is_priority, problem_type').eq('id', id).single()
-  const wasAlreadyDone = existing ? ['Completed', 'Ready for Pickup'].includes(existing.status) : false
+  const wasAlreadyDone = existing ? existing.status === 'Ready for Pickup' : false
   const updateData: any = {
     status,
     notes: notes || null,
@@ -294,12 +294,11 @@ async function updateStatus(formData: FormData) {
     updateData.history = stampHistory(existing.history, `Status -> ${status}`)
     updateData.status_since = new Date().toISOString()
   }
-  if (status === 'Completed' || status === 'Ready for Pickup') {
+  if (status === 'Ready for Pickup') {
     updateData.last_service_date = new Date().toISOString().split('T')[0]
-    // Log a service history entry the first time a unit reaches a
-    // completed state (not on a later Completed <-> Ready for Pickup edit
-    // of the same visit, and not on a resubmit that leaves status
-    // unchanged) - covers a unit closed out right at check-in, mid-repair,
+    // Log a service history entry the first time a unit reaches Ready for
+    // Pickup (not on a resubmit that leaves status unchanged) - covers a
+    // unit closed out right at check-in, mid-repair, denied at diagnosis,
     // or through the normal completion flow, since they all pass through
     // this same status update.
     if (!wasAlreadyDone) {
@@ -477,7 +476,7 @@ function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const lastService = unit.last_service_date ? new Date(unit.last_service_date) : null
   const purchase = unit.purchase_date ? new Date(unit.purchase_date) : null
   const reference = lastService || purchase
-  if (unit.status === 'Completed' || unit.status === 'Ready for Pickup' || lastService) {
+  if (unit.status === 'Ready for Pickup' || lastService) {
     if (reference && reference < threeMonthsAgo) return 'red'
     return 'green'
   }
@@ -547,13 +546,13 @@ export default async function Home({
     units = allUnits?.filter(u => u.customer_id === selectedCustomerId) || []
   }
 
+  const received = allUnits?.filter(u => u.status === 'Received').length || 0
   const diagnosing = allUnits?.filter(u => u.status === 'Diagnosing').length || 0
   const needsApproval = allUnits?.filter(u => u.status === 'Needs Approval').length || 0
   const inRepair = allUnits?.filter(u => u.status === 'In Repair').length || 0
-  const completed = allUnits?.filter(u => u.status === 'Completed' || u.status === 'Ready for Pickup').length || 0
   const repairRequested = allUnits?.filter(u => u.status === 'Repair Requested').length || 0
   const readyPickup = allUnits?.filter(u => u.status === 'Ready for Pickup').length || 0
-  const priorityCount = allUnits?.filter(u => u.is_priority && u.status !== 'Completed').length || 0
+  const priorityCount = allUnits?.filter(u => u.is_priority).length || 0
 
   const fleetUnitsAll = (selectedCustomerId
     ? allUnits?.filter(u => u.customer_id === selectedCustomerId)
@@ -566,8 +565,7 @@ export default async function Home({
     if (selectedCustomerId) {
       list = list.filter(u => u.customer_id === selectedCustomerId)
     }
-    if (statusFilter === 'Priority') return list.filter(u => u.is_priority && u.status !== 'Completed')
-    if (statusFilter === 'Completed') return list.filter(u => u.status === 'Completed' || u.status === 'Ready for Pickup')
+    if (statusFilter === 'Priority') return list.filter(u => u.is_priority)
     if (statusFilter === 'Units') return list
     return list.filter(u => u.status === statusFilter)
   })()
@@ -592,7 +590,7 @@ export default async function Home({
 
   const staleUnits = (units?.filter(u => {
     if (isSnoozed(u)) return false
-    if (['Completed', 'Registered', 'Ready for Pickup', 'Fleet'].includes(u.status)) return false
+    if (['Registered', 'Ready for Pickup', 'Fleet'].includes(u.status)) return false
     return daysInStatus(u) >= 7
   }) || []).map(u => ({
     ...u,
@@ -605,7 +603,7 @@ export default async function Home({
   const repairRequestedUnits = sortStaleFirst(units?.filter(u => u.status === 'Repair Requested' && !isSnoozed(u)) || [])
   const diagnosingUnits = sortStaleFirst(units?.filter(u => u.status === 'Diagnosing' && !isSnoozed(u)) || [])
   const readyForPickupUnits = sortStaleFirst(units?.filter(u => u.status === 'Ready for Pickup' && !isSnoozed(u)) || [])
-  const priorityUnits = sortStaleFirst(units?.filter(u => u.is_priority && u.status !== 'Completed' && !isSnoozed(u)) || [])
+  const priorityUnits = sortStaleFirst(units?.filter(u => u.is_priority && !isSnoozed(u)) || [])
 
   const customerFleet = selectedCustomerId
     ? (allUnits?.filter(u => u.customer_id === selectedCustomerId) || [])
@@ -651,7 +649,7 @@ export default async function Home({
                 )}
                 <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                   unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                    : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                    : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                     : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
                     : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
                     : 'bg-orange-500/20 text-orange-400'
@@ -814,7 +812,7 @@ export default async function Home({
         </summary>
         {entries.length === 0 ? (
           <p className="text-xs text-gray-500 mb-2">
-            No service history yet. Entries are logged automatically when a unit is marked Completed / Ready for Pickup.
+            No service history yet. Entries are logged automatically when a unit is marked Ready for Pickup.
           </p>
         ) : (
           <div className="space-y-1.5 mb-2">
@@ -926,12 +924,12 @@ export default async function Home({
   let lastGroup = 0
 
   const tiles = [
+    { key: 'Repair Requested', label: 'Requested', count: repairRequested, color: 'text-blue-300' },
+    { key: 'Received', label: 'Received', count: received, color: 'text-purple-400' },
     { key: 'Diagnosing', label: 'Diagnosing', count: diagnosing, color: 'text-orange-400' },
     { key: 'Needs Approval', label: 'Needs Approval', count: needsApproval, color: 'text-yellow-400' },
     { key: 'In Repair', label: 'In Repair', count: inRepair, color: 'text-blue-400' },
-    { key: 'Repair Requested', label: 'Requested', count: repairRequested, color: 'text-blue-300' },
     { key: 'Ready for Pickup', label: 'Ready', count: readyPickup, color: 'text-green-300' },
-    { key: 'Completed', label: 'Completed', count: completed, color: 'text-green-400' },
     { key: 'Priority', label: 'Priority', count: priorityCount, color: 'text-orange-500' },
     { key: 'Units', label: 'All Units', count: unitsCount, color: 'text-orange-300' },
   ]
@@ -1058,7 +1056,7 @@ export default async function Home({
                           </div>
                           <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
                             unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                              : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                              : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                               : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
                               : 'bg-orange-500/20 text-orange-400'
                           }`}>{unit.status}</span>
@@ -1234,7 +1232,7 @@ export default async function Home({
                             )}
                             <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
                               unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                                : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                                 : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
                                 : 'bg-orange-500/20 text-orange-400'
                             }`}>{unit.status}</span>
@@ -1250,26 +1248,24 @@ export default async function Home({
                           <input type="hidden" name="id" value={unit.id} />
                           <div className="flex flex-wrap items-center gap-3">
                             <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
-                              <option value="Registered">Registered</option>
                               <option value="Repair Requested">Repair Requested</option>
+                              <option value="Received">Received / Checked In</option>
                               <option value="Diagnosing">Diagnosing</option>
                               <option value="Needs Approval">Needs Approval</option>
                               <option value="In Repair">In Repair</option>
                               <option value="Ready for Pickup">Ready for Pickup</option>
-                              <option value="Completed">Completed</option>
-                              <option value="Fleet">Fleet</option>
                             </select>
                             <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
                               <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
                               Priority
                             </label>
                             <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-                            <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Completed / Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+                            <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
                             <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
                             <DeleteUnitButton id={unit.id} />
                           </div>
                           <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-                          {(unit.status === 'Needs Approval' || unit.status === 'Completed' || unit.status === 'Ready for Pickup') && (
+                          {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
                             <div>
                               <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
                               <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
@@ -1280,7 +1276,7 @@ export default async function Home({
                           )}
                         </form>
 
-                        {(unit.status === 'Repair Requested' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
+                        {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
                           <form action={returnToFleet} className="pt-3">
                             <input type="hidden" name="id" value={unit.id} />
                             <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg">
@@ -1289,7 +1285,7 @@ export default async function Home({
                           </form>
                         )}
 
-                        {(unit.status === 'Ready for Pickup' || unit.status === 'Completed') && (
+                        {unit.status === 'Ready for Pickup' && (
                           <details className="pt-3 group/pickup">
                             <summary className="text-sm text-green-400 hover:text-green-300 cursor-pointer list-none select-none font-medium">
                               Mark as Picked Up
@@ -1452,7 +1448,7 @@ export default async function Home({
                                 )}
                                 <span className={`text-xs px-2.5 py-1 rounded-full ${
                                   unit.status === 'Fleet' ? 'bg-zinc-700 text-gray-300'
-                                    : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                    : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                                     : 'bg-orange-500/20 text-orange-400'
                                 }`}>{unit.status}</span>
                               </div>

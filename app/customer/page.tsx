@@ -40,7 +40,7 @@ function isUnderWarranty(unit: { warranty_end: string | null }): boolean {
 }
 
 // Mirrors the admin dashboard's last_service_date convention (stamped
-// whenever a unit's status moves to Completed/Ready for Pickup). A unit
+// whenever a unit's status moves to Ready for Pickup). A unit
 // currently checked in doesn't need a reminder - it's already being
 // serviced - and one with no service history yet has nothing to measure
 // from, so neither case shows the indicator.
@@ -88,6 +88,7 @@ type Customer = {
 }
 
 const ACTIVE_STATUSES = [
+  'Received',
   'Diagnosing',
   'Needs Approval',
   'In Repair',
@@ -719,7 +720,7 @@ export default function CustomerPortal() {
       status = 'In Repair'
       note = `Equivalent replacement requested by ${name}`
     } else {
-      status = 'Completed'
+      status = 'Ready for Pickup'
       note = `Denied by ${name} - diagnosis fee $49.99 will apply`
     }
     const { data: existing } = await supabase
@@ -774,11 +775,9 @@ export default function CustomerPortal() {
   const total = units.length
   const needsApproval = units.filter(u => u.status === 'Needs Approval').length
   const inProgress = units.filter(u =>
-    ['Diagnosing', 'In Repair', 'Repair Requested'].includes(u.status)
+    ['Diagnosing', 'In Repair', 'Repair Requested', 'Received'].includes(u.status)
   ).length
-  const completed = units.filter(u =>
-    ['Completed', 'Ready for Pickup'].includes(u.status)
-  ).length
+  const completed = units.filter(u => u.status === 'Ready for Pickup').length
 
   function displayName(u: Unit) {
     const model = (u.model || '').trim()
@@ -806,7 +805,7 @@ export default function CustomerPortal() {
                   ? 'bg-yellow-500/20 text-yellow-400'
                   : unit.status === 'Fleet'
                   ? 'bg-zinc-600 text-gray-300'
-                  : unit.status === 'Completed' || unit.status === 'Ready for Pickup'
+                  : unit.status === 'Ready for Pickup'
                   ? 'bg-green-500/20 text-green-400'
                   : unit.status === 'In Repair'
                   ? 'bg-blue-500/20 text-blue-400'
@@ -832,10 +831,10 @@ export default function CustomerPortal() {
           {unit.status === 'Needs Approval' && (
             <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide {'->'}</p>
           )}
-          {(unit.status === 'Fleet' || unit.status === 'Completed') && (
+          {unit.status === 'Fleet' && (
             <p className="text-xs text-gray-500 mt-1">Tap to edit or schedule service {'->'}</p>
           )}
-          {(unit.status === 'Repair Requested' || unit.status === 'Diagnosing') && (
+          {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing') && (
             <p className="text-xs text-gray-500 mt-1">Tap to view or withdraw service {'->'}</p>
           )}
         </div>
@@ -882,7 +881,6 @@ export default function CustomerPortal() {
   const canEditDetails =
     selectedUnit &&
     (selectedUnit.status === 'Fleet' ||
-      selectedUnit.status === 'Completed' ||
       selectedUnit.status === 'Registered')
 
   const headerLogo = customer.logo_url || '/images/logo.png'
@@ -938,7 +936,7 @@ export default function CustomerPortal() {
             <p className="text-2xl font-bold text-blue-400">{inProgress}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase">Completed</p>
+            <p className="text-xs text-gray-500 uppercase">Ready for Pickup</p>
             <p className="text-2xl font-bold text-green-400">{completed}</p>
           </div>
         </div>
@@ -1046,7 +1044,7 @@ export default function CustomerPortal() {
                               <span className={`inline-block text-xs px-2.5 py-1 rounded-full font-medium ${
                                 unit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
                                   : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
-                                  : unit.status === 'Completed' || unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                                  : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                                   : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
                                   : 'bg-orange-500/20 text-orange-400'
                               }`}>{unit.status}</span>
@@ -1343,7 +1341,7 @@ export default function CustomerPortal() {
                   <span className={`inline-block mt-1 text-xs px-2.5 py-1 rounded-full font-medium ${
                     selectedUnit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
                       : selectedUnit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
-                      : selectedUnit.status === 'Completed' || selectedUnit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                      : selectedUnit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
                       : 'bg-orange-500/20 text-orange-400'
                   }`}>{selectedUnit.status}</span>
                 </div>
@@ -1500,7 +1498,7 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {(selectedUnit.status === 'Repair Requested' || selectedUnit.status === 'Diagnosing') && (
+            {(selectedUnit.status === 'Repair Requested' || selectedUnit.status === 'Received' || selectedUnit.status === 'Diagnosing') && (
               <div className="border-t border-zinc-800 pt-4">
                 <button
                   onClick={withdrawService}

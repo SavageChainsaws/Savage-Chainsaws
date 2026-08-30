@@ -27,10 +27,10 @@ export default async function ReportsPage() {
       const thisMonth = theirUnits.filter(u => new Date(u.created_at) >= monthStart).length
       const total = theirUnits.length
       const active = theirUnits.filter(
-        u => !['Completed', 'Fleet', 'Registered'].includes(u.status)
+        u => !['Fleet', 'Registered'].includes(u.status)
       ).length
       const completed = theirUnits.filter(
-        u => u.status === 'Completed' || u.status === 'Ready for Pickup'
+        u => u.status === 'Ready for Pickup'
       ).length
       return { ...c, total, thisMonth, active, completed }
     })
@@ -131,7 +131,7 @@ export default async function ReportsPage() {
                   <th className="px-3 py-3 text-right">This month</th>
                   <th className="px-3 py-3 text-right">Total</th>
                   <th className="px-3 py-3 text-right">Active</th>
-                  <th className="px-3 py-3 text-right">Completed</th>
+                  <th className="px-3 py-3 text-right">Ready for Pickup</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
