@@ -17,6 +17,7 @@ import UppercaseInput from './components/UppercaseInput'
 import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
+import { sendEmail } from '@/lib/email'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -392,6 +393,53 @@ async function snoozeUnit(formData: FormData) {
       history: stampHistory(existing?.history, `Snoozed ${days} days`),
     })
     .eq('id', id)
+  revalidatePath('/')
+}
+
+// Lightweight "don't forget about this" ping - distinct from the full
+// status-change flow (updateStatus), which is what actually moves the job
+// forward. Never blocks or errors out when email isn't configured yet or
+// the customer has no address on file - it just logs why nothing went out
+// so that's visible in the unit's History instead of failing silently.
+async function nudgeUnit(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const { data: unit } = await supabase
+    .from('units')
+    .select('customer_id, model, equipment_type, nickname, serial_number, status, history')
+    .eq('id', id)
+    .single()
+  if (!unit) return
+
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('name, email')
+    .eq('id', unit.customer_id)
+    .single()
+
+  if (!customer?.email) {
+    await supabase.from('units').update({
+      history: stampHistory(unit.history, 'Nudge attempted - no email on file for customer'),
+    }).eq('id', id)
+    revalidatePath('/')
+    return
+  }
+
+  const label = unitLabel(unit)
+  const result = await sendEmail({
+    to: customer.email,
+    subject: `Reminder: ${label} at Savage Chainsaws`,
+    html: `<p>Hi ${customer.name || 'there'},</p><p>Just a quick reminder about your <strong>${label}</strong> - it's currently <strong>${unit.status}</strong>. Log in to your portal any time for the latest update.</p>`,
+  })
+
+  await supabase.from('units').update({
+    history: stampHistory(
+      unit.history,
+      result.ok ? `Reminder emailed to ${customer.email}` : `Nudge attempted - ${result.error}`
+    ),
+  }).eq('id', id)
   revalidatePath('/')
 }
 
@@ -900,6 +948,138 @@ export default async function Home({
     )
   }
 
+  // The full editable unit panel - status dropdown, priority/fee/cost,
+  // notes, invoice upload, withdraw/pickup, nudge, history, photos, parts,
+  // service history. Shared between the per-customer "All Units - Repair
+  // Flow" list and the cross-customer status-queue view (clicking a status
+  // stat tile) so an edit made from either place hits the same
+  // updateStatus/etc. server actions against the same row - single source
+  // of truth, no separate copy. accordionName scopes the native exclusive-
+  // accordion group (via <details name>) so expanding one unit in a list
+  // auto-collapses the others in that same list without affecting the
+  // other list.
+  function UnitDetailPanel({ unit, accordionName }: { unit: any; accordionName: string }) {
+    return (
+      <details
+        name={accordionName}
+        className="group/item border-2 border-transparent open:border-orange-500 open:bg-zinc-800/30 open:rounded-lg open:my-1 transition-colors"
+        open={openUnitId === unit.id}
+        id={`unit-${unit.id}`}
+      >
+        <summary className="px-4 sm:px-6 py-2.5 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
+          <UnitPhoto unit={unit} size="h-12 w-12" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium truncate">{unitLabel(unit)}</p>
+              {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
+              {isStaleInStatus(unit) && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
+                  NEEDS ATTENTION - {daysInStatus(unit)}d
+                </span>
+              )}
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                  : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                  : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                  : 'bg-orange-500/20 text-orange-400'
+              }`}>{unit.status}</span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Serial: {unit.serial_number || '-'}
+              {unit.nickname ? ` - ${unit.nickname}` : ''}
+            </p>
+          </div>
+        </summary>
+        <div className="px-4 sm:px-6 pb-4">
+          <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
+            <input type="hidden" name="id" value={unit.id} />
+            <div className="flex flex-wrap items-center gap-3">
+              <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
+                <option value="Repair Requested">Repair Requested</option>
+                <option value="Received">Received / Checked In</option>
+                <option value="Diagnosing">Diagnosing</option>
+                <option value="Needs Approval">Needs Approval</option>
+                <option value="In Repair">In Repair</option>
+                <option value="Ready for Pickup">Ready for Pickup</option>
+              </select>
+              <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
+                <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
+                Priority
+              </label>
+              <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+              <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+              <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
+              <DeleteUnitButton id={unit.id} />
+            </div>
+            <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+            {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
+                <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
+              </div>
+            )}
+            {unit.invoice_url && (
+              <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file {'->'}</a>
+            )}
+          </form>
+
+          <form action={nudgeUnit} className="pt-3">
+            <input type="hidden" name="id" value={unit.id} />
+            <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-4 py-1.5 rounded-lg" title="Emails the customer a quick reminder about this unit">
+              Nudge Customer
+            </button>
+          </form>
+
+          {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
+            <form action={returnToFleet} className="pt-3">
+              <input type="hidden" name="id" value={unit.id} />
+              <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg">
+                Withdraw {'->'} Return to Fleet
+              </button>
+            </form>
+          )}
+
+          {unit.status === 'Ready for Pickup' && (
+            <details className="pt-3 group/pickup">
+              <summary className="text-sm text-green-400 hover:text-green-300 cursor-pointer list-none select-none font-medium">
+                Mark as Picked Up
+              </summary>
+              <form action={markPickedUp} className="mt-2 flex flex-wrap gap-2">
+                <input type="hidden" name="id" value={unit.id} />
+                <input
+                  name="picked_up_by"
+                  required
+                  placeholder="Name of person picking up"
+                  className="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+                />
+                <button type="submit" className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-1.5 rounded-lg">
+                  Confirm Picked Up
+                </button>
+              </form>
+            </details>
+          )}
+
+          {unit.picked_up_by && (
+            <p className="text-xs text-gray-500 pt-3">
+              Picked up by <span className="text-gray-300">{unit.picked_up_by}</span> on {formatDate(unit.picked_up_at)}
+            </p>
+          )}
+
+          {unit.history && (
+            <div className="mt-3 border-t border-zinc-800 pt-2.5">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
+              <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
+            </div>
+          )}
+
+          <UnitPhotosSection unit={unit} />
+          <UnitPartsSection unit={unit} />
+          <ServiceHistorySection unit={unit} />
+        </div>
+      </details>
+    )
+  }
+
   function groupUnitsByCustomer(unitList: any[]) {
     const groups = new Map<string, { customer: any; units: any[] }>()
     for (const unit of unitList) {
@@ -1057,7 +1237,7 @@ export default async function Home({
                 <h2 className="text-lg font-semibold text-orange-300">
                   {statusFilter === 'Units' ? 'All Units' : statusFilter} ({statusFilteredUnits.length})
                 </h2>
-                <p className="text-xs text-gray-500 mt-0.5">Tap any card to open that unit for update</p>
+                <p className="text-xs text-gray-500 mt-0.5">Click a unit below to expand and update it directly</p>
               </div>
               <Link
                 href={selectedCustomerId ? `/?customer=${selectedCustomerId}` : '/'}
@@ -1075,29 +1255,7 @@ export default async function Home({
                     <CustomerGroupHeader customer={group.customer} count={group.units.length} />
                     <div className="divide-y divide-zinc-800/60">
                       {group.units.map(unit => (
-                        <Link
-                          key={unit.id}
-                          href={`/?customer=${unit.customer_id}&open=${unit.id}`}
-                          className="px-4 sm:px-6 py-3 flex items-center gap-3 hover:bg-zinc-800/50 transition block"
-                        >
-                          <UnitPhoto unit={unit} size="h-12 w-12" />
-                          <div className="min-w-0 flex-1">
-                            <p className="font-semibold truncate">{unitLabel(unit)}</p>
-                            <p className="text-sm text-gray-400 truncate">
-                              Serial: {unit.serial_number || '-'}
-                              {unit.nickname ? ` - ${unit.nickname}` : ''}
-                            </p>
-                            {unit.problem_type && (
-                              <p className="text-xs text-gray-500 mt-0.5 truncate">{unit.problem_type}</p>
-                            )}
-                          </div>
-                          <span className={`text-xs px-2.5 py-1 rounded-full shrink-0 ${
-                            unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                              : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                              : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                              : 'bg-orange-500/20 text-orange-400'
-                          }`}>{unit.status}</span>
-                        </Link>
+                        <UnitDetailPanel key={unit.id} unit={unit} accordionName="status-queue-unit" />
                       ))}
                     </div>
                   </div>
@@ -1253,121 +1411,9 @@ export default async function Home({
                 {repairUnits.length === 0 && (
                   <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No active repair units.</p>
                 )}
-                {repairUnits.map(unit => {
-                  return (
-                    <details
-                      key={unit.id}
-                      name="repair-unit"
-                      className="group/item border-2 border-transparent open:border-orange-500 open:bg-zinc-800/30 open:rounded-lg open:my-1 transition-colors"
-                      open={openUnitId === unit.id}
-                      id={`unit-${unit.id}`}
-                    >
-                      <summary className="px-4 sm:px-6 py-2.5 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
-                        <UnitPhoto unit={unit} size="h-12 w-12" />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium truncate">{unitLabel(unit)}</p>
-                            {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
-                            {isStaleInStatus(unit) && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
-                                NEEDS ATTENTION - {daysInStatus(unit)}d
-                              </span>
-                            )}
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                              unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                                : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                                : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                                : 'bg-orange-500/20 text-orange-400'
-                            }`}>{unit.status}</span>
-                          </div>
-                          <p className="text-xs text-gray-500">
-                            Serial: {unit.serial_number || '-'}
-                            {unit.nickname ? ` - ${unit.nickname}` : ''}
-                          </p>
-                        </div>
-                      </summary>
-                      <div className="px-4 sm:px-6 pb-4">
-                        <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
-                          <input type="hidden" name="id" value={unit.id} />
-                          <div className="flex flex-wrap items-center gap-3">
-                            <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
-                              <option value="Repair Requested">Repair Requested</option>
-                              <option value="Received">Received / Checked In</option>
-                              <option value="Diagnosing">Diagnosing</option>
-                              <option value="Needs Approval">Needs Approval</option>
-                              <option value="In Repair">In Repair</option>
-                              <option value="Ready for Pickup">Ready for Pickup</option>
-                            </select>
-                            <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
-                              <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
-                              Priority
-                            </label>
-                            <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-                            <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-                            <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
-                            <DeleteUnitButton id={unit.id} />
-                          </div>
-                          <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-                          {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
-                            <div>
-                              <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
-                              <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
-                            </div>
-                          )}
-                          {unit.invoice_url && (
-                            <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file {'->'}</a>
-                          )}
-                        </form>
-
-                        {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
-                          <form action={returnToFleet} className="pt-3">
-                            <input type="hidden" name="id" value={unit.id} />
-                            <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg">
-                              Withdraw {'->'} Return to Fleet
-                            </button>
-                          </form>
-                        )}
-
-                        {unit.status === 'Ready for Pickup' && (
-                          <details className="pt-3 group/pickup">
-                            <summary className="text-sm text-green-400 hover:text-green-300 cursor-pointer list-none select-none font-medium">
-                              Mark as Picked Up
-                            </summary>
-                            <form action={markPickedUp} className="mt-2 flex flex-wrap gap-2">
-                              <input type="hidden" name="id" value={unit.id} />
-                              <input
-                                name="picked_up_by"
-                                required
-                                placeholder="Name of person picking up"
-                                className="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-                              />
-                              <button type="submit" className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-1.5 rounded-lg">
-                                Confirm Picked Up
-                              </button>
-                            </form>
-                          </details>
-                        )}
-
-                        {unit.picked_up_by && (
-                          <p className="text-xs text-gray-500 pt-3">
-                            Picked up by <span className="text-gray-300">{unit.picked_up_by}</span> on {formatDate(unit.picked_up_at)}
-                          </p>
-                        )}
-
-                        {unit.history && (
-                          <div className="mt-3 border-t border-zinc-800 pt-2.5">
-                            <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
-                            <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
-                          </div>
-                        )}
-
-                        <UnitPhotosSection unit={unit} />
-                        <UnitPartsSection unit={unit} />
-                        <ServiceHistorySection unit={unit} />
-                      </div>
-                    </details>
-                  )
-                })}
+                {repairUnits.map(unit => (
+                  <UnitDetailPanel key={unit.id} unit={unit} accordionName="repair-unit" />
+                ))}
               </div>
             </details>
 

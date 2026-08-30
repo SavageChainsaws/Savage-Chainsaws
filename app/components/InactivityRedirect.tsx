@@ -28,7 +28,7 @@ export default function InactivityRedirect() {
         localStorage.setItem('lastViewedCustomer', customerId)
         // Go to Action Center
         router.push('/')
-      }, 60 * 1000) // 1 minute
+      }, 5 * 60 * 1000) // 5 minutes
     }
 
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart']
