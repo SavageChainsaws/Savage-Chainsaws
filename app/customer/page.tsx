@@ -793,7 +793,7 @@ export default function CustomerPortal() {
       <button
         type="button"
         onClick={() => openUnit(unit)}
-        className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-4 flex gap-4 transition"
+        className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-3 flex gap-3 transition"
       >
         <UnitPhoto unit={unit} size="h-14 w-14 sm:h-16 sm:w-16" />
         <div className="flex-1 min-w-0">
@@ -887,7 +887,7 @@ export default function CustomerPortal() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
-      <header className="border-b border-zinc-800 px-4 sm:px-6 py-4">
+      <header className="border-b border-zinc-800 px-4 sm:px-6 py-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img
@@ -917,13 +917,13 @@ export default function CustomerPortal() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+      <div className="max-w-4xl mx-auto p-3 sm:p-4 space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
             <p className="text-xs text-gray-500 uppercase">Total Units</p>
             <p className="text-2xl font-bold text-orange-400">{total}</p>
           </div>
-          <div className={`rounded-xl p-4 ${
+          <div className={`rounded-xl p-3 ${
             needsApproval > 0
               ? 'bg-red-500/10 border border-red-500/50'
               : 'bg-zinc-900 border border-zinc-800'
@@ -931,11 +931,11 @@ export default function CustomerPortal() {
             <p className={`text-xs uppercase ${needsApproval > 0 ? 'text-red-400' : 'text-gray-500'}`}>Needs Approval</p>
             <p className={`text-2xl font-bold ${needsApproval > 0 ? 'text-red-400' : 'text-yellow-400'}`}>{needsApproval}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
             <p className="text-xs text-gray-500 uppercase">In Progress</p>
             <p className="text-2xl font-bold text-blue-400">{inProgress}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
             <p className="text-xs text-gray-500 uppercase">Ready for Pickup</p>
             <p className="text-2xl font-bold text-green-400">{completed}</p>
           </div>
@@ -1006,14 +1006,14 @@ export default function CustomerPortal() {
 
         {showMyFleet && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-            <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
+            <div className="px-4 sm:px-6 py-3 border-b border-zinc-800">
               <h2 className="text-lg font-semibold text-orange-400">My Fleet</h2>
               <p className="text-xs text-gray-500 mt-1">
                 Every unit on your account, active or not - keep your serial numbers on hand in case a unit is ever lost or stolen and you need to report it.
               </p>
             </div>
             {units.length === 0 ? (
-              <p className="px-4 sm:px-6 py-8 text-gray-500 text-sm">No units on your account yet.</p>
+              <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No units on your account yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1086,7 +1086,7 @@ export default function CustomerPortal() {
         )}
 
         {showLogoUpload && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 space-y-3">
             <h2 className="text-lg font-semibold text-orange-400">Company Logo</h2>
             <p className="text-sm text-gray-500">
               Upload your logo. It appears at the top of your portal.
@@ -1131,12 +1131,12 @@ export default function CustomerPortal() {
         )}
 
         {showAddFleet && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
             <h2 className="text-lg font-semibold text-orange-400 mb-1">Add Unit to Fleet</h2>
             <p className="text-sm text-gray-500 mb-4">
               Register equipment you own so you can schedule service later.
             </p>
-            <form onSubmit={handleAddFleet} className="grid sm:grid-cols-2 gap-4">
+            <form onSubmit={handleAddFleet} className="grid sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Model</label>
                 <input
@@ -1220,12 +1220,12 @@ export default function CustomerPortal() {
         )}
 
         {showCheckIn && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
             <h2 className="text-lg font-semibold text-orange-400 mb-1">Check In a Unit</h2>
             <p className="text-sm text-gray-500 mb-4">
               Tell us what's coming in. Jesse can correct any details after pickup.
             </p>
-            <form onSubmit={handleCheckIn} className="grid sm:grid-cols-2 gap-4">
+            <form onSubmit={handleCheckIn} className="grid sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Model</label>
                 <input
@@ -1328,7 +1328,7 @@ export default function CustomerPortal() {
         )}
 
         {selectedUnit && (
-          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-6 space-y-4">
+          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-5 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex gap-3 min-w-0">
                 <UnitPhoto unit={selectedUnit} size="h-16 w-16" />
@@ -1355,7 +1355,7 @@ export default function CustomerPortal() {
             </div>
 
             {canEditDetails && (
-              <div className="space-y-3 border-t border-zinc-800 pt-4">
+              <div className="space-y-3 border-t border-zinc-800 pt-3">
                 <p className="text-sm font-medium text-orange-300">Edit unit details</p>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div>
@@ -1480,7 +1480,7 @@ export default function CustomerPortal() {
             </div>
 
             {canEditDetails && (
-              <div className="border-t border-zinc-800 pt-4">
+              <div className="border-t border-zinc-800 pt-3">
                 <label className="block text-xs text-gray-500 mb-1">Request service / tune-up</label>
                 <input
                   value={serviceNote}
@@ -1499,7 +1499,7 @@ export default function CustomerPortal() {
             )}
 
             {(selectedUnit.status === 'Repair Requested' || selectedUnit.status === 'Received' || selectedUnit.status === 'Diagnosing') && (
-              <div className="border-t border-zinc-800 pt-4">
+              <div className="border-t border-zinc-800 pt-3">
                 <button
                   onClick={withdrawService}
                   disabled={detailBusy}
@@ -1511,7 +1511,7 @@ export default function CustomerPortal() {
             )}
 
             {selectedUnit.status === 'Needs Approval' && (
-              <div className="border-t border-zinc-800 pt-4 space-y-3">
+              <div className="border-t border-zinc-800 pt-3 space-y-3">
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-3">
                   <p className="text-xs text-yellow-400 uppercase tracking-wider mb-1">Repair decision needed</p>
                   <p className="text-sm text-gray-200">
@@ -1551,7 +1551,7 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            <div className="border-t border-zinc-800 pt-4">
+            <div className="border-t border-zinc-800 pt-3">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Photos</p>
               {(() => {
                 const photos = [
@@ -1568,7 +1568,7 @@ export default function CustomerPortal() {
               })()}
             </div>
 
-            <div className="border-t border-zinc-800 pt-4">
+            <div className="border-t border-zinc-800 pt-3">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Service History</p>
               {serviceHistoryLoading ? (
                 <p className="text-xs text-gray-500">Loading...</p>
@@ -1588,7 +1588,7 @@ export default function CustomerPortal() {
               )}
             </div>
 
-            <div className="border-t border-zinc-800 pt-4">
+            <div className="border-t border-zinc-800 pt-3">
               <button
                 onClick={archiveUnit}
                 disabled={detailBusy}
@@ -1607,7 +1607,7 @@ export default function CustomerPortal() {
           {activeUnits.length === 0 ? (
             <p className="text-gray-500 text-sm">No units currently in service.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {activeUnits.map(unit => (
                 <UnitCard key={unit.id} unit={unit} />
               ))}
@@ -1622,7 +1622,7 @@ export default function CustomerPortal() {
             </h2>
             <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
           </summary>
-          <div className="mt-3 space-y-3">
+          <div className="mt-2 space-y-2">
             {fleetUnits.length === 0 ? (
               <p className="text-gray-500 text-sm px-1">
                 No fleet units yet. Use <strong>Add to Fleet</strong> to register equipment.
@@ -1640,7 +1640,7 @@ export default function CustomerPortal() {
             </h2>
             <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
           </summary>
-          <div className="mt-3 space-y-3">
+          <div className="mt-2 space-y-2">
             {otherUnits.length === 0 ? (
               <p className="text-gray-500 text-sm px-1">No completed or other units.</p>
             ) : (

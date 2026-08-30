@@ -10,7 +10,17 @@ import { useEffect } from 'react'
 export default function ScrollToOpenUnit({ unitId }: { unitId: string | null }) {
   useEffect(() => {
     if (!unitId) return
-    document.getElementById(`unit-${unitId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const el = document.getElementById(`unit-${unitId}`)
+    if (!el) return
+    const scroll = (behavior: ScrollBehavior) => el.scrollIntoView({ behavior, block: 'start' })
+    scroll('smooth')
+    // Mobile browser chrome (address bar collapsing) and late image loads
+    // can shift the layout right after this first scroll lands, leaving the
+    // unit's header scrolled past instead of at the top - re-align once
+    // things settle.
+    const t1 = setTimeout(() => scroll('auto'), 350)
+    const t2 = setTimeout(() => scroll('auto'), 900)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [unitId])
 
   return null

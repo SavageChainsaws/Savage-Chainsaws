@@ -140,7 +140,7 @@ export default function CheckInForm({
   }
 
   return (
-    <form ref={formRef} action={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <form ref={formRef} action={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       <input type="hidden" name="customer_id" value={customerId} />
 
       <div>

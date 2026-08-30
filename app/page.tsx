@@ -632,7 +632,7 @@ export default async function Home({
 
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
     return (
-      <div className={`px-4 sm:px-6 py-4 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
+      <div className={`px-4 sm:px-6 py-3 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
         <div className="flex items-start gap-3">
           <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="flex gap-3 sm:gap-4 flex-1 min-w-0">
             <UnitPhoto unit={unit} size="h-14 w-14 sm:h-24 sm:w-24" emptyContent="No photo" />
@@ -695,7 +695,7 @@ export default async function Home({
   function UnitPartsSection({ unit }: { unit: any }) {
     const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
     return (
-      <details className="mt-4 border-t border-zinc-800 pt-3 group/parts-panel">
+      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/parts-panel">
         <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
           <span className="text-xs text-gray-500 uppercase tracking-wider">
             Parts &amp; SKUs (admin only){parts.length > 0 ? ` (${parts.length})` : ''}
@@ -703,9 +703,12 @@ export default async function Home({
           <span className="text-gray-500 text-xs group-open/parts-panel:rotate-180 transition">v</span>
         </summary>
         {parts.length === 0 ? (
-          <p className="text-xs text-gray-500 mb-2">
-            No default parts set for this model yet. <Link href="/parts" className="text-orange-400 hover:text-orange-300">Add one in the Parts Catalog</Link>.
-          </p>
+          <div className="mb-2 space-y-1.5">
+            <p className="text-xs text-gray-500">No default parts set for this model yet.</p>
+            <Link href="/parts" className="inline-block text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
+              Add one in the Parts Catalog
+            </Link>
+          </div>
         ) : (
           <div className="space-y-1.5 mb-2">
             {parts.map(p => (
@@ -737,7 +740,7 @@ export default async function Home({
           </div>
         )}
         <details className="group/parts">
-          <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
+          <summary className="inline-flex w-fit text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg cursor-pointer list-none select-none">
             Override or add a part for this unit
           </summary>
           <form action={upsertUnitPartOverride} className="mt-2 flex flex-wrap gap-2">
@@ -781,7 +784,7 @@ export default async function Home({
       ...extraPhotos.map(p => ({ id: p.id as string, url: p.url as string, caption: p.caption as string | null })),
     ]
     return (
-      <details className="mt-4 border-t border-zinc-800 pt-3 group/photos-panel">
+      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/photos-panel">
         <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
           <span className="text-xs text-gray-500 uppercase tracking-wider">
             Photos{photos.length > 0 ? ` (${photos.length})` : ''}
@@ -803,7 +806,7 @@ export default async function Home({
   function ServiceHistorySection({ unit }: { unit: any }) {
     const entries = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
     return (
-      <details className="mt-4 border-t border-zinc-800 pt-3 group/history-panel">
+      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/history-panel">
         <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
           <span className="text-xs text-gray-500 uppercase tracking-wider">
             Service History{entries.length > 0 ? ` (${entries.length})` : ''}
@@ -830,7 +833,7 @@ export default async function Home({
           </div>
         )}
         <details className="group/service-history">
-          <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
+          <summary className="inline-flex w-fit text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg cursor-pointer list-none select-none">
             Add a service history entry
           </summary>
           <form action={addServiceHistoryEntry} className="mt-2 flex flex-wrap gap-2">
@@ -880,7 +883,7 @@ export default async function Home({
 
   function CustomerGroupHeader({ customer, count }: { customer: any; count: number }) {
     return (
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-zinc-800 border-b border-zinc-700">
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-2 bg-zinc-800 border-b border-zinc-700">
         {customer?.logo_url ? (
           <img
             src={customer.logo_url}
@@ -940,14 +943,14 @@ export default async function Home({
       <ScrollToOpenUnit unitId={openUnitId} />
 
       <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 md:mb-10 bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6">
-          <div className="flex items-center gap-4">
-            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-16 w-16 md:h-20 md:w-20 object-contain" />
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 md:mb-6 bg-zinc-900 border border-zinc-800 rounded-xl p-3 sm:p-4">
+          <div className="flex items-center gap-3">
+            <img src="/images/logo.png" alt="Savage Chainsaws" className="h-12 w-12 md:h-14 md:w-14 object-contain" />
             <div>
-              <h1 className="text-2xl md:text-4xl font-bold tracking-tight">
+              <h1 className="text-xl md:text-3xl font-bold tracking-tight">
                 SAVAGE <span className="text-orange-500">CHAINSAWS</span>
               </h1>
-              <p className="text-gray-400 mt-1 text-sm">Unit Tracking Dashboard</p>
+              <p className="text-gray-400 text-sm">Unit Tracking Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -984,13 +987,13 @@ export default async function Home({
         <Suspense fallback={null}><LastViewedBanner customers={customers || []} /></Suspense>
 
         {currentCustomer && (
-          <div className="mb-6">
+          <div className="mb-3">
             <p className="text-xl font-semibold text-orange-400">{currentCustomer.name}</p>
             <p className="text-sm text-gray-400">Total Units: <span className="text-white font-medium">{units?.length || 0}</span></p>
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2 md:gap-3 mb-6 md:mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4 md:mb-6">
           {tiles.map(tile => {
             const href = selectedCustomerId
               ? `/?customer=${selectedCustomerId}&status=${encodeURIComponent(tile.key)}`
@@ -1000,7 +1003,7 @@ export default async function Home({
               <Link
                 key={tile.key}
                 href={href}
-                className={`bg-zinc-900 border rounded-lg px-3 py-2 md:py-2.5 transition hover:border-orange-500/60 flex flex-col items-center justify-center gap-0.5 ${
+                className={`bg-zinc-900 border rounded-lg px-3 py-1.5 md:py-2 transition hover:border-orange-500/60 flex flex-col items-center justify-center gap-0.5 ${
                   active ? 'border-orange-500' : 'border-zinc-800'
                 }`}
               >
@@ -1014,13 +1017,13 @@ export default async function Home({
         </div>
 
         {statusFilter && (
-          <div className="bg-zinc-900 border border-orange-400/40 rounded-xl overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-zinc-900 border border-orange-400/40 rounded-xl overflow-hidden mb-5">
+            <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-orange-300">
                   {statusFilter === 'Units' ? 'All Units' : statusFilter} ({statusFilteredUnits.length})
                 </h2>
-                <p className="text-xs text-gray-500 mt-1">Tap any card to open that unit for update</p>
+                <p className="text-xs text-gray-500 mt-0.5">Tap any card to open that unit for update</p>
               </div>
               <Link
                 href={selectedCustomerId ? `/?customer=${selectedCustomerId}` : '/'}
@@ -1030,7 +1033,7 @@ export default async function Home({
               </Link>
             </div>
             {statusFilteredUnits.length === 0 ? (
-              <p className="px-6 py-8 text-gray-500 text-sm">No units found.</p>
+              <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No units found.</p>
             ) : (
               <div className="divide-y divide-zinc-800">
                 {groupUnitsByCustomer(statusFilteredUnits).map((group, i) => (
@@ -1041,7 +1044,7 @@ export default async function Home({
                         <Link
                           key={unit.id}
                           href={`/?customer=${unit.customer_id}&open=${unit.id}`}
-                          className="px-6 py-4 flex items-center gap-3 hover:bg-zinc-800/50 transition block"
+                          className="px-4 sm:px-6 py-3 flex items-center gap-3 hover:bg-zinc-800/50 transition block"
                         >
                           <UnitPhoto unit={unit} size="h-12 w-12" />
                           <div className="min-w-0 flex-1">
@@ -1073,8 +1076,8 @@ export default async function Home({
         {!selectedCustomerId && !statusFilter && (
           <>
             {priorityUnits.length > 0 && (
-              <div className="bg-zinc-900 border border-orange-500/50 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Priority Units ({priorityUnits.length})</h2></div>
+              <div className="bg-zinc-900 border border-orange-500/50 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Priority Units ({priorityUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
                     units={priorityUnits}
@@ -1087,8 +1090,8 @@ export default async function Home({
               </div>
             )}
             {readyForPickupUnits.length > 0 && (
-              <div className="bg-zinc-900 border border-green-500/40 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-300">Ready for Pickup ({readyForPickupUnits.length})</h2></div>
+              <div className="bg-zinc-900 border border-green-500/40 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-300">Ready for Pickup ({readyForPickupUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
                     units={readyForPickupUnits}
@@ -1101,8 +1104,8 @@ export default async function Home({
               </div>
             )}
             {repairRequestedUnits.length > 0 && (
-              <div className="bg-zinc-900 border border-blue-500/30 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-blue-300">Repair Requested ({repairRequestedUnits.length})</h2></div>
+              <div className="bg-zinc-900 border border-blue-500/30 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-blue-300">Repair Requested ({repairRequestedUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
                     units={repairRequestedUnits}
@@ -1115,8 +1118,8 @@ export default async function Home({
               </div>
             )}
             {diagnosingUnits.length > 0 && (
-              <div className="bg-zinc-900 border border-orange-500/30 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Diagnosing ({diagnosingUnits.length})</h2></div>
+              <div className="bg-zinc-900 border border-orange-500/30 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Diagnosing ({diagnosingUnits.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
                     units={diagnosingUnits}
@@ -1129,8 +1132,8 @@ export default async function Home({
               </div>
             )}
             {staleUnits.length > 0 && (
-              <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+              <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-red-400">Stagnant Units ({staleUnits.length})</h2>
                   <p className="text-xs text-red-300/80">Over 7 days with no action</p>
                 </div>
@@ -1146,8 +1149,8 @@ export default async function Home({
               </div>
             )}
             {approvedDecisions.length > 0 && (
-              <div className="bg-zinc-900 border border-green-500/30 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-400">Customer Approved ({approvedDecisions.length})</h2></div>
+              <div className="bg-zinc-900 border border-green-500/30 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-400">Customer Approved ({approvedDecisions.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
                     units={approvedDecisions}
@@ -1160,8 +1163,8 @@ export default async function Home({
               </div>
             )}
             {deniedDecisions.length > 0 && (
-              <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-red-400">Customer Denied ({deniedDecisions.length})</h2></div>
+              <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-5">
+                <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-red-400">Customer Denied ({deniedDecisions.length})</h2></div>
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
                     units={deniedDecisions}
@@ -1173,10 +1176,10 @@ export default async function Home({
                 </div>
               </div>
             )}
-            <div className="bg-zinc-900 border border-yellow-500/30 rounded-xl overflow-hidden mb-8">
-              <div className="px-6 py-4 border-b border-zinc-800"><h2 className="text-lg font-semibold text-yellow-400">Waiting on Customer ({waitingOnCustomer.length})</h2></div>
+            <div className="bg-zinc-900 border border-yellow-500/30 rounded-xl overflow-hidden mb-5">
+              <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-yellow-400">Waiting on Customer ({waitingOnCustomer.length})</h2></div>
               {waitingOnCustomer.length === 0 ? (
-                <p className="px-6 py-8 text-gray-500 text-sm">No units currently waiting on customer approval.</p>
+                <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No units currently waiting on customer approval.</p>
               ) : (
                 <div className="divide-y divide-zinc-800">
                   <GroupedActionList
@@ -1194,32 +1197,38 @@ export default async function Home({
 
         {selectedCustomerId && !statusFilter && (
           <>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-6 mb-6">
-              <h2 className="text-lg font-semibold mb-4 text-orange-400">Check In New Unit</h2>
-              <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
-            </div>
+            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+                <h2 className="font-semibold text-orange-400">Check In New Unit</h2>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+              </summary>
+              <div className="border-t border-zinc-800 p-4 sm:p-6">
+                <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
+              </div>
+            </details>
 
             <details
-              className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6 group"
+              className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group"
               open={!!openUnitId && repairUnits.some(u => u.id === openUnitId)}
             >
-              <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
                 <h2 className="font-semibold text-orange-400">All Units - Repair Flow ({repairUnits.length})</h2>
                 <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
               </summary>
               <div className="border-t border-zinc-800 divide-y divide-zinc-800">
                 {repairUnits.length === 0 && (
-                  <p className="px-6 py-8 text-gray-500 text-sm">No active repair units.</p>
+                  <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No active repair units.</p>
                 )}
                 {repairUnits.map(unit => {
                   return (
                     <details
                       key={unit.id}
-                      className="group/item"
+                      name="repair-unit"
+                      className="group/item border-l-4 border-transparent open:border-l-orange-500 open:bg-zinc-800/30 transition-colors"
                       open={openUnitId === unit.id}
                       id={`unit-${unit.id}`}
                     >
-                      <summary className="px-4 sm:px-6 py-3 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
+                      <summary className="px-4 sm:px-6 py-2.5 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
                         <UnitPhoto unit={unit} size="h-12 w-12" />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1243,7 +1252,7 @@ export default async function Home({
                           </p>
                         </div>
                       </summary>
-                      <div className="px-4 sm:px-6 pb-5">
+                      <div className="px-4 sm:px-6 pb-4">
                         <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
                           <input type="hidden" name="id" value={unit.id} />
                           <div className="flex flex-wrap items-center gap-3">
@@ -1312,7 +1321,7 @@ export default async function Home({
                         )}
 
                         {unit.history && (
-                          <div className="mt-4 border-t border-zinc-800 pt-3">
+                          <div className="mt-3 border-t border-zinc-800 pt-2.5">
                             <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
                             <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
                           </div>
@@ -1328,8 +1337,8 @@ export default async function Home({
               </div>
             </details>
 
-            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6 group">
-              <summary className="px-4 sm:px-6 py-4 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
                 <div className="flex items-center gap-3">
                   <h2 className="font-semibold text-orange-300">Fleet Units ({sortedFleet.length})</h2>
                   <span className="text-xs text-gray-500 hidden sm:inline inline-flex items-center gap-3">
@@ -1410,7 +1419,7 @@ export default async function Home({
                 </details>
 
                 {sortedFleet.length === 0 ? (
-                  <p className="px-6 py-8 text-gray-500 text-sm">No fleet units yet. Use + Add Unit to Fleet above.</p>
+                  <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No fleet units yet. Use + Add Unit to Fleet above.</p>
                 ) : (
                   <div className="divide-y divide-zinc-800">
                     {sortedFleet.map(unit => {
