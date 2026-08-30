@@ -12,7 +12,9 @@ export default function ScrollToOpenUnit({ unitId }: { unitId: string | null }) 
     if (!unitId) return
     const el = document.getElementById(`unit-${unitId}`)
     if (!el) return
-    const scroll = (behavior: ScrollBehavior) => el.scrollIntoView({ behavior, block: 'start' })
+    // 'center' (not 'start') so the card's header clears the top bar instead
+    // of landing flush against it.
+    const scroll = (behavior: ScrollBehavior) => el.scrollIntoView({ behavior, block: 'center' })
     scroll('smooth')
     // Mobile browser chrome (address bar collapsing) and late image loads
     // can shift the layout right after this first scroll lands, leaving the

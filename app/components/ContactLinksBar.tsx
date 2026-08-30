@@ -6,7 +6,7 @@ import { CONTACT_LINKS } from '@/lib/contactLinks'
 // automatically.
 export default function ContactLinksBar({ variant = 'compact' }: { variant?: 'compact' | 'full' }) {
   return (
-    <div className={variant === 'compact' ? 'flex items-center gap-2 flex-wrap' : 'flex flex-wrap gap-x-5 gap-y-2'}>
+    <div className={variant === 'compact' ? 'flex items-center gap-2.5 flex-wrap' : 'flex flex-wrap gap-x-5 gap-y-2'}>
       {CONTACT_LINKS.map(link => (
         <a
           key={link.key}
@@ -15,11 +15,11 @@ export default function ContactLinksBar({ variant = 'compact' }: { variant?: 'co
           title={link.label}
           className={
             variant === 'compact'
-              ? 'h-8 w-8 flex items-center justify-center rounded-lg border border-zinc-700 text-gray-400 hover:text-orange-400 hover:border-orange-500 transition shrink-0'
+              ? 'h-10 w-10 flex items-center justify-center rounded-lg border border-zinc-700 text-gray-400 hover:text-orange-400 hover:border-orange-500 transition shrink-0'
               : 'flex items-center gap-2 text-xs text-gray-400 hover:text-orange-400 transition'
           }
         >
-          <span className={variant === 'compact' ? 'h-4 w-4' : 'h-4 w-4 shrink-0'}>{link.icon}</span>
+          <span className={variant === 'compact' ? 'h-5 w-5' : 'h-4 w-4 shrink-0'}>{link.icon}</span>
           {variant === 'full' && <span>{link.label}</span>}
         </a>
       ))}

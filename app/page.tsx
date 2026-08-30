@@ -1224,7 +1224,7 @@ export default async function Home({
                     <details
                       key={unit.id}
                       name="repair-unit"
-                      className="group/item border-l-4 border-transparent open:border-l-orange-500 open:bg-zinc-800/30 transition-colors"
+                      className="group/item border-2 border-transparent open:border-orange-500 open:bg-zinc-800/30 open:rounded-lg open:my-1 transition-colors"
                       open={openUnitId === unit.id}
                       id={`unit-${unit.id}`}
                     >
