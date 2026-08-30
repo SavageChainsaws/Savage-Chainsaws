@@ -128,13 +128,29 @@ async function addFleetUnit(formData: FormData) {
   const fleetNotes = formData.get('fleet_notes') as string
   const partNumbers = formData.get('part_numbers') as string
   const nickname = formData.get('nickname') as string
+  const trimmedSerial = serial.trim()
 
-  await supabase.from('units').insert({
+  // Same serial/customer dedup as check-in (addUnit) - a unit already
+  // checked in for service (or already on the fleet) gets its fleet
+  // details filled in on the existing record instead of a second,
+  // duplicate row. Status is left untouched so this never pulls an
+  // in-progress repair back to 'Fleet'. Skipped for placeholder serials
+  // ("Unknown", "N/A", ...) since those aren't unique to one physical unit.
+  let existingUnit: { id: string; history: string | null } | null = null
+  if (isIdentifyingSerial(trimmedSerial)) {
+    const { data: existingMatches } = await supabase
+      .from('units')
+      .select('id, history')
+      .eq('customer_id', customerId)
+      .ilike('serial_number', escapeLikePattern(trimmedSerial))
+      .order('created_at', { ascending: false })
+      .limit(1)
+    existingUnit = existingMatches?.[0] || null
+  }
+
+  const fleetFields = {
     serial_number: serial,
     model: model || null,
-    customer_id: customerId,
-    status: 'Fleet',
-    decision_seen: true,
     equipment_type: equipmentType || null,
     hour_meter: hourMeter || null,
     purchase_date: purchaseDate || null,
@@ -143,8 +159,26 @@ async function addFleetUnit(formData: FormData) {
     fleet_notes: fleetNotes || null,
     part_numbers: partNumbers || null,
     nickname: nickname || null,
-    history: stampHistory(null, 'Added to fleet inventory'),
-  })
+  }
+
+  if (existingUnit) {
+    await supabase
+      .from('units')
+      .update({
+        ...fleetFields,
+        archived: false,
+        history: stampHistory(existingUnit.history, 'Added to fleet inventory'),
+      })
+      .eq('id', existingUnit.id)
+  } else {
+    await supabase.from('units').insert({
+      ...fleetFields,
+      customer_id: customerId,
+      status: 'Fleet',
+      decision_seen: true,
+      history: stampHistory(null, 'Added to fleet inventory'),
+    })
+  }
   revalidatePath('/')
 }
 

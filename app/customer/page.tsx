@@ -448,21 +448,56 @@ export default function CustomerPortal() {
       let thumbUrl: string | null = null
       if (fleetThumb) thumbUrl = await uploadFile(fleetThumb, `fleet-${customer.id}`)
       const finalFleetType = fleetType === 'Other' && fleetCustomType.trim() ? fleetCustomType.trim() : fleetType
-      const { error } = await supabase.from('units').insert({
-        serial_number: fleetSerial.trim(),
+      const trimmedFleetSerial = fleetSerial.trim()
+      const historyLine = `${new Date().toLocaleString('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      })} - Added to fleet by customer`
+
+      // Same serial/customer dedup as check-in - a unit already checked in
+      // for service (or already on the fleet) gets its fleet details filled
+      // in on the existing record instead of a second, duplicate row.
+      // Status is left untouched so this never pulls an in-progress repair
+      // back to 'Fleet'. Skipped for placeholder serials ("Unknown", "N/A",
+      // ...) since those aren't unique to one physical unit.
+      let existingFleetUnit: { id: string; history: string | null } | null = null
+      if (isIdentifyingSerial(trimmedFleetSerial)) {
+        const { data: existingMatches } = await supabase
+          .from('units')
+          .select('id, history')
+          .eq('customer_id', customer.id)
+          .ilike('serial_number', escapeLikePattern(trimmedFleetSerial))
+          .order('created_at', { ascending: false })
+          .limit(1)
+        existingFleetUnit = existingMatches?.[0] || null
+      }
+
+      const fleetFields = {
+        serial_number: trimmedFleetSerial,
         model: fleetModel.trim() || null,
         equipment_type: finalFleetType || null,
         nickname: fleetNickname.trim() || null,
         hour_meter: fleetType === 'Riding Lawn Mower' ? (fleetHours.trim() || null) : null,
-        thumbnail_url: thumbUrl,
-        customer_id: customer.id,
-        status: 'Fleet',
-        decision_seen: true,
-        archived: false,
-        history: `${new Date().toLocaleString('en-US', {
-          month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-        })} - Added to fleet by customer`,
-      })
+      }
+
+      const { error } = existingFleetUnit
+        ? await supabase
+            .from('units')
+            .update({
+              ...fleetFields,
+              ...(thumbUrl ? { thumbnail_url: thumbUrl } : {}),
+              archived: false,
+              history: existingFleetUnit.history ? `${historyLine}\n${existingFleetUnit.history}` : historyLine,
+            })
+            .eq('id', existingFleetUnit.id)
+        : await supabase.from('units').insert({
+            ...fleetFields,
+            thumbnail_url: thumbUrl,
+            customer_id: customer.id,
+            status: 'Fleet',
+            decision_seen: true,
+            archived: false,
+            history: historyLine,
+          })
       if (error) {
         console.error(error)
         setMessage('Could not add unit to fleet.')
@@ -767,7 +802,12 @@ export default function CustomerPortal() {
   }
 
   const activeUnits = units.filter(u => ACTIVE_STATUSES.includes(u.status))
-  const fleetUnits = units.filter(u => u.status === 'Fleet')
+  // Every unit on the account, active service or not - a unit currently
+  // checked in for service is still equipment this customer owns, so it
+  // shows here too (alongside "In Service" above), same as if it had been
+  // added to the fleet directly. Matches the admin dashboard's own Fleet
+  // Units list, which has never been status-gated.
+  const fleetUnits = units
   const otherUnits = units.filter(
     u => !ACTIVE_STATUSES.includes(u.status) && u.status !== 'Fleet'
   )
