@@ -1005,7 +1005,7 @@ export default async function Home({
           </div>
         </summary>
         <div className="px-4 sm:px-6 pb-4">
-          <form action={updateStatus} encType="multipart/form-data" className="space-y-3">
+          <form action={updateStatus} className="space-y-3">
             <input type="hidden" name="id" value={unit.id} />
             <div className="flex flex-wrap items-center gap-3">
               <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
