@@ -11,6 +11,8 @@ import DeleteUnitButton from './components/DeleteUnitButton'
 import NotesForm from './components/NotesForm'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
+import { UnitPhotoGallery } from './components/UnitPhotoGallery'
+import UnitPhotoUpload from './components/UnitPhotoUpload'
 import UppercaseInput from './components/UppercaseInput'
 import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
@@ -449,6 +451,26 @@ async function deleteServiceHistoryEntry(formData: FormData) {
   revalidatePath('/')
 }
 
+async function addUnitPhoto(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const unitId = formData.get('unit_id') as string
+  const photoUrl = formData.get('photo_url') as string
+  if (!unitId || !photoUrl) return
+  await supabase.from('unit_photos').insert({ unit_id: unitId, url: photoUrl })
+  revalidatePath('/')
+}
+
+async function deleteUnitPhoto(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  await supabase.from('unit_photos').delete().eq('id', id)
+  revalidatePath('/')
+}
+
 function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -515,6 +537,10 @@ export default async function Home({
     .select('*')
     .order('service_date', { ascending: false })
     .order('created_at', { ascending: false })
+  const { data: unitPhotosAll } = await supabase
+    .from('unit_photos')
+    .select('*')
+    .order('created_at', { ascending: true })
 
   let units = allUnits
   if (selectedCustomerId && !statusFilter) {
@@ -746,6 +772,32 @@ export default async function Home({
             </button>
           </form>
         </details>
+      </details>
+    )
+  }
+
+  function UnitPhotosSection({ unit }: { unit: any }) {
+    const extraPhotos = (unitPhotosAll || []).filter(p => p.unit_id === unit.id)
+    const photos = [
+      ...(unit.photo_url ? [{ id: 'checkin', url: unit.photo_url as string, caption: 'Check-in photo', deletable: false }] : []),
+      ...extraPhotos.map(p => ({ id: p.id as string, url: p.url as string, caption: p.caption as string | null })),
+    ]
+    return (
+      <details className="mt-4 border-t border-zinc-800 pt-3 group/photos-panel">
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider">
+            Photos{photos.length > 0 ? ` (${photos.length})` : ''}
+          </span>
+          <span className="text-gray-500 text-xs group-open/photos-panel:rotate-180 transition">v</span>
+        </summary>
+        <div className="space-y-2">
+          {photos.length === 0 ? (
+            <p className="text-xs text-gray-500">No photos yet.</p>
+          ) : (
+            <UnitPhotoGallery photos={photos} onDelete={deleteUnitPhoto} />
+          )}
+          <UnitPhotoUpload unitId={unit.id} action={addUnitPhoto} />
+        </div>
       </details>
     )
   }
@@ -1270,6 +1322,7 @@ export default async function Home({
                           </div>
                         )}
 
+                        <UnitPhotosSection unit={unit} />
                         <UnitPartsSection unit={unit} />
                         <ServiceHistorySection unit={unit} />
                       </div>
@@ -1475,6 +1528,7 @@ export default async function Home({
                                 </div>
                               </form>
 
+                              <UnitPhotosSection unit={unit} />
                               <UnitPartsSection unit={unit} />
                               <ServiceHistorySection unit={unit} />
 

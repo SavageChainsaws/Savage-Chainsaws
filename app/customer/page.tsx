@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppNav from '../components/AppNav'
 import { UnitPhoto } from '../components/UnitPhoto'
+import { UnitPhotoGallery } from '../components/UnitPhotoGallery'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
@@ -71,6 +72,12 @@ type ServiceHistoryEntry = {
   id: string
   service_date: string
   description: string
+}
+
+type UnitPhotoEntry = {
+  id: string
+  url: string
+  caption: string | null
 }
 
 type Customer = {
@@ -151,6 +158,7 @@ export default function CustomerPortal() {
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryEntry[]>([])
   const [serviceHistoryLoading, setServiceHistoryLoading] = useState(false)
+  const [unitPhotos, setUnitPhotos] = useState<UnitPhotoEntry[]>([])
 
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
@@ -509,6 +517,14 @@ export default function CustomerPortal() {
         setServiceHistory(data || [])
         setServiceHistoryLoading(false)
       })
+
+    setUnitPhotos([])
+    supabase
+      .from('unit_photos')
+      .select('id, url, caption')
+      .eq('unit_id', unit.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => setUnitPhotos(data || []))
   }
 
   function closeUnit() {
@@ -518,6 +534,7 @@ export default function CustomerPortal() {
     setThumbPreview(null)
     setServiceNote('')
     setServiceHistory([])
+    setUnitPhotos([])
   }
 
   function onThumbPick(file: File | null) {
@@ -1535,6 +1552,23 @@ export default function CustomerPortal() {
                 </div>
               </div>
             )}
+
+            <div className="border-t border-zinc-800 pt-4">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Photos</p>
+              {(() => {
+                const photos = [
+                  ...(selectedUnit.photo_url
+                    ? [{ id: 'checkin', url: selectedUnit.photo_url, caption: 'Check-in photo', deletable: false }]
+                    : []),
+                  ...unitPhotos,
+                ]
+                return photos.length === 0 ? (
+                  <p className="text-xs text-gray-500">No photos yet.</p>
+                ) : (
+                  <UnitPhotoGallery photos={photos} />
+                )
+              })()}
+            </div>
 
             <div className="border-t border-zinc-800 pt-4">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Service History</p>
