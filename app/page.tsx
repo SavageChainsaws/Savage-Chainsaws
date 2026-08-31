@@ -510,6 +510,9 @@ async function nudgeUnit(formData: FormData) {
     to: recipients,
     subject: `Reminder: ${label} at Savage Chainsaws`,
     html: `<p>Hi ${customer?.name || 'there'},</p><p>Just a quick reminder about your <strong>${label}</strong> - it's currently <strong>${unit.status}</strong>. Log in to your portal any time for the latest update.</p>`,
+    // Sent from a no-reply domain sender - route any reply to a real
+    // monitored inbox instead of the sending address.
+    replyTo: 'service@savagechainsaws.com',
   })
 
   await supabase.from('units').update({

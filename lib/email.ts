@@ -1,4 +1,4 @@
-type SendEmailArgs = { to: string | string[]; subject: string; html: string }
+type SendEmailArgs = { to: string | string[]; subject: string; html: string; replyTo?: string }
 type SendEmailResult = { ok: true } | { ok: false; error: string }
 
 // Thin wrapper around Resend's HTTP API - no SDK dependency, just a plain
@@ -6,7 +6,7 @@ type SendEmailResult = { ok: true } | { ok: false; error: string }
 // production, every send fails fast with a clear error instead of making a
 // network call, so callers can surface why nothing went out (e.g. logged to
 // a unit's history) rather than silently doing nothing.
-export async function sendEmail({ to, subject, html }: SendEmailArgs): Promise<SendEmailResult> {
+export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     return { ok: false, error: 'email not sent - RESEND_API_KEY is not configured yet' }
@@ -22,7 +22,7 @@ export async function sendEmail({ to, subject, html }: SendEmailArgs): Promise<S
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')

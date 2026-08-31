@@ -72,8 +72,8 @@ export const CONTACT_LINKS: ContactLink[] = [
   },
   {
     key: 'email',
-    label: 'savagechainsaws@gmail.com',
-    href: 'mailto:savagechainsaws@gmail.com',
+    label: 'service@savagechainsaws.com',
+    href: 'mailto:service@savagechainsaws.com',
     external: false,
     icon: <MailIcon />,
   },
