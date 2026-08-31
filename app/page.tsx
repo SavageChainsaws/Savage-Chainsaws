@@ -348,7 +348,17 @@ async function deleteCustomerLogin(_prevState: DeleteLoginState, formData: FormD
     }
   }
 
-  await supabase.from('customers').delete().eq('id', customerId)
+  const { data: deletedRows, error: deleteCustomerErr } = await supabase
+    .from('customers')
+    .delete()
+    .eq('id', customerId)
+    .select('id')
+  if (deleteCustomerErr) {
+    return { success: false, message: `Could not remove customer record: ${deleteCustomerErr.message}` }
+  }
+  if (!deletedRows || deletedRows.length === 0) {
+    return { success: false, message: `${customer.name} was not removed - the delete affected no rows (likely a permissions issue).` }
+  }
   revalidatePath('/')
   return { success: true, message: `${customer.name} removed, along with its login account if it had one.` }
 }
