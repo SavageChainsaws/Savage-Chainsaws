@@ -22,6 +22,7 @@ const styles = StyleSheet.create({
   block: { width: '48%' },
   blockTitle: { fontSize: 8, color: '#888888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   blockLine: { fontSize: 10, marginBottom: 2 },
+  customerLogo: { width: 36, height: 36, objectFit: 'contain', marginBottom: 6 },
   table: { marginTop: 4, marginBottom: 4 },
   tableHeaderRow: { flexDirection: 'row', backgroundColor: '#f4f4f4', paddingVertical: 6, paddingHorizontal: 8 },
   tableRow: { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8, borderBottom: '1 solid #eeeeee' },
@@ -30,7 +31,6 @@ const styles = StyleSheet.create({
   tableHeaderText: { fontSize: 8, color: '#888888', textTransform: 'uppercase', letterSpacing: 0.5 },
   partLine: { fontSize: 9, color: '#666666', paddingHorizontal: 8, paddingVertical: 2 },
   totalsBlock: { marginTop: 8, alignSelf: 'flex-end', width: 220 },
-  totalsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   grandTotalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, marginTop: 4, borderTop: '1 solid #1a1a1a' },
   grandTotalLabel: { fontSize: 11, fontWeight: 700 },
   grandTotalValue: { fontSize: 13, fontWeight: 700, color: '#ea580c' },
@@ -41,19 +41,23 @@ function money(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
+export type InvoiceLineItem = { description: string; amount: number }
+
 export type InvoicePdfInput = {
   invoiceNumber: string
   invoiceDate: string
-  customer: { name: string; email?: string | null; phone?: string | null }
-  unit: { model?: string | null; serialNumber?: string | null; equipmentType?: string | null }
-  parts: { name: string; sku: string }[]
-  serviceFee: number
-  partsTotal: number
+  customer: { name: string; email?: string | null; phone?: string | null; logoUrl?: string | null }
+  unit?: { model?: string | null; serialNumber?: string | null; equipmentType?: string | null } | null
+  lineItems: InvoiceLineItem[]
+  // Informational only - the resolved Parts & SKUs list for a tracked unit,
+  // printed under the line items as reference. Not used by the custom/
+  // free-form invoice, which has no unit record to resolve parts from.
+  parts?: { name: string; sku: string }[]
   logoUrl?: string | null
 }
 
-function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, parts, serviceFee, partsTotal, logoUrl }: InvoicePdfInput) {
-  const grandTotal = serviceFee + partsTotal
+function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems, parts, logoUrl }: InvoicePdfInput) {
+  const grandTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 
   return (
     <Document>
@@ -83,16 +87,20 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, parts, se
         <View style={styles.twoCol}>
           <View style={styles.block}>
             <Text style={styles.blockTitle}>Bill To</Text>
+            {/* Customer-uploaded logo, if any - never a placeholder when absent */}
+            {customer.logoUrl ? <PdfImage src={customer.logoUrl} style={styles.customerLogo} /> : null}
             <Text style={styles.blockLine}>{customer.name}</Text>
             {customer.email && <Text style={styles.blockLine}>{customer.email}</Text>}
             {customer.phone && <Text style={styles.blockLine}>{customer.phone}</Text>}
           </View>
-          <View style={styles.block}>
-            <Text style={styles.blockTitle}>Unit</Text>
-            <Text style={styles.blockLine}>{unit.model || 'Model not on file'}</Text>
-            <Text style={styles.blockLine}>Serial: {unit.serialNumber || '-'}</Text>
-            {unit.equipmentType && <Text style={styles.blockLine}>{unit.equipmentType}</Text>}
-          </View>
+          {unit && (unit.model || unit.serialNumber || unit.equipmentType) && (
+            <View style={styles.block}>
+              <Text style={styles.blockTitle}>Unit</Text>
+              {unit.model && <Text style={styles.blockLine}>{unit.model}</Text>}
+              {unit.serialNumber && <Text style={styles.blockLine}>Serial: {unit.serialNumber}</Text>}
+              {unit.equipmentType && <Text style={styles.blockLine}>{unit.equipmentType}</Text>}
+            </View>
+          )}
         </View>
 
         <View style={styles.table}>
@@ -101,17 +109,14 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, parts, se
             <Text style={[styles.tableHeaderText, styles.colAmount]}>Amount</Text>
           </View>
 
-          <View style={styles.tableRow}>
-            <Text style={styles.colDescription}>Labor / Service Fee</Text>
-            <Text style={styles.colAmount}>{money(serviceFee)}</Text>
-          </View>
+          {lineItems.map((li, i) => (
+            <View key={i} style={styles.tableRow}>
+              <Text style={styles.colDescription}>{li.description}</Text>
+              <Text style={styles.colAmount}>{money(li.amount)}</Text>
+            </View>
+          ))}
 
-          <View style={styles.tableRow}>
-            <Text style={styles.colDescription}>Parts Total</Text>
-            <Text style={styles.colAmount}>{money(partsTotal)}</Text>
-          </View>
-
-          {parts.length > 0 && (
+          {parts && parts.length > 0 && (
             <View>
               {parts.map((p, i) => (
                 <Text key={i} style={styles.partLine}>- {p.name} ({p.sku})</Text>

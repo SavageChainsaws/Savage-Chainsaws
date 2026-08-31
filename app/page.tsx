@@ -21,6 +21,7 @@ import { sendEmail } from '@/lib/email'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
+import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -1478,6 +1479,21 @@ export default async function Home({
             <DeleteCustomerLoginForm
               customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
               action={deleteCustomerLogin}
+            />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Create Invoice</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <p className="text-xs text-gray-500 mb-3">
+              Build a standalone itemized invoice on the spot - not tied to a tracked unit. Link an existing customer to auto-fill their info, or skip that and type everything from scratch.
+            </p>
+            <CreateCustomInvoiceForm
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, logo_url: c.logo_url }))}
             />
           </div>
         </details>
