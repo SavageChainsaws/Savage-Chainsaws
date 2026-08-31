@@ -1546,6 +1546,9 @@ export default function CustomerPortal() {
                     Serial: {selectedUnit.serial_number || '-'}
                     {selectedUnit.nickname ? ` - ${selectedUnit.nickname}` : ''}
                   </p>
+                  {selectedUnit.problem_type && selectedUnit.status !== 'Fleet' && (
+                    <p className="text-sm text-gray-500 mt-0.5">Problem: {selectedUnit.problem_type}</p>
+                  )}
                   <span className={`inline-block mt-1 text-xs px-2.5 py-1 rounded-full font-medium ${
                     selectedUnit.status === 'Needs Approval' ? 'bg-yellow-500/20 text-yellow-400'
                       : selectedUnit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'

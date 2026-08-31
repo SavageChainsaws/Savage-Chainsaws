@@ -1089,6 +1089,11 @@ export default async function Home({
               <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
               <DeleteUnitButton id={unit.id} />
             </div>
+            {unit.problem_type && (
+              <p className="text-xs text-gray-400">
+                <span className="text-gray-500">Problem reported: </span>{unit.problem_type}
+              </p>
+            )}
             <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
             {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
               <div>
