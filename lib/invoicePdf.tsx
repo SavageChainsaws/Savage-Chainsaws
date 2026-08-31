@@ -22,7 +22,6 @@ const styles = StyleSheet.create({
   block: { width: '48%' },
   blockTitle: { fontSize: 8, color: '#888888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   blockLine: { fontSize: 10, marginBottom: 2 },
-  customerLogo: { width: 36, height: 36, objectFit: 'contain', marginBottom: 6 },
   table: { marginTop: 4, marginBottom: 4 },
   tableHeaderRow: { flexDirection: 'row', backgroundColor: '#f4f4f4', paddingVertical: 6, paddingHorizontal: 8 },
   tableRow: { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8, borderBottom: '1 solid #eeeeee' },
@@ -46,7 +45,7 @@ export type InvoiceLineItem = { description: string; amount: number }
 export type InvoicePdfInput = {
   invoiceNumber: string
   invoiceDate: string
-  customer: { name: string; email?: string | null; phone?: string | null; logoUrl?: string | null }
+  customer: { name: string; email?: string | null; phone?: string | null }
   unit?: { model?: string | null; serialNumber?: string | null; equipmentType?: string | null } | null
   lineItems: InvoiceLineItem[]
   // Informational only - the resolved Parts & SKUs list for a tracked unit,
@@ -87,8 +86,6 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems
         <View style={styles.twoCol}>
           <View style={styles.block}>
             <Text style={styles.blockTitle}>Bill To</Text>
-            {/* Customer-uploaded logo, if any - never a placeholder when absent */}
-            {customer.logoUrl ? <PdfImage src={customer.logoUrl} style={styles.customerLogo} /> : null}
             <Text style={styles.blockLine}>{customer.name}</Text>
             {customer.email && <Text style={styles.blockLine}>{customer.email}</Text>}
             {customer.phone && <Text style={styles.blockLine}>{customer.phone}</Text>}

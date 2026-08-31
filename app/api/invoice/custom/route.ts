@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
   const customerName = ((formData.get('customer_name') as string) || '').trim() || 'Customer'
   const customerEmail = ((formData.get('customer_email') as string) || '').trim() || null
   const customerPhone = ((formData.get('customer_phone') as string) || '').trim() || null
-  const customerLogoUrl = ((formData.get('customer_logo_url') as string) || '').trim() || null
 
   const unitModel = ((formData.get('unit_model') as string) || '').trim() || null
   const unitSerial = ((formData.get('unit_serial') as string) || '').trim() || null
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
   const pdfBuffer = await renderInvoicePdf({
     invoiceNumber,
     invoiceDate: now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-    customer: { name: customerName, email: customerEmail, phone: customerPhone, logoUrl: customerLogoUrl },
+    customer: { name: customerName, email: customerEmail, phone: customerPhone },
     unit: hasUnitInfo ? { model: unitModel, serialNumber: unitSerial, equipmentType: unitEquipmentType } : null,
     lineItems,
     logoUrl,

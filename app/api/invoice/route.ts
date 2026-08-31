@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: customer } = unit.customer_id
-    ? await supabase.from('customers').select('name, email, phone, logo_url').eq('id', unit.customer_id).single()
+    ? await supabase.from('customers').select('name, email, phone').eq('id', unit.customer_id).single()
     : { data: null }
 
   const [{ data: modelPartsAll }, { data: unitOverrides }] = await Promise.all([
@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
       name: customer?.name || 'Customer',
       email: customer?.email ?? null,
       phone: customer?.phone ?? null,
-      logoUrl: customer?.logo_url ?? null,
     },
     unit: {
       model: unit.model,

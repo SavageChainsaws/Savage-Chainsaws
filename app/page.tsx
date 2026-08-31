@@ -1493,7 +1493,7 @@ export default async function Home({
               Build a standalone itemized invoice on the spot - not tied to a tracked unit. Link an existing customer to auto-fill their info, or skip that and type everything from scratch.
             </p>
             <CreateCustomInvoiceForm
-              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, logo_url: c.logo_url }))}
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
             />
           </div>
         </details>

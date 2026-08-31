@@ -7,7 +7,6 @@ type CustomerOption = {
   name: string
   email: string | null
   phone: string | null
-  logo_url: string | null
 }
 
 type LineItem = { description: string; price: string }
@@ -17,7 +16,6 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [logoUrl, setLogoUrl] = useState('')
   const [items, setItems] = useState<LineItem[]>([
     { description: '', price: '' },
     { description: '', price: '' },
@@ -30,7 +28,6 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
       setName(c.name || '')
       setEmail(c.email || '')
       setPhone(c.phone || '')
-      setLogoUrl(c.logo_url || '')
     }
   }
 
@@ -94,16 +91,6 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
             name="customer_phone"
             value={phone}
             onChange={e => setPhone(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Logo URL (optional)</label>
-          <input
-            name="customer_logo_url"
-            value={logoUrl}
-            onChange={e => setLogoUrl(e.target.value)}
-            placeholder="https://..."
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
           />
         </div>
