@@ -20,6 +20,7 @@ import { resolveUnitParts } from '@/lib/parts'
 import { sendEmail } from '@/lib/email'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
+import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -295,6 +296,61 @@ async function createCustomerLogin(_prevState: CreateLoginState, formData: FormD
     message: `Login created for ${email}.`,
     password: passwordInput ? undefined : password,
   }
+}
+
+type DeleteLoginState = { success: boolean; message: string } | null
+
+// Companion to createCustomerLogin, for cleaning up test/dummy customers.
+// Refuses to run while the customer still has units attached (delete those
+// first - units.customer_id has no cascade, so this would otherwise fail
+// with a foreign key error) rather than silently deleting someone's real
+// service history along with the account. Removes the linked auth account
+// through the proper Admin API - never a raw SQL delete on auth.users,
+// which skips GoTrue's own cleanup of sessions/identities/refresh tokens.
+async function deleteCustomerLogin(_prevState: DeleteLoginState, formData: FormData): Promise<DeleteLoginState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const customerId = (formData.get('customer_id') as string) || ''
+  if (!customerId) return { success: false, message: 'Choose a customer.' }
+
+  const { data: customer } = await supabase
+    .from('customers')
+    .select('id, name, auth_user_id')
+    .eq('id', customerId)
+    .single()
+  if (!customer) return { success: false, message: 'Customer not found.' }
+
+  const { count: unitCount } = await supabase
+    .from('units')
+    .select('id', { count: 'exact', head: true })
+    .eq('customer_id', customerId)
+  if ((unitCount ?? 0) > 0) {
+    return { success: false, message: `${customer.name} still has ${unitCount} unit(s) attached - remove those first.` }
+  }
+
+  if (customer.auth_user_id) {
+    const adminClient = createAdminClient()
+    if (!adminClient) {
+      return { success: false, message: 'SUPABASE_SERVICE_ROLE_KEY is not configured yet - cannot remove the login account.' }
+    }
+    const { error: deleteAuthErr } = await adminClient.auth.admin.deleteUser(customer.auth_user_id)
+    // A stale customers.auth_user_id pointing at an already-deleted auth
+    // account isn't a real failure - nothing to clean up, so fall through
+    // to removing the customer row same as if it had never been linked.
+    const alreadyGone = deleteAuthErr && (
+      (deleteAuthErr as { status?: number }).status === 404 ||
+      /not.?found/i.test(deleteAuthErr.message)
+    )
+    if (deleteAuthErr && !alreadyGone) {
+      return { success: false, message: `Could not remove login account: ${deleteAuthErr.message}` }
+    }
+  }
+
+  await supabase.from('customers').delete().eq('id', customerId)
+  revalidatePath('/')
+  return { success: true, message: `${customer.name} removed, along with its login account if it had one.` }
 }
 
 async function scheduleFleetService(formData: FormData) {
@@ -1340,6 +1396,22 @@ export default async function Home({
             <CreateCustomerLoginForm
               customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
               action={createCustomerLogin}
+            />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-red-900/40 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-red-400">Delete Customer / Login</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <p className="text-xs text-gray-500 mb-3">
+              Permanently removes a customer record and its login account (if any), via the proper Supabase Auth admin API. Refuses to run while the customer still has units attached - remove those first.
+            </p>
+            <DeleteCustomerLoginForm
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
+              action={deleteCustomerLogin}
             />
           </div>
         </details>
