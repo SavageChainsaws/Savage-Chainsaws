@@ -1095,6 +1095,60 @@ export default async function Home({
     )
   }
 
+  // Admin-only. Generates a PDF invoice on demand via /api/invoice - fee
+  // amounts are entered fresh each time (not stored), since not every job
+  // is billed the same. Service fee defaults to the unit's most recent
+  // logged service cost as a starting point, left fully editable; parts
+  // total has no price data to draw from (Parts & SKUs tracks name/SKU/
+  // OEM-Aftermarket only, no pricing) so it's always blank/editable.
+  function CreateInvoiceSection({ unit }: { unit: any }) {
+    const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
+    const history = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
+    const latestCost = history[0]?.cost ?? ''
+    return (
+      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/invoice-panel">
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider">Create Invoice</span>
+          <span className="text-gray-500 text-xs group-open/invoice-panel:rotate-180 transition">v</span>
+        </summary>
+        <form action="/api/invoice" method="POST" target="_blank" className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="unit_id" value={unit.id} />
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Labor / Service Fee $</label>
+            <input
+              name="service_fee"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue={latestCost}
+              placeholder="0.00"
+              className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Parts Total $</label>
+            <input
+              name="parts_total"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+            />
+          </div>
+          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
+            Create Invoice
+          </button>
+        </form>
+        <p className="text-xs text-gray-600 mt-1.5">
+          {parts.length > 0
+            ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file will be listed on the invoice.`
+            : 'No parts on file for this unit - the invoice will still generate.'}
+        </p>
+      </details>
+    )
+  }
+
   // The full editable unit panel - status dropdown, priority/fee/cost,
   // notes, invoice upload, withdraw/pickup, nudge, history, photos, parts,
   // service history. Shared between the per-customer "All Units - Repair
@@ -1208,6 +1262,7 @@ export default async function Home({
                   Confirm Picked Up
                 </button>
               </form>
+              <CreateInvoiceSection unit={unit} />
             </details>
           )}
 
@@ -1227,6 +1282,7 @@ export default async function Home({
           <UnitPhotosSection unit={unit} />
           <UnitPartsSection unit={unit} />
           <ServiceHistorySection unit={unit} />
+          <CreateInvoiceSection unit={unit} />
         </div>
       </details>
     )
@@ -1812,6 +1868,7 @@ export default async function Home({
                               <UnitPhotosSection unit={unit} />
                               <UnitPartsSection unit={unit} />
                               <ServiceHistorySection unit={unit} />
+                              <CreateInvoiceSection unit={unit} />
 
                               {unit.status === 'Fleet' && (
                                 <form action={scheduleFleetService} className="border-t border-zinc-800 pt-3 space-y-2">
