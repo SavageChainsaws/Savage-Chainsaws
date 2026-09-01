@@ -70,6 +70,12 @@ export default function CustomerLogin() {
   // Never fires while this tab has its own login attempt in progress - a
   // stale/leftover session from a previous account must not be able to
   // hijack someone actively typing different credentials here.
+  //
+  // /customer/login and /login are fully separate login surfaces. An admin
+  // session lingering in this browser (e.g. a shared computer, or an admin
+  // tab left open elsewhere) must never silently redirect this page away
+  // from the customer form - only redirect when the signed-in user is
+  // actually a customer.
   const redirectIfSignedIn = useCallback(async () => {
     if (formInProgressRef.current) return
     const { data: { user } } = await supabase.auth.getUser()
@@ -77,7 +83,8 @@ export default function CustomerLogin() {
     if (formInProgressRef.current) return
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
     if (formInProgressRef.current) return
-    router.push(profile?.role === 'admin' ? '/' : '/customer')
+    if (profile?.role === 'admin') return
+    router.push('/customer')
     router.refresh()
   }, [router])
 
