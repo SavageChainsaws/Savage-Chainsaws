@@ -55,6 +55,7 @@ async function addUnit(formData: FormData) {
   const customerId = formData.get('customer_id') as string
   const checkInDate = formData.get('check_in_date') as string
   const photoUrl = (formData.get('photo_url') as string) || null
+  const extraPhotoUrls = (formData.getAll('extra_photo_url') as string[]).filter(Boolean)
   const equipmentType = formData.get('equipment_type') as string
   const hourMeter = formData.get('hour_meter') as string
   const isPriority = formData.get('is_priority') === 'true'
@@ -94,6 +95,7 @@ async function addUnit(formData: FormData) {
     status_since: createdAt,
   }
 
+  let unitId = existingUnit?.id ?? null
   if (existingUnit) {
     await supabase
       .from('units')
@@ -105,14 +107,27 @@ async function addUnit(formData: FormData) {
       })
       .eq('id', existingUnit.id)
   } else {
-    await supabase.from('units').insert({
-      ...checkInFields,
-      customer_id: customerId,
-      photo_url: photoUrl,
-      thumbnail_url: photoUrl,
-      history: stampHistory(null, historyEntry),
-    })
+    const { data: inserted } = await supabase
+      .from('units')
+      .insert({
+        ...checkInFields,
+        customer_id: customerId,
+        photo_url: photoUrl,
+        thumbnail_url: photoUrl,
+        history: stampHistory(null, historyEntry),
+      })
+      .select('id')
+      .single()
+    unitId = inserted?.id ?? null
   }
+
+  // Beyond the first (primary) check-in photo, any additional ones picked
+  // in the same multi-select go into the check-in gallery (unit_photos),
+  // same as photos added later via UnitPhotoUpload.
+  if (unitId && extraPhotoUrls.length > 0) {
+    await supabase.from('unit_photos').insert(extraPhotoUrls.map(url => ({ unit_id: unitId, url })))
+  }
+
   revalidatePath('/')
 }
 
@@ -700,9 +715,9 @@ async function addUnitPhoto(formData: FormData) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
   const unitId = formData.get('unit_id') as string
-  const photoUrl = formData.get('photo_url') as string
-  if (!unitId || !photoUrl) return
-  await supabase.from('unit_photos').insert({ unit_id: unitId, url: photoUrl })
+  const photoUrls = (formData.getAll('photo_url') as string[]).filter(Boolean)
+  if (!unitId || photoUrls.length === 0) return
+  await supabase.from('unit_photos').insert(photoUrls.map(url => ({ unit_id: unitId, url })))
   revalidatePath('/')
 }
 
