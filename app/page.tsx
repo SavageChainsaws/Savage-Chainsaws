@@ -56,7 +56,6 @@ async function addUnit(formData: FormData) {
   const photoUrl = (formData.get('photo_url') as string) || null
   const equipmentType = formData.get('equipment_type') as string
   const hourMeter = formData.get('hour_meter') as string
-  const partNumber = formData.get('part_number') as string
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const expediteFee = expediteFeeRaw ? Number(expediteFeeRaw) : null
@@ -88,7 +87,6 @@ async function addUnit(formData: FormData) {
     decision_seen: true,
     equipment_type: equipmentType || null,
     hour_meter: hourMeter || null,
-    part_number: partNumber || null,
     is_priority: isPriority,
     expedite_fee: expediteFee,
     created_at: createdAt,
@@ -1490,53 +1488,6 @@ export default async function Home({
           })}
         </div>
 
-        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
-          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-            <h2 className="font-semibold text-orange-400">Create Customer Login</h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
-          </summary>
-          <div className="border-t border-zinc-800 p-4 sm:p-6">
-            <p className="text-xs text-gray-500 mb-3">
-              Creates the login for a customer directly (invite-only, not public signup). Links to an existing customer or creates a new one.
-            </p>
-            <CreateCustomerLoginForm
-              customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
-              action={createCustomerLogin}
-            />
-          </div>
-        </details>
-
-        <details className="bg-zinc-900 border border-red-900/40 rounded-xl overflow-hidden mb-4 group">
-          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-            <h2 className="font-semibold text-red-400">Delete Customer / Login</h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
-          </summary>
-          <div className="border-t border-zinc-800 p-4 sm:p-6">
-            <p className="text-xs text-gray-500 mb-3">
-              Permanently removes a customer record and its login account (if any), via the proper Supabase Auth admin API. Refuses to run while the customer still has units attached - remove those first.
-            </p>
-            <DeleteCustomerLoginForm
-              customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
-              action={deleteCustomerLogin}
-            />
-          </div>
-        </details>
-
-        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
-          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-            <h2 className="font-semibold text-orange-400">Create Invoice</h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
-          </summary>
-          <div className="border-t border-zinc-800 p-4 sm:p-6">
-            <p className="text-xs text-gray-500 mb-3">
-              Build a standalone itemized invoice on the spot - not tied to a tracked unit. Link an existing customer to auto-fill their info, or skip that and type everything from scratch.
-            </p>
-            <CreateCustomInvoiceForm
-              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
-            />
-          </div>
-        </details>
-
         {statusFilter && (
           <div className="bg-zinc-900 border border-orange-400/40 rounded-xl overflow-hidden mb-5">
             <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1696,16 +1647,6 @@ export default async function Home({
 
         {selectedCustomerId && !statusFilter && (
           <>
-            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
-              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
-                <h2 className="font-semibold text-orange-400">Check In New Unit</h2>
-                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
-              </summary>
-              <div className="border-t border-zinc-800 p-4 sm:p-6">
-                <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
-              </div>
-            </details>
-
             <details
               className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group"
               open={!!openUnitId && repairUnits.some(u => u.id === openUnitId)}
@@ -1721,6 +1662,16 @@ export default async function Home({
                 {repairUnits.map(unit => (
                   <UnitDetailPanel key={unit.id} unit={unit} accordionName="repair-unit" />
                 ))}
+              </div>
+            </details>
+
+            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+                <h2 className="font-semibold text-orange-400">Check In New Unit</h2>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+              </summary>
+              <div className="border-t border-zinc-800 p-4 sm:p-6">
+                <CheckInForm customerId={selectedCustomerId} addUnitAction={addUnit} />
               </div>
             </details>
 
@@ -1950,6 +1901,53 @@ export default async function Home({
             </details>
           </>
         )}
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Create Invoice</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <p className="text-xs text-gray-500 mb-3">
+              Build a standalone itemized invoice on the spot - not tied to a tracked unit. Link an existing customer to auto-fill their info, or skip that and type everything from scratch.
+            </p>
+            <CreateCustomInvoiceForm
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+            />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-red-900/40 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-red-400">Delete Customer / Login</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <p className="text-xs text-gray-500 mb-3">
+              Permanently removes a customer record and its login account (if any), via the proper Supabase Auth admin API. Refuses to run while the customer still has units attached - remove those first.
+            </p>
+            <DeleteCustomerLoginForm
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
+              action={deleteCustomerLogin}
+            />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Create Customer Login</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <p className="text-xs text-gray-500 mb-3">
+              Creates the login for a customer directly (invite-only, not public signup). Links to an existing customer or creates a new one.
+            </p>
+            <CreateCustomerLoginForm
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
+              action={createCustomerLogin}
+            />
+          </div>
+        </details>
 
         <SiteFooter />
       </div>

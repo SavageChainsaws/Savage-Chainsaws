@@ -1791,8 +1791,8 @@ export default function CustomerPortal() {
 
                 {selectedUnit.notes && (
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Your Reported Issue</p>
-                    <p className="text-sm text-gray-400 whitespace-pre-wrap">{selectedUnit.notes}</p>
+                    <p className="text-sm font-bold text-blue-300 mb-1">Your Reported Issue</p>
+                    <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedUnit.notes}</p>
                   </div>
                 )}
 

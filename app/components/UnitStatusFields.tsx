@@ -38,11 +38,14 @@ export default function UnitStatusFields({ unit }: { unit: StatusFieldsUnit }) {
         <option value="Ready for Pickup">Ready for Pickup</option>
       </select>
 
+      {/* Customer Notes (blue) vs. Diagnosis Notes (orange) - distinct colors
+          in addition to both being bold, so it's obvious at a glance which
+          voice/stage each note is from. */}
       <div className="w-full mt-3 space-y-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Customer Notes</label>
+          <label className="block text-xs font-bold text-blue-300 mb-1">Customer Notes</label>
           <p className="text-xs text-gray-600 mb-1">What the customer reported at check-in.</p>
-          <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Customer notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+          <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Customer notes..." className="w-full bg-zinc-900 border border-blue-500/40 rounded-lg px-3 py-2 text-sm text-blue-100" />
         </div>
 
         <div>
@@ -54,14 +57,16 @@ export default function UnitStatusFields({ unit }: { unit: StatusFieldsUnit }) {
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-600 mb-1">What was actually found wrong - visible to the customer.</p>
+          <p className="text-xs text-gray-600 mb-1">
+            What was actually found wrong - visible to the customer. Add any parts needed in Parts &amp; SKUs below.
+          </p>
           <textarea
             name="diagnosis_notes"
             defaultValue={unit.diagnosis_notes || ''}
             rows={2}
             required={needsDiagnosisNotes}
             placeholder="What was found during diagnosis..."
-            className="w-full bg-zinc-900 border border-orange-500/40 rounded-lg px-3 py-2 text-sm"
+            className="w-full bg-zinc-900 border border-orange-500/40 rounded-lg px-3 py-2 text-sm text-orange-100"
           />
           {needsDiagnosisNotes && (
             <p className="text-xs text-orange-400 mt-1">Required before moving to {status}.</p>

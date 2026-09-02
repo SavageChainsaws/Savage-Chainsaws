@@ -198,11 +198,6 @@ export default function CheckInForm({
       )}
 
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Part Number (optional)</label>
-        <input name="part_number" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="OEM / part #" />
-      </div>
-
-      <div>
         <label className="block text-xs text-gray-500 mb-1">Check-in Date</label>
         <input type="datetime-local" name="check_in_date" defaultValue={new Date().toISOString().slice(0, 16)} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" />
       </div>
