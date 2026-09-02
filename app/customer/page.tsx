@@ -81,6 +81,8 @@ type UnitPhotoEntry = {
   id: string
   url: string
   caption: string | null
+  media_type: 'photo' | 'video'
+  stage: 'checkin' | 'diagnosis'
 }
 
 // A customer's written reply about a unit's diagnosis/quote - reuses the
@@ -632,7 +634,7 @@ export default function CustomerPortal() {
     setUnitPhotos([])
     supabase
       .from('unit_photos')
-      .select('id, url, caption')
+      .select('id, url, caption, media_type, stage')
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitPhotos(data || []))
@@ -1807,6 +1809,19 @@ export default function CustomerPortal() {
                   </a>
                 )}
 
+                {(() => {
+                  const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
+                  if (diagnosisMedia.length === 0) return null
+                  return (
+                    <div>
+                      <p className="text-sm font-bold text-orange-300 mb-1">Diagnosis Findings</p>
+                      <UnitPhotoGallery
+                        photos={diagnosisMedia.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
+                      />
+                    </div>
+                  )
+                })()}
+
                 <div className="space-y-2">
                   <p className="text-xs text-gray-500 uppercase tracking-wider">
                     {unitReplies.length > 0 ? 'Your Replies' : 'Have a question about this?'}
@@ -1888,7 +1903,7 @@ export default function CustomerPortal() {
                   ...(selectedUnit.photo_url
                     ? [{ id: 'checkin', url: selectedUnit.photo_url, caption: 'Check-in photo', deletable: false }]
                     : []),
-                  ...unitPhotos,
+                  ...unitPhotos.filter(p => p.stage === 'checkin'),
                 ]
                 return photos.length === 0 ? (
                   <p className="text-xs text-gray-500">No photos yet.</p>

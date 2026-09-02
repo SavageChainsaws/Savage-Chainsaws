@@ -23,6 +23,7 @@ import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import UnitStatusFields from './components/UnitStatusFields'
+import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -714,6 +715,27 @@ async function deleteUnitPhoto(formData: FormData) {
   revalidatePath('/')
 }
 
+// Diagnosis Findings - photos/videos the admin captures while diagnosing a
+// unit, kept in the same unit_photos table as the check-in gallery but
+// tagged stage: 'diagnosis' so the two never mix. Takes every file from one
+// multi-select upload in a single bulk insert, rather than one row at a
+// time.
+async function addDiagnosisMedia(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const unitId = formData.get('unit_id') as string
+  const urls = formData.getAll('media_url') as string[]
+  const types = formData.getAll('media_type') as string[]
+  if (!unitId || urls.length === 0) return
+  const rows = urls
+    .map((url, i) => ({ unit_id: unitId, url, media_type: types[i] === 'video' ? 'video' : 'photo', stage: 'diagnosis' }))
+    .filter(r => r.url)
+  if (rows.length === 0) return
+  await supabase.from('unit_photos').insert(rows)
+  revalidatePath('/')
+}
+
 function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
@@ -1027,7 +1049,7 @@ export default async function Home({
   }
 
   function UnitPhotosSection({ unit }: { unit: any }) {
-    const extraPhotos = (unitPhotosAll || []).filter(p => p.unit_id === unit.id)
+    const extraPhotos = (unitPhotosAll || []).filter(p => p.unit_id === unit.id && p.stage === 'checkin')
     const photos = [
       ...(unit.photo_url ? [{ id: 'checkin', url: unit.photo_url as string, caption: 'Check-in photo', deletable: false }] : []),
       ...extraPhotos.map(p => ({ id: p.id as string, url: p.url as string, caption: p.caption as string | null })),
@@ -1047,6 +1069,36 @@ export default async function Home({
             <UnitPhotoGallery photos={photos} onDelete={deleteUnitPhoto} />
           )}
           <UnitPhotoUpload unitId={unit.id} action={addUnitPhoto} />
+        </div>
+      </details>
+    )
+  }
+
+  // Diagnosis Findings - a section deliberately separate from Photos above:
+  // its own heading, own upload control (multi-select, photos and videos),
+  // own storage tag (stage: 'diagnosis'). Never mixes with the check-in
+  // gallery. Visible to the customer too (see the matching block in
+  // app/customer/page.tsx), right alongside Diagnosis Notes.
+  function DiagnosisFindingsSection({ unit }: { unit: { id: string } }) {
+    const media = (unitPhotosAll || []).filter(p => p.unit_id === unit.id && p.stage === 'diagnosis')
+    return (
+      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/diagnosis-media-panel" open={media.length > 0}>
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
+          <span className="text-xs font-bold text-orange-300 uppercase tracking-wider">
+            Diagnosis Findings{media.length > 0 ? ` (${media.length})` : ''}
+          </span>
+          <span className="text-gray-500 text-xs group-open/diagnosis-media-panel:rotate-180 transition">v</span>
+        </summary>
+        <div className="space-y-2">
+          {media.length === 0 ? (
+            <p className="text-xs text-gray-500">No diagnosis photos/videos yet.</p>
+          ) : (
+            <UnitPhotoGallery
+              photos={media.map(p => ({ id: p.id as string, url: p.url as string, caption: p.caption as string | null, mediaType: p.media_type as 'photo' | 'video' }))}
+              onDelete={deleteUnitPhoto}
+            />
+          )}
+          <DiagnosisMediaUpload unitId={unit.id} action={addDiagnosisMedia} />
         </div>
       </details>
     )
@@ -1318,6 +1370,7 @@ export default async function Home({
           )}
 
           <UnitPhotosSection unit={unit} />
+          <DiagnosisFindingsSection unit={unit} />
           <UnitPartsSection unit={unit} />
           <ServiceHistorySection unit={unit} />
           <CreateInvoiceSection unit={unit} />
