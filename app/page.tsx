@@ -22,6 +22,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
+import UnitStatusFields from './components/UnitStatusFields'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -49,7 +50,6 @@ async function addUnit(formData: FormData) {
   if (!isAdmin) throw new Error('Not authorized')
   const serial = formData.get('serial') as string
   const model = formData.get('model') as string
-  const problemType = formData.get('problem_type') as string
   const customerNotes = formData.get('customer_notes') as string
   const customerId = formData.get('customer_id') as string
   const checkInDate = formData.get('check_in_date') as string
@@ -62,7 +62,7 @@ async function addUnit(formData: FormData) {
   const expediteFee = expediteFeeRaw ? Number(expediteFeeRaw) : null
   const trimmedSerial = serial.trim()
   const createdAt = checkInDate ? new Date(checkInDate).toISOString() : new Date().toISOString()
-  const historyEntry = `Checked in${isPriority ? ' (PRIORITY)' : ''}${problemType ? ` - ${problemType}` : ''}`
+  const historyEntry = `Checked in${isPriority ? ' (PRIORITY)' : ''}`
 
   // A unit already on this customer's fleet (same serial) gets linked and
   // its status updated instead of creating a second, duplicate row.
@@ -83,7 +83,6 @@ async function addUnit(formData: FormData) {
   const checkInFields = {
     serial_number: serial,
     model: model || null,
-    problem_type: problemType || null,
     notes: customerNotes || null,
     status: 'Diagnosing',
     decision_seen: true,
@@ -448,18 +447,35 @@ async function updateStatus(formData: FormData) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
   const id = formData.get('id') as string
-  const status = formData.get('status') as string
+  let status = formData.get('status') as string
   const notes = formData.get('notes') as string
+  const diagnosisNotesRaw = formData.get('diagnosis_notes') as string
+  const diagnosisNotes = diagnosisNotesRaw?.trim() || null
   const file = formData.get('invoice') as File
   const isPriority = formData.get('is_priority') === 'true'
   const expediteFeeRaw = formData.get('expedite_fee') as string
   const serviceCostRaw = formData.get('service_cost') as string
-  const { data: existing } = await supabase.from('units').select('status, history, is_priority, problem_type').eq('id', id).single()
+  const { data: existing } = await supabase.from('units').select('status, history, is_priority, problem_type, diagnosis_notes').eq('id', id).single()
   const wasAlreadyDone = existing ? existing.status === 'Ready for Pickup' : false
+
+  // Diagnosis Notes (what was actually found wrong) must exist before a
+  // unit leaves Diagnosing - a separate field from the customer's own
+  // check-in notes, never overwriting it. Block the status change (keep
+  // it where it is) rather than silently letting a unit through without
+  // findings recorded; everything else on the form still saves.
+  const requiresDiagnosisNotes = (status === 'Needs Approval' || status === 'In Repair') && !diagnosisNotes
+  if (requiresDiagnosisNotes && existing) {
+    status = existing.status
+  }
+
   const updateData: any = {
     status,
     notes: notes || null,
     is_priority: isPriority,
+  }
+  if (diagnosisNotes && diagnosisNotes !== existing?.diagnosis_notes) {
+    updateData.diagnosis_notes = diagnosisNotes
+    updateData.diagnosis_notes_updated_at = new Date().toISOString()
   }
   if (expediteFeeRaw !== null && expediteFeeRaw !== undefined && expediteFeeRaw !== '') {
     updateData.expedite_fee = Number(expediteFeeRaw)
@@ -769,6 +785,11 @@ export default async function Home({
   const { data: unitPhotosAll } = await supabase
     .from('unit_photos')
     .select('*')
+    .order('created_at', { ascending: true })
+  const { data: unitMessagesAll } = await supabase
+    .from('messages')
+    .select('*')
+    .not('unit_id', 'is', null)
     .order('created_at', { ascending: true })
 
   let units = allUnits
@@ -1150,6 +1171,30 @@ export default async function Home({
     )
   }
 
+  // Read-only view of a customer's written replies about this unit (the
+  // messages table, scoped by unit_id - reused rather than a new table).
+  // Not a back-and-forth chat, just a way for the admin to see a question
+  // or concern the customer left about the diagnosis/quote.
+  type UnitReply = { id: string; customer_name: string | null; created_at: string; message: string }
+  function UnitReplies({ messages }: { messages: UnitReply[] }) {
+    if (messages.length === 0) return null
+    return (
+      <div className="mt-3 border-t border-zinc-800 pt-2.5">
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Customer Replies</p>
+        <div className="space-y-2">
+          {messages.map(m => (
+            <div key={m.id} className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
+              <p className="text-xs text-gray-500">
+                {m.customer_name || 'Customer'} - {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </p>
+              <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{m.message}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // The full editable unit panel - status dropdown, priority/fee/cost,
   // notes, invoice upload, withdraw/pickup, nudge, history, photos, parts,
   // service history. Shared between the per-customer "All Units - Repair
@@ -1196,14 +1241,7 @@ export default async function Home({
           <form action={updateStatus} className="space-y-3">
             <input type="hidden" name="id" value={unit.id} />
             <div className="flex flex-wrap items-center gap-3">
-              <select name="status" defaultValue={unit.status} key={unit.id + unit.status} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm">
-                <option value="Repair Requested">Repair Requested</option>
-                <option value="Received">Received / Checked In</option>
-                <option value="Diagnosing">Diagnosing</option>
-                <option value="Needs Approval">Needs Approval</option>
-                <option value="In Repair">In Repair</option>
-                <option value="Ready for Pickup">Ready for Pickup</option>
-              </select>
+              <UnitStatusFields unit={unit} key={unit.id + unit.status + unit.diagnosis_notes} />
               <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
                 <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
                 Priority
@@ -1218,7 +1256,6 @@ export default async function Home({
                 <span className="text-gray-500">Problem reported: </span>{unit.problem_type}
               </p>
             )}
-            <textarea name="notes" defaultValue={unit.notes || ''} rows={2} placeholder="Notes..." className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
             {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
               <div>
                 <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
@@ -1226,9 +1263,11 @@ export default async function Home({
               </div>
             )}
             {unit.invoice_url && (
-              <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View uploaded file {'->'}</a>
+              <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
             )}
           </form>
+
+          <UnitReplies messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
 
           <form action={nudgeUnit} className="pt-3">
             <input type="hidden" name="id" value={unit.id} />
