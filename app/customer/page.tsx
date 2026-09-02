@@ -20,6 +20,8 @@ type Unit = {
   status: string
   notes: string | null
   problem_type: string | null
+  diagnosis_notes: string | null
+  diagnosis_notes_updated_at: string | null
   equipment_type: string | null
   photo_url: string | null
   thumbnail_url: string | null
@@ -79,6 +81,17 @@ type UnitPhotoEntry = {
   id: string
   url: string
   caption: string | null
+}
+
+// A customer's written reply about a unit's diagnosis/quote - reuses the
+// previously-unused messages table (scoped here via unit_id) rather than a
+// new table. Not a full chat thread, just a way to leave a question or
+// concern in writing before approving/denying.
+type UnitReply = {
+  id: string
+  message: string
+  created_at: string
+  customer_name: string | null
 }
 
 type Customer = {
@@ -164,6 +177,9 @@ export default function CustomerPortal() {
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryEntry[]>([])
   const [serviceHistoryLoading, setServiceHistoryLoading] = useState(false)
   const [unitPhotos, setUnitPhotos] = useState<UnitPhotoEntry[]>([])
+  const [unitReplies, setUnitReplies] = useState<UnitReply[]>([])
+  const [replyText, setReplyText] = useState('')
+  const [replyBusy, setReplyBusy] = useState(false)
 
   const [serial, setSerial] = useState('')
   const [model, setModel] = useState('')
@@ -620,6 +636,15 @@ export default function CustomerPortal() {
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitPhotos(data || []))
+
+    setUnitReplies([])
+    setReplyText('')
+    supabase
+      .from('messages')
+      .select('id, message, created_at, customer_name')
+      .eq('unit_id', unit.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => setUnitReplies(data || []))
   }
 
   function closeUnit() {
@@ -630,6 +655,30 @@ export default function CustomerPortal() {
     setServiceNote('')
     setServiceHistory([])
     setUnitPhotos([])
+    setUnitReplies([])
+    setReplyText('')
+  }
+
+  async function submitReply() {
+    if (!selectedUnit || !customer || !replyText.trim()) return
+    setReplyBusy(true)
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        unit_id: selectedUnit.id,
+        customer_id: customer.id,
+        customer_name: customer.name || userEmail || 'Customer',
+        message: replyText.trim(),
+      })
+      .select('id, message, created_at, customer_name')
+      .single()
+    setReplyBusy(false)
+    if (error) {
+      setMessage('Could not send your reply. Try again.')
+      return
+    }
+    setUnitReplies(prev => [...prev, data])
+    setReplyText('')
   }
 
   function onThumbPick(file: File | null) {
@@ -916,6 +965,11 @@ export default function CustomerPortal() {
             {isUnderWarranty(unit) && (
               <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-500/20 text-blue-400">
                 Under Warranty
+              </span>
+            )}
+            {unit.diagnosis_notes && (
+              <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500/20 text-orange-300">
+                Diagnosis Updated
               </span>
             )}
           </div>
@@ -1721,12 +1775,77 @@ export default function CustomerPortal() {
               </div>
             )}
 
+            {selectedUnit.diagnosis_notes && (
+              <div className="border-t border-zinc-800 pt-3 space-y-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
+                    {selectedUnit.diagnosis_notes_updated_at && (
+                      <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
+                        Updated {formatShortDate(selectedUnit.diagnosis_notes_updated_at)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
+                </div>
+
+                {selectedUnit.notes && (
+                  <div>
+                    <p className="text-sm font-bold text-blue-300 mb-1">Your Reported Issue</p>
+                    <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedUnit.notes}</p>
+                  </div>
+                )}
+
+                {selectedUnit.invoice_url && (
+                  <a
+                    href={selectedUnit.invoice_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block text-sm text-orange-400 hover:text-orange-300 underline"
+                  >
+                    View Estimate / Quote (PDF) {'->'}
+                  </a>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">
+                    {unitReplies.length > 0 ? 'Your Replies' : 'Have a question about this?'}
+                  </p>
+                  {unitReplies.map(r => (
+                    <div key={r.id} className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
+                      <p className="text-xs text-gray-500">
+                        {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                      <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{r.message}</p>
+                    </div>
+                  ))}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      value={replyText}
+                      onChange={e => setReplyText(e.target.value)}
+                      placeholder="Ask a question about the diagnosis or quote..."
+                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                    />
+                    <button
+                      onClick={submitReply}
+                      disabled={replyBusy || !replyText.trim()}
+                      className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0"
+                    >
+                      {replyBusy ? 'Sending...' : 'Send Reply'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {selectedUnit.status === 'Needs Approval' && (
               <div className="border-t border-zinc-800 pt-3 space-y-3">
                 <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-3">
                   <p className="text-xs text-yellow-400 uppercase tracking-wider mb-1">Repair decision needed</p>
                   <p className="text-sm text-gray-200">
-                    {selectedUnit.notes || 'Jesse has a repair recommendation for this unit. Approve to proceed, or deny to pick it up as-is.'}
+                    {selectedUnit.diagnosis_notes
+                      ? 'Review the diagnosis and quote above, then approve to proceed or deny to pick up as-is.'
+                      : selectedUnit.notes || 'Jesse has a repair recommendation for this unit. Approve to proceed, or deny to pick it up as-is.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

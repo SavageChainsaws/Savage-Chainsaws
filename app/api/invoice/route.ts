@@ -4,9 +4,11 @@ import { resolveUnitParts } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 
 // Admin-only. Generates a PDF invoice on demand from a unit's current
-// data plus admin-entered fee amounts - nothing is persisted, so the same
-// unit can be re-invoiced any time with different numbers (not every job
-// is billed the same).
+// data plus admin-entered fee amounts, and saves it as the unit's current
+// invoice/quote (units.invoice_url) - reused as-is whether this runs at
+// the diagnosis step (an estimate the customer reviews before approving
+// work) or later for a final invoice. The same unit can be re-invoiced any
+// time with different numbers; each run replaces the previous document.
 export async function POST(request: NextRequest) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) {
@@ -64,6 +66,26 @@ export async function POST(request: NextRequest) {
     parts: parts.map(p => ({ name: p.part_name, sku: p.sku })),
     logoUrl,
   })
+
+  // Best-effort: save this as the unit's current invoice/quote so it shows
+  // up for the customer (e.g. alongside diagnosis notes, before they
+  // decide). A storage/DB hiccup here shouldn't block handing the admin
+  // back the PDF they just generated.
+  try {
+    const fileName = `${unitId}-${invoiceNumber}.pdf`
+    const { error: uploadError } = await supabase.storage
+      .from('invoices')
+      .upload(fileName, pdfBuffer, {
+        contentType: 'application/pdf',
+        upsert: false,
+      })
+    if (!uploadError) {
+      const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+      await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
+    }
+  } catch (err) {
+    console.error('Failed to save generated invoice to unit:', err)
+  }
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     headers: {
