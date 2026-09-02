@@ -7,6 +7,9 @@ import { resizeImage } from '@/lib/resizeImage'
 
 const supabase = createClient()
 
+// Matches the 'invoices' storage bucket's file_size_limit.
+const MAX_FILE_BYTES = 100 * 1024 * 1024
+
 const STIHL_PREFIX_MAP: Record<string, string> = {
   FC: 'Edger',
   FS: 'String Trimmer',
@@ -51,7 +54,7 @@ export default function CheckInForm({
   const formRef = useRef<HTMLFormElement>(null)
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
@@ -73,40 +76,55 @@ export default function CheckInForm({
     setEquipmentType(value)
   }
 
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  // Multi-select (same pattern as UnitPhotoUpload/DiagnosisMediaUpload):
+  // picking several photos at once uploads all of them, and they all
+  // check in together - iOS Safari in particular only offers a
+  // single-file picker unless the input has `multiple`. The first photo
+  // becomes the unit's primary check-in photo (photo_url, unchanged
+  // field/behavior); any additional ones ride along as extra_photo_url
+  // fields for addUnit to save into the check-in gallery once the unit
+  // (and its id) exists.
+  async function handlePhotosChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
 
     setUploading(true)
     setError(null)
-    setPhotoUrl(null)
     setSuccess(false)
+    const uploaded: string[] = []
+    const failures: string[] = []
 
-    try {
-      const resized = await resizeImage(file, 1200)
-      const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg'
-      const fileName = `checkin-${Date.now()}.${ext}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('invoices')
-        .upload(fileName, resized, {
-          contentType: 'image/jpeg',
-          upsert: false,
-        })
-
-      if (uploadError) {
-        setError('Photo upload failed. You can still check in without a photo.')
-        setUploading(false)
-        return
+    for (const file of files) {
+      if (file.size > MAX_FILE_BYTES) {
+        failures.push(`${file.name} - over the 100MB upload limit`)
+        continue
       }
+      try {
+        const resized = await resizeImage(file, 1200)
+        const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg'
+        const fileName = `checkin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
 
-      const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-      setPhotoUrl(publicUrl)
-    } catch {
-      setError('Photo upload failed. You can still check in without a photo.')
+        const { error: uploadError } = await supabase.storage
+          .from('invoices')
+          .upload(fileName, resized, {
+            contentType: 'image/jpeg',
+            upsert: false,
+          })
+        if (uploadError) {
+          failures.push(`${file.name} - upload failed`)
+          continue
+        }
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+        uploaded.push(publicUrl)
+      } catch {
+        failures.push(`${file.name} - upload failed`)
+      }
     }
 
+    setPhotoUrls(prev => [...prev, ...uploaded])
+    setError(failures.length > 0 ? `${failures.join('; ')}. You can still check in without them.` : null)
     setUploading(false)
+    e.target.value = ''
   }
 
   async function handleSubmit(formData: FormData) {
@@ -114,9 +132,8 @@ export default function CheckInForm({
     setError(null)
     setSuccess(false)
 
-    if (photoUrl) {
-      formData.set('photo_url', photoUrl)
-    }
+    formData.set('photo_url', photoUrls[0] || '')
+    for (const url of photoUrls.slice(1)) formData.append('extra_photo_url', url)
     formData.delete('photo')
 
     const finalType = equipmentType === 'Other' && customType.trim() ? customType.trim() : equipmentType
@@ -124,7 +141,7 @@ export default function CheckInForm({
 
     try {
       await addUnitAction(formData)
-      setPhotoUrl(null)
+      setPhotoUrls([])
       setModel('')
       setEquipmentType('')
       setCustomType('')
@@ -215,18 +232,24 @@ export default function CheckInForm({
       </div>
 
       <div className="md:col-span-2 lg:col-span-3">
-        <label className="block text-xs text-gray-500 mb-1">Photo of Unit / Serial Plate</label>
+        <label className="block text-xs text-gray-500 mb-1">Photos of Unit / Serial Plate</label>
         <input
           type="file"
           accept="image/*"
-          onChange={handlePhotoChange}
+          multiple
+          onChange={handlePhotosChange}
+          disabled={uploading}
           className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white hover:file:bg-orange-500"
         />
         <p className="text-xs text-gray-500 mt-1">
-          {uploading ? 'Uploading photo...' : photoUrl ? 'Photo ready' : 'Take photo or choose from library'}
+          {uploading ? 'Uploading photos...' : photoUrls.length > 0 ? `${photoUrls.length} photo${photoUrls.length === 1 ? '' : 's'} ready` : 'Take photos or choose from library - the first becomes the primary check-in photo'}
         </p>
-        {photoUrl && (
-          <img src={photoUrl} alt="Preview" className="mt-2 h-24 w-24 object-cover rounded-lg border border-zinc-700" />
+        {photoUrls.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {photoUrls.map(url => (
+              <img key={url} src={url} alt="Preview" className="h-24 w-24 object-cover rounded-lg border border-zinc-700" />
+            ))}
+          </div>
         )}
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
         {success && <p className="text-xs text-green-400 mt-1">Unit checked in</p>}
