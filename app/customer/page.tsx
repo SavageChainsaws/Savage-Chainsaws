@@ -1778,7 +1778,7 @@ export default function CustomerPortal() {
             )}
 
             {selectedUnit.diagnosis_notes && (
-              <div className="border-t border-zinc-800 pt-3 space-y-3">
+              <div className="border border-orange-500/30 rounded-xl bg-orange-500/[0.03] p-3 sm:p-4 space-y-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
@@ -1813,8 +1813,16 @@ export default function CustomerPortal() {
                   const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
                   if (diagnosisMedia.length === 0) return null
                   return (
-                    <div>
-                      <p className="text-sm font-bold text-orange-300 mb-1">Diagnosis Findings</p>
+                    <div className="space-y-2">
+                      {/* Deliberately loud - easy to overlook as plain text,
+                          so it gets the same highlighted-box treatment as
+                          the admin side. */}
+                      <div className="flex items-center gap-2 bg-orange-500/15 border border-orange-500/40 rounded-lg px-3 py-2.5">
+                        <span className="text-sm font-bold text-orange-300 uppercase tracking-wide">
+                          Diagnosis Findings - Photos &amp; Videos
+                        </span>
+                        <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">{diagnosisMedia.length}</span>
+                      </div>
                       <UnitPhotoGallery
                         photos={diagnosisMedia.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
                       />
