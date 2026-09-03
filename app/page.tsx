@@ -1097,14 +1097,20 @@ export default async function Home({
   function DiagnosisFindingsSection({ unit }: { unit: { id: string } }) {
     const media = (unitPhotosAll || []).filter(p => p.unit_id === unit.id && p.stage === 'diagnosis')
     return (
-      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/diagnosis-media-panel" open={media.length > 0}>
-        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
-          <span className="text-xs font-bold text-orange-300 uppercase tracking-wider">
-            Diagnosis Findings{media.length > 0 ? ` (${media.length})` : ''}
+      <details className="mt-3 group/diagnosis-media-panel" open={media.length > 0}>
+        {/* Deliberately loud - this used to be an easy-to-miss plain-text
+            caption. A highlighted, bordered box makes it impossible to
+            scroll past without noticing there's media attached. */}
+        <summary className="flex items-center justify-between gap-2 cursor-pointer list-none select-none bg-orange-500/15 border border-orange-500/40 rounded-lg px-3 py-2.5 hover:bg-orange-500/20 transition">
+          <span className="flex items-center gap-2 text-sm font-bold text-orange-300 uppercase tracking-wide">
+            Diagnosis Findings - Photos &amp; Videos
+            {media.length > 0 && (
+              <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">{media.length}</span>
+            )}
           </span>
-          <span className="text-gray-500 text-xs group-open/diagnosis-media-panel:rotate-180 transition">v</span>
+          <span className="text-orange-400 text-xs group-open/diagnosis-media-panel:rotate-180 transition">v</span>
         </summary>
-        <div className="space-y-2">
+        <div className="space-y-2 mt-2">
           {media.length === 0 ? (
             <p className="text-xs text-gray-500">No diagnosis photos/videos yet.</p>
           ) : (
@@ -1303,34 +1309,45 @@ export default async function Home({
           </div>
         </summary>
         <div className="px-4 sm:px-6 pb-4">
-          <form action={updateStatus} className="space-y-3">
-            <input type="hidden" name="id" value={unit.id} />
-            <div className="flex flex-wrap items-center gap-3">
-              <UnitStatusFields unit={unit} key={unit.id + unit.status + unit.diagnosis_notes} />
-              <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
-                <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
-                Priority
-              </label>
-              <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-              <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-              <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
-              <DeleteUnitButton id={unit.id} />
-            </div>
-            {unit.problem_type && (
-              <p className="text-xs text-gray-400">
-                <span className="text-gray-500">Problem reported: </span>{unit.problem_type}
-              </p>
-            )}
-            {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
-                <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
+          {/* Everything to do with diagnosing this unit - the status/notes
+              form (Diagnosis Notes included), Parts & SKUs, the quote/
+              estimate tool, and Diagnosis Findings media - grouped into one
+              bordered block instead of scattered across the panel. Mirrors
+              the customer-facing grouping in app/customer/page.tsx. */}
+          <div className="border border-orange-500/30 rounded-xl p-3 sm:p-4 bg-orange-500/[0.03] space-y-3">
+            <form action={updateStatus} className="space-y-3">
+              <input type="hidden" name="id" value={unit.id} />
+              <div className="flex flex-wrap items-center gap-3">
+                <UnitStatusFields unit={unit} key={unit.id + unit.status + unit.diagnosis_notes} />
+                <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
+                  <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
+                  Priority
+                </label>
+                <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+                <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
+                <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
+                <DeleteUnitButton id={unit.id} />
               </div>
-            )}
-            {unit.invoice_url && (
-              <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
-            )}
-          </form>
+              {unit.problem_type && (
+                <p className="text-xs text-gray-400">
+                  <span className="text-gray-500">Problem reported: </span>{unit.problem_type}
+                </p>
+              )}
+              {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
+                  <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
+                </div>
+              )}
+              {unit.invoice_url && (
+                <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
+              )}
+            </form>
+
+            <DiagnosisFindingsSection unit={unit} />
+            <UnitPartsSection unit={unit} />
+            <CreateInvoiceSection unit={unit} />
+          </div>
 
           <UnitReplies messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
 
@@ -1385,10 +1402,7 @@ export default async function Home({
           )}
 
           <UnitPhotosSection unit={unit} />
-          <DiagnosisFindingsSection unit={unit} />
-          <UnitPartsSection unit={unit} />
           <ServiceHistorySection unit={unit} />
-          <CreateInvoiceSection unit={unit} />
         </div>
       </details>
     )
