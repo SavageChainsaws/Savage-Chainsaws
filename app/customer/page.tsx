@@ -2280,23 +2280,27 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        <div>
-          <h2 className="text-lg font-semibold text-orange-400 mb-3">
-            In Service ({activeUnits.length})
-          </h2>
-          {activeUnits.length === 0 ? (
-            <p className="text-gray-500 text-sm">No units currently in service.</p>
-          ) : (
-            <div className="space-y-2">
-              {activeUnits.map(unit => (
-                <UnitCard key={unit.id} unit={unit} />
-              ))}
-            </div>
-          )}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-3 border-b border-zinc-800">
+            <h2 className="text-lg font-semibold text-orange-400">
+              In Service ({activeUnits.length})
+            </h2>
+          </div>
+          <div className="p-3 sm:p-4">
+            {activeUnits.length === 0 ? (
+              <p className="text-gray-500 text-sm">No units currently in service.</p>
+            ) : (
+              <div className="space-y-2">
+                {activeUnits.map(unit => (
+                  <UnitCard key={unit.id} unit={unit} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <details className="group" open={fleetUnits.length > 0 && fleetUnits.length <= 6}>
-          <summary className="cursor-pointer list-none flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 hover:border-orange-500/40 transition">
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group" open={fleetUnits.length > 0 && fleetUnits.length <= 6}>
+          <summary className="cursor-pointer list-none flex items-center justify-between px-4 sm:px-6 py-3 hover:bg-zinc-800/40 transition">
             <h2 className="text-lg font-semibold text-orange-300">
               Fleet ({fleetUnits.length})
             </h2>
@@ -2319,7 +2323,7 @@ export default function CustomerPortal() {
               <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
             </div>
           </summary>
-          <div className="mt-2 space-y-2">
+          <div className="border-t border-zinc-800 p-3 sm:p-4 space-y-2">
             {fleetUnits.length === 0 ? (
               <p className="text-gray-500 text-sm px-1">
                 No fleet units yet. Use <strong>Add to Fleet</strong> to register equipment.
@@ -2330,14 +2334,14 @@ export default function CustomerPortal() {
           </div>
         </details>
 
-        <details className="group">
-          <summary className="cursor-pointer list-none flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 hover:border-orange-500/40 transition">
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group">
+          <summary className="cursor-pointer list-none flex items-center justify-between px-4 sm:px-6 py-3 hover:bg-zinc-800/40 transition">
             <h2 className="text-lg font-semibold text-gray-300">
               Other Units ({otherUnits.length})
             </h2>
             <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
           </summary>
-          <div className="mt-2 space-y-2">
+          <div className="border-t border-zinc-800 p-3 sm:p-4 space-y-2">
             {otherUnits.length === 0 ? (
               <p className="text-gray-500 text-sm px-1">No completed or other units.</p>
             ) : (
