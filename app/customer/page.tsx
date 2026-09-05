@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -40,6 +40,47 @@ function isUnderWarranty(unit: { warranty_end: string | null }): boolean {
   if (!unit.warranty_end) return false
   const today = new Date().toISOString().slice(0, 10)
   return unit.warranty_end >= today
+}
+
+// Read-only shield indicator, reusing the same isUnderWarranty()/
+// warranty_end data as the admin side's Fleet Units icon - sized larger
+// (h-5 w-5 vs admin's h-4 w-4) since customer screens benefit from more
+// visibility here than a dense admin list does.
+function WarrantyShieldIcon({ underWarranty }: { underWarranty: boolean }) {
+  return (
+    <span
+      title={underWarranty ? 'Under warranty' : 'Not under warranty'}
+      className={`shrink-0 ${underWarranty ? 'text-blue-400' : 'text-zinc-600'}`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill={underWarranty ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-5 w-5"
+      >
+        <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
+        {underWarranty && <path d="m9 12 2 2 4-4" stroke="#09090b" />}
+      </svg>
+    </span>
+  )
+}
+
+// A live, color-coded countdown - never a bare negative number, and never
+// silently disappears once the end date has passed, so a customer can't
+// mistake "no warning shown" for "still covered."
+function warrantyCountdown(warrantyEnd: string | null): { label: string; colorClass: string } | null {
+  if (!warrantyEnd) return null
+  const end = new Date(`${warrantyEnd}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const daysLeft = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  if (daysLeft < 0) return { label: 'Expired', colorClass: 'text-red-400' }
+  if (daysLeft === 0) return { label: 'Expires today', colorClass: 'text-red-400' }
+  if (daysLeft <= 30) return { label: `${daysLeft} days left`, colorClass: 'text-amber-400' }
+  return { label: `${daysLeft} days left`, colorClass: 'text-green-400' }
 }
 
 // Mirrors the admin dashboard's last_service_date convention (stamped
@@ -181,6 +222,23 @@ export default function CustomerPortal() {
   const [unitPhotos, setUnitPhotos] = useState<UnitPhotoEntry[]>([])
   const [unitReplies, setUnitReplies] = useState<UnitReply[]>([])
   const [replyText, setReplyText] = useState('')
+  const [askingQuestion, setAskingQuestion] = useState(false)
+  const detailRef = useRef<HTMLDivElement | null>(null)
+  const replyInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Latest invoice/estimate total per unit_id, so the Needs Approval
+  // prompt can show the dollar amount without the customer opening the
+  // PDF - keyed off the previously-unused invoices table, now populated
+  // by the admin's invoice tool (app/api/invoice/route.ts).
+  const [invoiceTotals, setInvoiceTotals] = useState<Record<string, number>>({})
+
+  // Private, customer-only reference note per unit (e.g. "hard time
+  // starting") - lives in its own unit_customer_notes table with RLS that
+  // grants only the owning customer access, so it's genuinely never
+  // visible to the admin, not just hidden in the admin UI.
+  const [privateNote, setPrivateNote] = useState('')
+  const [privateNoteSavedNote, setPrivateNoteSavedNote] = useState('')
+  const [privateNoteBusy, setPrivateNoteBusy] = useState(false)
   const [replyBusy, setReplyBusy] = useState(false)
 
   const [serial, setSerial] = useState('')
@@ -301,6 +359,22 @@ export default function CustomerPortal() {
       .maybeSingle()
 
     if (!cust) {
+      // The authenticated session here isn't a customer at all - most
+      // likely this browser also has an admin session (admin and customer
+      // share one Supabase Auth cookie for the whole site, so whichever
+      // account most recently authenticated in ANY tab is what a later
+      // getUser() call here sees). Rather than stranding them on a dead
+      // end "no customer account" screen tied to the wrong identity, send
+      // them to where that identity actually belongs.
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (profile?.role === 'admin') {
+        router.replace('/')
+        return
+      }
       setCustomer(null)
       setUnits([])
       setLoading(false)
@@ -317,6 +391,23 @@ export default function CustomerPortal() {
       .order('created_at', { ascending: false })
 
     setUnits(unitData || [])
+
+    // Latest invoice/estimate total per unit, for the Needs Approval
+    // prompt - best-effort, a failed/empty read just means no total shows.
+    const unitIds = (unitData || []).map(u => u.id)
+    if (unitIds.length > 0) {
+      const { data: invoiceRows } = await supabase
+        .from('invoices')
+        .select('unit_id, amount, created_at')
+        .in('unit_id', unitIds)
+        .order('created_at', { ascending: false })
+      const totals: Record<string, number> = {}
+      for (const row of invoiceRows || []) {
+        if (!(row.unit_id in totals) && row.amount != null) totals[row.unit_id] = Number(row.amount)
+      }
+      setInvoiceTotals(totals)
+    }
+
     setLoading(false)
   }
 
@@ -518,14 +609,18 @@ export default function CustomerPortal() {
 
   async function handleAddFleet(e: React.FormEvent) {
     e.preventDefault()
-    if (!customer || !fleetSerial.trim()) return
+    if (!customer) return
     setSubmitting(true)
     setMessage(null)
     try {
       let thumbUrl: string | null = null
       if (fleetThumb) thumbUrl = await uploadFile(fleetThumb, `fleet-${customer.id}`)
       const finalFleetType = fleetType === 'Other' && fleetCustomType.trim() ? fleetCustomType.trim() : fleetType
-      const trimmedFleetSerial = fleetSerial.trim()
+      // Matches how the admin side already handles an unknown serial -
+      // "Unknown" is on the non-identifying placeholder list, so dedup
+      // matching below correctly never treats two "Unknown" units as the
+      // same physical unit.
+      const trimmedFleetSerial = fleetSerial.trim() || 'Unknown'
       const historyLine = `${new Date().toLocaleString('en-US', {
         month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
       })} - Added to fleet by customer`
@@ -617,7 +712,14 @@ export default function CustomerPortal() {
     setShowAddFleet(false)
     setShowLogoUpload(false)
     setShowMyFleet(false)
+    setAskingQuestion(false)
 
+    // The detail panel renders near the top of the page, well above the
+    // Fleet/Other Units lists further down - without this, clicking a unit
+    // card down there visibly does nothing, since the panel updates off-
+    // screen above the click. The panel isn't in the DOM yet on this same
+    // tick (state hasn't re-rendered), so the actual scroll happens in the
+    // effect below once selectedUnit changes and the ref is attached.
     setServiceHistory([])
     setServiceHistoryLoading(true)
     supabase
@@ -647,6 +749,18 @@ export default function CustomerPortal() {
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitReplies(data || []))
+
+    setPrivateNote('')
+    setPrivateNoteSavedNote('')
+    supabase
+      .from('unit_customer_notes')
+      .select('notes')
+      .eq('unit_id', unit.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setPrivateNote(data?.notes || '')
+        setPrivateNoteSavedNote(data?.notes || '')
+      })
   }
 
   function closeUnit() {
@@ -659,7 +773,36 @@ export default function CustomerPortal() {
     setUnitPhotos([])
     setUnitReplies([])
     setReplyText('')
+    setAskingQuestion(false)
+    setPrivateNote('')
+    setPrivateNoteSavedNote('')
   }
+
+  async function savePrivateNote() {
+    if (!selectedUnit) return
+    setPrivateNoteBusy(true)
+    const trimmed = privateNote.trim()
+    const { error } = await supabase
+      .from('unit_customer_notes')
+      .upsert({ unit_id: selectedUnit.id, notes: trimmed || null, updated_at: new Date().toISOString() }, { onConflict: 'unit_id' })
+    setPrivateNoteBusy(false)
+    if (error) {
+      console.error(error)
+      setMessage('Could not save your private note.')
+      return
+    }
+    setPrivateNoteSavedNote(trimmed)
+    setMessage('Private note saved.')
+  }
+
+  // Scrolls the detail panel into view whenever a unit is opened, from any
+  // section on the page (In Service, Fleet, or Other Units) - runs after
+  // the panel has actually rendered for the newly-selected unit.
+  useEffect(() => {
+    if (selectedUnit?.id) {
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selectedUnit?.id])
 
   async function submitReply() {
     if (!selectedUnit || !customer || !replyText.trim()) return
@@ -681,6 +824,16 @@ export default function CustomerPortal() {
     }
     setUnitReplies(prev => [...prev, data])
     setReplyText('')
+  }
+
+  // "Ask a Question" on the Needs Approval prompt reuses this same
+  // reply/message field (tied to the unit via unitReplies/submitReply)
+  // rather than a separate mechanism - it just brings the existing field
+  // into view and focus, and highlights it briefly.
+  function askQuestion() {
+    setAskingQuestion(true)
+    replyInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    replyInputRef.current?.focus()
   }
 
   function onThumbPick(file: File | null) {
@@ -850,24 +1003,13 @@ export default function CustomerPortal() {
     await loadData()
   }
 
-  async function handleDecision(unitId: string, decision: 'approve' | 'upgrade' | 'equivalent' | 'deny') {
+  async function handleDecision(unitId: string, decision: 'approve' | 'deny') {
     if (!customer) return
     const name = customer.name || userEmail || 'Customer'
-    let status = 'In Repair'
-    let note = ''
-    if (decision === 'approve') {
-      status = 'In Repair'
-      note = `Approved by ${name}`
-    } else if (decision === 'upgrade') {
-      status = 'In Repair'
-      note = `Upgrade requested by ${name}`
-    } else if (decision === 'equivalent') {
-      status = 'In Repair'
-      note = `Equivalent replacement requested by ${name}`
-    } else {
-      status = 'Ready for Pickup'
-      note = `Denied by ${name} - diagnosis fee $49.99 will apply`
-    }
+    const status = decision === 'approve' ? 'In Repair' : 'Ready for Pickup'
+    const note = decision === 'approve'
+      ? `Approved by ${name}`
+      : `Denied by ${name} - diagnosis fee $49.99 will apply`
     const { data: existing } = await supabase
       .from('units')
       .select('notes, history')
@@ -947,39 +1089,53 @@ export default function CustomerPortal() {
       >
         <UnitPhoto unit={unit} size="h-14 w-14 sm:h-16 sm:w-16" />
         <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-0.5">
-            <p className="font-semibold text-base sm:text-lg truncate">{displayName(unit)}</p>
-            <span
-              className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                unit.status === 'Needs Approval'
-                  ? 'bg-yellow-500/20 text-yellow-400'
-                  : unit.status === 'Fleet'
-                  ? 'bg-zinc-600 text-gray-300'
-                  : unit.status === 'Ready for Pickup'
-                  ? 'bg-green-500/20 text-green-400'
-                  : unit.status === 'In Repair'
-                  ? 'bg-blue-500/20 text-blue-400'
-                  : 'bg-orange-500/20 text-orange-400'
-              }`}
-            >
-              {unit.status}
-            </span>
-            {isUnderWarranty(unit) && (
-              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-500/20 text-blue-400">
-                Under Warranty
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-0.5">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <p className="font-semibold text-base sm:text-lg truncate">{displayName(unit)}</p>
+              <span
+                className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                  unit.status === 'Needs Approval'
+                    ? 'bg-yellow-500/20 text-yellow-400'
+                    : unit.status === 'Fleet'
+                    ? 'bg-zinc-600 text-gray-300'
+                    : unit.status === 'Ready for Pickup'
+                    ? 'bg-green-500/20 text-green-400'
+                    : unit.status === 'In Repair'
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : 'bg-orange-500/20 text-orange-400'
+                }`}
+              >
+                {unit.status}
               </span>
-            )}
-            {unit.diagnosis_notes && (
-              <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500/20 text-orange-300">
-                Diagnosis Updated
+              {unit.diagnosis_notes && (
+                <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500/20 text-orange-300">
+                  Diagnosis Updated
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-zinc-700 text-gray-300">
+                Serial: {unit.serial_number || '-'}
               </span>
-            )}
+              <WarrantyShieldIcon underWarranty={isUnderWarranty(unit)} />
+            </div>
           </div>
-          <p className="text-sm text-gray-400">
-            Serial: {unit.serial_number || '-'}
-            {unit.nickname ? ` - ${unit.nickname}` : ''}
-            {unit.hour_meter ? ` - ${unit.hour_meter} hrs` : ''}
-          </p>
+          {(() => {
+            const countdown = warrantyCountdown(unit.warranty_end)
+            if (!countdown) return null
+            return (
+              <p className={`text-xs ${countdown.colorClass}`}>
+                Warranty: {countdown.label} (ends {formatShortDate(unit.warranty_end)})
+              </p>
+            )
+          })()}
+          {(unit.nickname || unit.hour_meter) && (
+            <p className="text-sm text-gray-400">
+              {unit.nickname || ''}
+              {unit.nickname && unit.hour_meter ? ' - ' : ''}
+              {unit.hour_meter ? `${unit.hour_meter} hrs` : ''}
+            </p>
+          )}
           {unit.problem_type && unit.status !== 'Fleet' && (
             <p className="text-sm text-gray-500 mt-0.5">Problem: {unit.problem_type}</p>
           )}
@@ -1333,11 +1489,11 @@ export default function CustomerPortal() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
+                <label className="block text-xs text-gray-500 mb-1">Serial Number (optional)</label>
                 <input
-                  required
                   value={fleetSerial}
                   onChange={e => setFleetSerial(e.target.value)}
+                  placeholder="Leave blank if unknown"
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
@@ -1592,16 +1748,15 @@ export default function CustomerPortal() {
         )}
 
         {selectedUnit && (
-          <div className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-5 space-y-3">
-            <div className="flex items-start justify-between gap-3">
+          <div ref={detailRef} className="bg-zinc-900 border border-orange-500/40 rounded-xl p-4 sm:p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="flex gap-3 min-w-0">
                 <UnitPhoto unit={selectedUnit} size="h-16 w-16" />
                 <div className="min-w-0">
                   <p className="font-semibold text-lg truncate">{displayName(selectedUnit)}</p>
-                  <p className="text-sm text-gray-400">
-                    Serial: {selectedUnit.serial_number || '-'}
-                    {selectedUnit.nickname ? ` - ${selectedUnit.nickname}` : ''}
-                  </p>
+                  {selectedUnit.nickname && (
+                    <p className="text-sm text-gray-400">{selectedUnit.nickname}</p>
+                  )}
                   {selectedUnit.problem_type && selectedUnit.status !== 'Fleet' && (
                     <p className="text-sm text-gray-500 mt-0.5">Problem: {selectedUnit.problem_type}</p>
                   )}
@@ -1613,11 +1768,47 @@ export default function CustomerPortal() {
                   }`}>{selectedUnit.status}</span>
                 </div>
               </div>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-zinc-700 text-gray-300">
+                  Serial: {selectedUnit.serial_number || '-'}
+                </span>
+                <WarrantyShieldIcon underWarranty={isUnderWarranty(selectedUnit)} />
+                <button
+                  onClick={closeUnit}
+                  className="text-gray-400 hover:text-white text-sm border border-zinc-700 rounded-lg px-3 py-1.5"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const countdown = warrantyCountdown(selectedUnit.warranty_end)
+              if (!countdown) return null
+              return (
+                <p className={`text-xs ${countdown.colorClass}`}>
+                  Warranty: {countdown.label} - end date {formatShortDate(selectedUnit.warranty_end)}
+                </p>
+              )
+            })()}
+
+            <div className="border-t border-zinc-800 pt-3">
+              <label className="block text-xs text-gray-500 mb-1">
+                Private Notes <span className="text-zinc-600">(only visible to you, not Jesse)</span>
+              </label>
+              <textarea
+                value={privateNote}
+                onChange={e => setPrivateNote(e.target.value)}
+                rows={2}
+                placeholder="e.g. This unit has a hard time starting..."
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+              />
               <button
-                onClick={closeUnit}
-                className="text-gray-400 hover:text-white text-sm border border-zinc-700 rounded-lg px-3 py-1.5 shrink-0"
+                onClick={savePrivateNote}
+                disabled={privateNoteBusy || privateNote === privateNoteSavedNote}
+                className="mt-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
               >
-                Close
+                {privateNoteBusy ? 'Saving...' : 'Save Private Note'}
               </button>
             </div>
 
@@ -1844,10 +2035,13 @@ export default function CustomerPortal() {
                   ))}
                   <div className="flex flex-col sm:flex-row gap-2">
                     <input
+                      ref={replyInputRef}
                       value={replyText}
                       onChange={e => setReplyText(e.target.value)}
                       placeholder="Ask a question about the diagnosis or quote..."
-                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                      className={`flex-1 bg-zinc-800 border rounded-lg px-3 py-2 text-sm ${
+                        askingQuestion ? 'border-orange-500 ring-1 ring-orange-500/50' : 'border-zinc-700'
+                      }`}
                     />
                     <button
                       onClick={submitReply}
@@ -1863,32 +2057,37 @@ export default function CustomerPortal() {
 
             {selectedUnit.status === 'Needs Approval' && (
               <div className="border-t border-zinc-800 pt-3 space-y-3">
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-3">
-                  <p className="text-xs text-yellow-400 uppercase tracking-wider mb-1">Repair decision needed</p>
-                  <p className="text-sm text-gray-200">
-                    {selectedUnit.diagnosis_notes
-                      ? 'Review the diagnosis and quote above, then approve to proceed or deny to pick up as-is.'
-                      : selectedUnit.notes || 'Jesse has a repair recommendation for this unit. Approve to proceed, or deny to pick it up as-is.'}
-                  </p>
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-3 space-y-2">
+                  <p className="text-xs text-yellow-400 uppercase tracking-wider">Repair decision needed</p>
+                  {selectedUnit.diagnosis_notes ? (
+                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
+                  ) : (
+                    <p className="text-sm text-gray-200">
+                      {selectedUnit.notes || 'Jesse has a repair recommendation for this unit.'}
+                    </p>
+                  )}
+                  {invoiceTotals[selectedUnit.id] != null && (
+                    <p className="text-sm font-bold text-yellow-300">
+                      Estimate total: ${invoiceTotals[selectedUnit.id].toFixed(2)}
+                    </p>
+                  )}
+                  {selectedUnit.invoice_url && (
+                    <a
+                      href={selectedUnit.invoice_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-xs text-orange-400 hover:text-orange-300 underline"
+                    >
+                      View Full Estimate (PDF) {'->'}
+                    </a>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => handleDecision(selectedUnit.id, 'approve')}
                     className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
                   >
-                    Approve Repair
-                  </button>
-                  <button
-                    onClick={() => handleDecision(selectedUnit.id, 'upgrade')}
-                    className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                  >
-                    Upgrade
-                  </button>
-                  <button
-                    onClick={() => handleDecision(selectedUnit.id, 'equivalent')}
-                    className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                  >
-                    Same / Equivalent
+                    Approve
                   </button>
                   <button
                     onClick={() => {
@@ -1899,6 +2098,12 @@ export default function CustomerPortal() {
                     className="bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
                   >
                     Deny ($49.99 diag)
+                  </button>
+                  <button
+                    onClick={askQuestion}
+                    className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                  >
+                    Ask a Question
                   </button>
                 </div>
               </div>
@@ -1973,7 +2178,24 @@ export default function CustomerPortal() {
             <h2 className="text-lg font-semibold text-orange-300">
               Fleet ({fleetUnits.length})
             </h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation()
+                  setShowAddFleet(!showAddFleet)
+                  setShowCheckIn(false)
+                  setShowLogoUpload(false)
+                  setShowMyFleet(false)
+                  setShowSettings(false)
+                  closeUnit()
+                }}
+                className="border border-zinc-600 hover:border-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition"
+              >
+                {showAddFleet ? 'Close' : 'Add to Fleet'}
+              </button>
+              <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+            </div>
           </summary>
           <div className="mt-2 space-y-2">
             {fleetUnits.length === 0 ? (

@@ -47,6 +47,11 @@ export async function POST(request: NextRequest) {
   const invoiceNumber = `SC-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${unitId.slice(0, 6).toUpperCase()}`
   const logoUrl = new URL('/images/logo.png', request.url).toString()
 
+  const serviceFee = serviceFeeRaw ? Number(serviceFeeRaw) : 0
+  const partsTotal = partsTotalRaw ? Number(partsTotalRaw) : 0
+  const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
+  const invoiceTotal = serviceFee + partsTotal + priorityFee
+
   const pdfBuffer = await renderInvoicePdf({
     invoiceNumber,
     invoiceDate: now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
@@ -61,9 +66,9 @@ export async function POST(request: NextRequest) {
       equipmentType: unit.equipment_type,
     },
     lineItems: [
-      { description: 'Labor / Service Fee', amount: serviceFeeRaw ? Number(serviceFeeRaw) : 0 },
-      { description: 'Parts Total', amount: partsTotalRaw ? Number(partsTotalRaw) : 0 },
-      ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: Number(priorityFeeRaw) }] : []),
+      { description: 'Labor / Service Fee', amount: serviceFee },
+      { description: 'Parts Total', amount: partsTotal },
+      ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
     ],
     parts: parts.map(p => ({ name: p.part_name, sku: p.sku })),
     logoUrl,
@@ -72,7 +77,10 @@ export async function POST(request: NextRequest) {
   // Best-effort: save this as the unit's current invoice/quote so it shows
   // up for the customer (e.g. alongside diagnosis notes, before they
   // decide). A storage/DB hiccup here shouldn't block handing the admin
-  // back the PDF they just generated.
+  // back the PDF they just generated. Also records the total in the
+  // invoices table - previously unused - so the customer's simplified
+  // Needs Approval prompt can show the dollar amount without requiring
+  // them to open the PDF.
   try {
     const fileName = `${unitId}-${invoiceNumber}.pdf`
     const { error: uploadError } = await supabase.storage
@@ -85,6 +93,12 @@ export async function POST(request: NextRequest) {
       const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
       await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
     }
+    await supabase.from('invoices').insert({
+      unit_id: unitId,
+      amount: invoiceTotal,
+      description: `Invoice ${invoiceNumber}`,
+      status: 'sent',
+    })
   } catch (err) {
     console.error('Failed to save generated invoice to unit:', err)
   }
