@@ -23,6 +23,7 @@ import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
+import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 
@@ -240,6 +241,35 @@ async function updateFleetUnit(formData: FormData) {
   }
 
   await supabase.from('units').update(update).eq('id', id)
+  revalidatePath('/')
+}
+
+// Lets an admin correct a unit's identity fields after check-in, from the
+// unit detail/action screen (not the separate Fleet management form above,
+// which is updateFleetUnit) - the true model or serial is sometimes only
+// discoverable after teardown, e.g. a unit checked in as an FS56 turns out
+// to be an FC56, or a serial only becomes legible once the engine block is
+// exposed. Writes straight to the same units row the customer portal
+// reads, so there's nothing separate to keep in sync.
+async function updateUnitIdentity(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const model = ((formData.get('model') as string) || '').trim()
+  const equipmentType = ((formData.get('equipment_type') as string) || '').trim()
+  const serialNumber = ((formData.get('serial_number') as string) || '').trim()
+  const warrantyEnd = (formData.get('warranty_end') as string) || ''
+
+  await supabase
+    .from('units')
+    .update({
+      model: model || null,
+      equipment_type: equipmentType || null,
+      serial_number: serialNumber,
+      warranty_end: warrantyEnd || null,
+    })
+    .eq('id', id)
   revalidatePath('/')
 }
 
@@ -1339,34 +1369,37 @@ export default async function Home({
     return (
       <details
         name={accordionName}
-        className="group/item border-2 border-transparent open:border-orange-500 open:bg-zinc-800/30 open:rounded-lg open:my-1 transition-colors"
+        className="group/item border-2 border-transparent open:border-orange-500 open:bg-zinc-800/30 open:rounded-lg open:my-1 open:order-[-1] transition-colors"
         open={openUnitId === unit.id}
         id={`unit-${unit.id}`}
       >
-        <summary className="px-4 sm:px-6 py-2.5 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3">
-          <UnitPhoto unit={unit} size="h-12 w-12" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-medium truncate">{unitLabel(unit)}</p>
-              {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
-              {isStaleInStatus(unit) && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
-                  NEEDS ATTENTION - {daysInStatus(unit)}d
-                </span>
-              )}
-              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                  : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                  : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                  : 'bg-orange-500/20 text-orange-400'
-              }`}>{unit.status}</span>
+        <UnitIdentityProvider
+          formId={`unit-identity-form-${unit.id}`}
+          key={unit.id + (unit.model || '') + (unit.equipment_type || '') + (unit.serial_number || '') + (unit.warranty_end || '')}
+        >
+          <summary className="px-4 sm:px-6 py-2.5 cursor-pointer hover:bg-zinc-800/50 transition flex items-center gap-3 flex-wrap">
+            <UnitPhoto unit={unit} size="h-12 w-12" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <UnitDescriptionField unit={unit} label={unitLabel(unit)} />
+                {unit.is_priority && <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>}
+                {isStaleInStatus(unit) && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
+                    NEEDS ATTENTION - {daysInStatus(unit)}d
+                  </span>
+                )}
+                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                  unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
+                    : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
+                    : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
+                    : 'bg-orange-500/20 text-orange-400'
+                }`}>{unit.status}</span>
+              </div>
+              {unit.nickname && <p className="text-xs text-gray-500">{unit.nickname}</p>}
             </div>
-            <p className="text-xs text-gray-500">
-              Serial: {unit.serial_number || '-'}
-              {unit.nickname ? ` - ${unit.nickname}` : ''}
-            </p>
-          </div>
-        </summary>
+            <UnitIdentityBox unit={unit} action={updateUnitIdentity} />
+          </summary>
+        </UnitIdentityProvider>
         <div className="px-4 sm:px-6 pb-4">
           {/* The status <select>, Diagnosis Notes textarea, Customer Notes
               textarea and the invoice-upload file input all submit
@@ -1684,7 +1717,7 @@ export default async function Home({
                 {groupUnitsByCustomer(statusFilteredUnits).map((group, i) => (
                   <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'border-t-4 border-zinc-950' : ''}>
                     <CustomerGroupHeader customer={group.customer} count={group.units.length} />
-                    <div className="divide-y divide-zinc-800/60">
+                    <div className="divide-y divide-zinc-800/60 flex flex-col">
                       {group.units.map(unit => (
                         <UnitDetailPanel key={unit.id} unit={unit} accordionName="status-queue-unit" />
                       ))}
@@ -1828,7 +1861,7 @@ export default async function Home({
                 <h2 className="font-semibold text-orange-400">All Units - Repair Flow ({repairUnits.length})</h2>
                 <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
               </summary>
-              <div className="border-t border-zinc-800 divide-y divide-zinc-800">
+              <div className="border-t border-zinc-800 divide-y divide-zinc-800 flex flex-col">
                 {repairUnits.length === 0 && (
                   <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No active repair units.</p>
                 )}
