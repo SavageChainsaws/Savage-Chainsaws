@@ -23,7 +23,7 @@ import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
-import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox } from './components/UnitIdentityFields'
+import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 
@@ -259,7 +259,6 @@ async function updateUnitIdentity(formData: FormData) {
   const model = ((formData.get('model') as string) || '').trim()
   const equipmentType = ((formData.get('equipment_type') as string) || '').trim()
   const serialNumber = ((formData.get('serial_number') as string) || '').trim()
-  const warrantyEnd = (formData.get('warranty_end') as string) || ''
 
   await supabase
     .from('units')
@@ -267,9 +266,23 @@ async function updateUnitIdentity(formData: FormData) {
       model: model || null,
       equipment_type: equipmentType || null,
       serial_number: serialNumber,
-      warranty_end: warrantyEnd || null,
     })
     .eq('id', id)
+  revalidatePath('/')
+}
+
+// Warranty is a separate, always-visible Yes/No toggle next to the Serial
+// box (not gated behind the identity pencil control above), so it gets its
+// own action - this way it never has to carry, and risk overwriting,
+// model/equipment_type/serial_number just to flip a warranty flag.
+async function updateUnitWarranty(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const warrantyEnd = (formData.get('warranty_end') as string) || ''
+
+  await supabase.from('units').update({ warranty_end: warrantyEnd || null }).eq('id', id)
   revalidatePath('/')
 }
 
@@ -1398,6 +1411,7 @@ export default async function Home({
               {unit.nickname && <p className="text-xs text-gray-500">{unit.nickname}</p>}
             </div>
             <UnitIdentityBox unit={unit} action={updateUnitIdentity} />
+            <WarrantyBox unit={unit} action={updateUnitWarranty} key={unit.id + (unit.warranty_end || '')} />
           </summary>
         </UnitIdentityProvider>
         <div className="px-4 sm:px-6 pb-4">
