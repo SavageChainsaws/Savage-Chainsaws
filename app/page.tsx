@@ -864,6 +864,22 @@ function isUnderWarranty(unit: any): boolean {
   return unit.warranty_end >= today
 }
 
+// Compact read-at-a-glance indicator for the Fleet Units list - these are
+// already-completed fleet units, not something to edit from this list, so
+// this is deliberately just an icon rather than the interactive Yes/No/
+// Save WarrantyBox control used on the Repair Flow header above. Same
+// isUnderWarranty()/warranty_end data, just a lighter-weight presentation.
+function WarrantyIcon({ title }: { title: string }) {
+  return (
+    <span title={title} className="text-blue-400 shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+        <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    </span>
+  )
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -2008,7 +2024,7 @@ export default async function Home({
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 {isUnderWarranty(unit) && (
-                                  <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400">Under Warranty</span>
+                                  <WarrantyIcon title={`Under warranty until ${formatShortDate(unit.warranty_end)}`} />
                                 )}
                                 {unit.shortblock_replaced && (
                                   <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-400">Shortblock Replaced</span>
