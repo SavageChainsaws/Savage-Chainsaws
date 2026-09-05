@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
   const unitId = (formData.get('unit_id') as string) || ''
   const serviceFeeRaw = formData.get('service_fee') as string
   const partsTotalRaw = formData.get('parts_total') as string
+  const priorityFeeRaw = formData.get('priority_fee') as string
   if (!unitId) {
     return NextResponse.json({ error: 'Missing unit_id' }, { status: 400 })
   }
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
     lineItems: [
       { description: 'Labor / Service Fee', amount: serviceFeeRaw ? Number(serviceFeeRaw) : 0 },
       { description: 'Parts Total', amount: partsTotalRaw ? Number(partsTotalRaw) : 0 },
+      ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: Number(priorityFeeRaw) }] : []),
     ],
     parts: parts.map(p => ({ name: p.part_name, sku: p.sku })),
     logoUrl,

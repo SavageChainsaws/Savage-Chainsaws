@@ -22,8 +22,9 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
-import UnitStatusFields from './components/UnitStatusFields'
+import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
+import PriorityCheckbox from './components/PriorityCheckbox'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -456,6 +457,15 @@ async function markPickedUp(formData: FormData) {
   revalidatePath('/')
 }
 
+// Flat fees - no manual entry anywhere. PRIORITY_FEE auto-applies the
+// moment the Priority checkbox is checked (updateStatus and the Create
+// Invoice flow both derive it from is_priority, never a typed amount).
+// DIAGNOSTIC_FEE is the deny-repair charge, matching the customer portal's
+// own deny flow exactly (same $49.99, same service_history description
+// shape) so a repair denied from either side looks identical afterward.
+const PRIORITY_FEE = 49.99
+const DIAGNOSTIC_FEE = 49.99
+
 async function updateStatus(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -467,35 +477,43 @@ async function updateStatus(formData: FormData) {
   const diagnosisNotes = diagnosisNotesRaw?.trim() || null
   const file = formData.get('invoice') as File
   const isPriority = formData.get('is_priority') === 'true'
-  const expediteFeeRaw = formData.get('expedite_fee') as string
-  const serviceCostRaw = formData.get('service_cost') as string
   const { data: existing } = await supabase.from('units').select('status, history, is_priority, problem_type, diagnosis_notes').eq('id', id).single()
   const wasAlreadyDone = existing ? existing.status === 'Ready for Pickup' : false
+
+  // "Deny Repair" is a dropdown trigger, not a real persisted status - it
+  // resolves to the same status (and the same $49.99 diagnostic fee logged
+  // to Service History) as the customer's own deny action, just admin-
+  // initiated instead of customer-initiated.
+  const isDenyRepair = status === 'Deny Repair'
+  if (isDenyRepair) {
+    status = 'Ready for Pickup'
+  }
 
   // Diagnosis Notes (what was actually found wrong) must exist before a
   // unit leaves Diagnosing - a separate field from the customer's own
   // check-in notes, never overwriting it. Block the status change (keep
   // it where it is) rather than silently letting a unit through without
-  // findings recorded; everything else on the form still saves.
-  const requiresDiagnosisNotes = (status === 'Needs Approval' || status === 'In Repair') && !diagnosisNotes
+  // findings recorded; everything else on the form still saves. Denying
+  // doesn't need fresh findings - the unit is going back to the customer
+  // as-is.
+  const requiresDiagnosisNotes = !isDenyRepair && (status === 'Needs Approval' || status === 'In Repair') && !diagnosisNotes
   if (requiresDiagnosisNotes && existing) {
     status = existing.status
   }
 
+  const denyNote = 'Denied by Savage Chainsaws - diagnosis fee $49.99 will apply'
   const updateData: any = {
     status,
-    notes: notes || null,
+    notes: isDenyRepair ? (notes ? `${denyNote}\n${notes}` : denyNote) : (notes || null),
     is_priority: isPriority,
+    expedite_fee: isPriority ? PRIORITY_FEE : null,
   }
   if (diagnosisNotes && diagnosisNotes !== existing?.diagnosis_notes) {
     updateData.diagnosis_notes = diagnosisNotes
     updateData.diagnosis_notes_updated_at = new Date().toISOString()
   }
-  if (expediteFeeRaw !== null && expediteFeeRaw !== undefined && expediteFeeRaw !== '') {
-    updateData.expedite_fee = Number(expediteFeeRaw)
-  }
   if (existing && existing.status !== status) {
-    updateData.history = stampHistory(existing.history, `Status -> ${status}`)
+    updateData.history = stampHistory(existing.history, isDenyRepair ? 'Denied - diagnostic fee applied' : `Status -> ${status}`)
     updateData.status_since = new Date().toISOString()
   }
   if (status === 'Ready for Pickup') {
@@ -506,11 +524,19 @@ async function updateStatus(formData: FormData) {
     // or through the normal completion flow, since they all pass through
     // this same status update.
     if (!wasAlreadyDone) {
-      await supabase.from('service_history').insert({
-        unit_id: id,
-        description: notes || existing?.problem_type || 'Service completed',
-        cost: serviceCostRaw ? Number(serviceCostRaw) : null,
-      })
+      if (isDenyRepair) {
+        await supabase.from('service_history').insert({
+          unit_id: id,
+          description: 'Diagnostic fee - repair denied',
+          cost: DIAGNOSTIC_FEE,
+        })
+      } else {
+        await supabase.from('service_history').insert({
+          unit_id: id,
+          description: diagnosisNotes || existing?.diagnosis_notes || notes || existing?.problem_type || 'Service completed',
+          cost: null,
+        })
+      }
     }
   }
   if (file && typeof file === 'object' && 'size' in file && file.size > 0) {
@@ -1125,6 +1151,24 @@ export default async function Home({
     )
   }
 
+  // Replaces the old raw unit.history timestamp log - a quick "this unit
+  // was last in for X" reference instead. service_history rows are only
+  // created when a unit reaches Ready for Pickup, so the most recent entry
+  // is naturally the most recent *prior* completed visit, never the one
+  // in progress. Shows nothing if the unit has never completed a visit.
+  function MostRecentServiceHistorySection({ unit }: { unit: { id: string } }) {
+    const latest = (serviceHistoryAll || [])
+      .filter(e => e.unit_id === unit.id)[0]
+    if (!latest) return null
+    return (
+      <div className="mt-3 border-t border-zinc-800 pt-2.5">
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Most Recent Service History</p>
+        <p className="text-xs text-gray-500">{formatShortDate(latest.service_date)}</p>
+        <p className="text-sm text-gray-300 whitespace-pre-wrap">{latest.description}</p>
+      </div>
+    )
+  }
+
   function ServiceHistorySection({ unit }: { unit: any }) {
     const entries = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
     return (
@@ -1199,45 +1243,60 @@ export default async function Home({
     const history = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
     const latestCost = history[0]?.cost ?? ''
     return (
-      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/invoice-panel">
-        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider">Create Invoice</span>
-          <span className="text-gray-500 text-xs group-open/invoice-panel:rotate-180 transition">v</span>
+      <details className="group/invoice-panel">
+        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
+          Create Invoice
+          <span className="text-xs group-open/invoice-panel:rotate-180 transition">v</span>
         </summary>
-        <form action="/api/invoice" method="POST" target="_blank" className="flex flex-wrap items-end gap-2">
-          <input type="hidden" name="unit_id" value={unit.id} />
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Labor / Service Fee $</label>
-            <input
-              name="service_fee"
-              type="number"
-              step="0.01"
-              min="0"
-              defaultValue={latestCost}
-              placeholder="0.00"
-              className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Parts Total $</label>
-            <input
-              name="parts_total"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-          </div>
-          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
-            Create Invoice
-          </button>
-        </form>
-        <p className="text-xs text-gray-600 mt-1.5">
-          {parts.length > 0
-            ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file will be listed on the invoice.`
-            : 'No parts on file for this unit - the invoice will still generate.'}
-        </p>
+        <div className="w-full mt-2">
+          <form action="/api/invoice" method="POST" target="_blank" className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="unit_id" value={unit.id} />
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Labor / Service Fee $</label>
+              <input
+                name="service_fee"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={latestCost}
+                placeholder="0.00"
+                className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Parts Total $</label>
+              <input
+                name="parts_total"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Priority Fee $</label>
+              <input
+                name="priority_fee"
+                type="number"
+                step="0.01"
+                min="0"
+                defaultValue={unit.is_priority ? PRIORITY_FEE : ''}
+                placeholder="0.00"
+                title="Auto-filled from the unit's Priority flag - editable if needed."
+                className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+              />
+            </div>
+            <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
+              Create Invoice
+            </button>
+          </form>
+          <p className="text-xs text-gray-600 mt-1.5">
+            {parts.length > 0
+              ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file will be listed on the invoice.`
+              : 'No parts on file for this unit - the invoice will still generate.'}
+          </p>
+        </div>
       </details>
     )
   }
@@ -1309,54 +1368,114 @@ export default async function Home({
           </div>
         </summary>
         <div className="px-4 sm:px-6 pb-4">
-          {/* Everything to do with diagnosing this unit - the status/notes
-              form (Diagnosis Notes included), Parts & SKUs, the quote/
-              estimate tool, and Diagnosis Findings media - grouped into one
-              bordered block instead of scattered across the panel. Mirrors
-              the customer-facing grouping in app/customer/page.tsx. */}
-          <div className="border border-orange-500/30 rounded-xl p-3 sm:p-4 bg-orange-500/[0.03] space-y-3">
-            <form action={updateStatus} className="space-y-3">
-              <input type="hidden" name="id" value={unit.id} />
-              <div className="flex flex-wrap items-center gap-3">
-                <UnitStatusFields unit={unit} key={unit.id + unit.status + unit.diagnosis_notes} />
-                <label className="flex items-center gap-1.5 text-xs text-orange-400 cursor-pointer">
-                  <input type="checkbox" name="is_priority" value="true" defaultChecked={!!unit.is_priority} className="rounded border-zinc-600 bg-zinc-800 text-orange-500" />
-                  Priority
-                </label>
-                <input name="expedite_fee" type="number" step="0.01" min="0" defaultValue={unit.expedite_fee ?? ''} placeholder="Fee $" className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-                <input name="service_cost" type="number" step="0.01" min="0" placeholder="Cost charged $" title="If this update marks the unit Ready for Pickup, this amount is logged to Service History" className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" />
-                <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
-                <DeleteUnitButton id={unit.id} />
-              </div>
-              {unit.problem_type && (
-                <p className="text-xs text-gray-400">
-                  <span className="text-gray-500">Problem reported: </span>{unit.problem_type}
-                </p>
-              )}
-              {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
-                  <input type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
-                </div>
-              )}
-              {unit.invoice_url && (
-                <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
-              )}
-            </form>
+          {/* The status <select>, Diagnosis Notes textarea, Customer Notes
+              textarea and the invoice-upload file input all submit
+              together via updateStatus, but no longer sit inside one
+              physically contiguous <form> - Photos needs to land between
+              Customer Notes and the Diagnosis Notes area, and Mark as
+              Picked Up / Create Invoice / Nudge Customer need to live in
+              the action row without nesting their own forms inside this
+              one. Every such field instead carries form={formId} and
+              associates by id regardless of where it renders - valid
+              HTML5, and the only way to keep one atomic "Update" submit
+              while satisfying the requested layout. StatusSelect and
+              DiagnosisNotesField share reactive `status` via
+              UnitStatusProvider rather than a DOM-id portal, so there's
+              nothing here that depends on document/DOM timing during
+              hydration. */}
+          {(() => {
+            const formId = `unit-status-form-${unit.id}`
+            return (
+              <UnitStatusProvider initialStatus={unit.status} key={unit.id + unit.status + unit.diagnosis_notes}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <form id={formId} action={updateStatus} className="hidden">
+                    <input type="hidden" name="id" value={unit.id} />
+                  </form>
 
-            <DiagnosisFindingsSection unit={unit} />
-            <UnitPartsSection unit={unit} />
-            <CreateInvoiceSection unit={unit} />
-          </div>
+                  <StatusSelect formId={formId} />
+
+                  {unit.status === 'Ready for Pickup' && (
+                    <details className="group/pickup">
+                      <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-1.5 rounded-lg">
+                        Mark as Picked Up
+                        <span className="text-xs group-open/pickup:rotate-180 transition">v</span>
+                      </summary>
+                      <div className="w-full mt-2">
+                        <form action={markPickedUp} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="id" value={unit.id} />
+                          <input
+                            name="picked_up_by"
+                            required
+                            placeholder="Name of person picking up"
+                            className="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+                          />
+                          <button type="submit" className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-1.5 rounded-lg">
+                            Confirm Picked Up
+                          </button>
+                        </form>
+                      </div>
+                    </details>
+                  )}
+
+                  <CreateInvoiceSection unit={unit} />
+
+                  <form action={nudgeUnit}>
+                    <input type="hidden" name="id" value={unit.id} />
+                    <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-4 py-1.5 rounded-lg" title="Emails the customer a quick reminder about this unit">
+                      Nudge Customer
+                    </button>
+                  </form>
+
+                  <PriorityCheckbox formId={formId} defaultChecked={!!unit.is_priority} />
+                  <button type="submit" form={formId} className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
+                  <DeleteUnitButton id={unit.id} />
+                </div>
+
+                {unit.problem_type && (
+                  <p className="text-xs text-gray-400 mt-3">
+                    <span className="text-gray-500">Problem reported: </span>{unit.problem_type}
+                  </p>
+                )}
+
+                <div className="mt-3">
+                  <label className="block text-xs font-bold text-blue-300 mb-1">Customer Notes</label>
+                  <p className="text-xs text-gray-600 mb-1">What the customer reported at check-in.</p>
+                  <textarea
+                    form={formId}
+                    name="notes"
+                    defaultValue={unit.notes || ''}
+                    rows={2}
+                    placeholder="Customer notes..."
+                    className="w-full bg-zinc-900 border border-blue-500/40 rounded-lg px-3 py-2 text-sm text-blue-100"
+                  />
+                </div>
+
+                <UnitPhotosSection unit={unit} />
+
+                {/* Everything to do with diagnosing this unit - Diagnosis
+                    Notes, the quote/estimate link, Parts & SKUs, and
+                    Diagnosis Findings media - grouped into one bordered
+                    block. Mirrors the customer-facing grouping in
+                    app/customer/page.tsx. */}
+                <div className="border border-orange-500/30 rounded-xl p-3 sm:p-4 bg-orange-500/[0.03] space-y-3 mt-3">
+                  <DiagnosisNotesField unit={unit} formId={formId} />
+                  {(unit.status === 'Needs Approval' || unit.status === 'Ready for Pickup') && (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">{unit.status === 'Needs Approval' ? 'Upload Invoice / Photo' : 'Upload Photo'}</label>
+                      <input form={formId} type="file" name="invoice" accept="image/*,.pdf" className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white" />
+                    </div>
+                  )}
+                  {unit.invoice_url && (
+                    <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
+                  )}
+                  <DiagnosisFindingsSection unit={unit} />
+                  <UnitPartsSection unit={unit} />
+                </div>
+              </UnitStatusProvider>
+            )
+          })()}
 
           <UnitReplies messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
-
-          <form action={nudgeUnit} className="pt-3">
-            <input type="hidden" name="id" value={unit.id} />
-            <button type="submit" className="bg-purple-600 hover:bg-purple-500 text-white text-sm px-4 py-1.5 rounded-lg" title="Emails the customer a quick reminder about this unit">
-              Nudge Customer
-            </button>
-          </form>
 
           {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
             <form action={returnToFleet} className="pt-3">
@@ -1367,41 +1486,13 @@ export default async function Home({
             </form>
           )}
 
-          {unit.status === 'Ready for Pickup' && (
-            <details className="pt-3 group/pickup">
-              <summary className="text-sm text-green-400 hover:text-green-300 cursor-pointer list-none select-none font-medium">
-                Mark as Picked Up
-              </summary>
-              <form action={markPickedUp} className="mt-2 flex flex-wrap gap-2">
-                <input type="hidden" name="id" value={unit.id} />
-                <input
-                  name="picked_up_by"
-                  required
-                  placeholder="Name of person picking up"
-                  className="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-                />
-                <button type="submit" className="bg-green-600 hover:bg-green-500 text-white text-sm px-4 py-1.5 rounded-lg">
-                  Confirm Picked Up
-                </button>
-              </form>
-              <CreateInvoiceSection unit={unit} />
-            </details>
-          )}
-
           {unit.picked_up_by && (
             <p className="text-xs text-gray-500 pt-3">
               Picked up by <span className="text-gray-300">{unit.picked_up_by}</span> on {formatDate(unit.picked_up_at)}
             </p>
           )}
 
-          {unit.history && (
-            <div className="mt-3 border-t border-zinc-800 pt-2.5">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">History</p>
-              <pre className="text-xs text-gray-400 whitespace-pre-wrap font-sans leading-relaxed">{unit.history}</pre>
-            </div>
-          )}
-
-          <UnitPhotosSection unit={unit} />
+          <MostRecentServiceHistorySection unit={unit} />
           <ServiceHistorySection unit={unit} />
         </div>
       </details>
