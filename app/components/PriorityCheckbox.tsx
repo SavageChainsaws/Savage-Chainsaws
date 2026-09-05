@@ -2,11 +2,13 @@
 
 import { useState } from 'react'
 
-// The $49.99 priority fee is fully automatic server-side (updateStatus
-// derives it from is_priority, no manual entry) - this just gives instant
-// visual confirmation the moment the box is checked, rather than the
-// admin only finding out after hitting Update.
-export default function PriorityCheckbox({ formId, defaultChecked }: { formId: string; defaultChecked: boolean }) {
+// The priority fee is fully automatic server-side (updateStatus derives
+// it from is_priority, no manual entry) - this just gives instant visual
+// confirmation the moment the box is checked, rather than the admin only
+// finding out after hitting Update. `fee` is passed in from the same
+// PRIORITY_FEE constant the server action uses, rather than hardcoded
+// here, so this badge can never drift out of sync with the real charge.
+export default function PriorityCheckbox({ formId, defaultChecked, fee }: { formId: string; defaultChecked: boolean; fee: number }) {
   const [checked, setChecked] = useState(defaultChecked)
 
   return (
@@ -22,7 +24,7 @@ export default function PriorityCheckbox({ formId, defaultChecked }: { formId: s
       />
       Priority
       {checked && (
-        <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">+$49.99 fee</span>
+        <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">+${fee.toFixed(2)} fee</span>
       )}
     </label>
   )

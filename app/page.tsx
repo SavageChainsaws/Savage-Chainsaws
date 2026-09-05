@@ -500,13 +500,14 @@ async function markPickedUp(formData: FormData) {
   revalidatePath('/')
 }
 
-// Flat fees - no manual entry anywhere. PRIORITY_FEE auto-applies the
+// Flat fees - no manual entry anywhere, and deliberately two independent
+// values that must never be conflated. PRIORITY_FEE auto-applies the
 // moment the Priority checkbox is checked (updateStatus and the Create
 // Invoice flow both derive it from is_priority, never a typed amount).
 // DIAGNOSTIC_FEE is the deny-repair charge, matching the customer portal's
 // own deny flow exactly (same $49.99, same service_history description
 // shape) so a repair denied from either side looks identical afterward.
-const PRIORITY_FEE = 49.99
+const PRIORITY_FEE = 75
 const DIAGNOSTIC_FEE = 49.99
 
 async function updateStatus(formData: FormData) {
@@ -1500,7 +1501,7 @@ export default async function Home({
                     </button>
                   </form>
 
-                  <PriorityCheckbox formId={formId} defaultChecked={!!unit.is_priority} />
+                  <PriorityCheckbox formId={formId} defaultChecked={!!unit.is_priority} fee={PRIORITY_FEE} />
                   <button type="submit" form={formId} className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
                   <DeleteUnitButton id={unit.id} />
                 </div>
