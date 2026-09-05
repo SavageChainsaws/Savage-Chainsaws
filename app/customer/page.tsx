@@ -226,6 +226,11 @@ export default function CustomerPortal() {
   const detailRef = useRef<HTMLDivElement | null>(null)
   const replyInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Lightbox for the Diagnosis Findings thumbnails shown inline in the
+  // Repair Decision Needed card - a quick zoomed-in preview without
+  // navigating away, so the customer can see the damage before deciding.
+  const [lightboxMedia, setLightboxMedia] = useState<{ url: string; isVideo: boolean; caption: string | null } | null>(null)
+
   // Latest invoice/estimate total per unit_id, so the Needs Approval
   // prompt can show the dollar amount without the customer opening the
   // PDF - keyed off the previously-unused invoices table, now populated
@@ -2010,6 +2015,11 @@ export default function CustomerPortal() {
                 )}
 
                 {(() => {
+                  // While a decision is pending, these thumbnails render
+                  // inline in the Repair Decision Needed card below
+                  // instead - showing them here too would be a confusing
+                  // duplicate right above it.
+                  if (selectedUnit.status === 'Needs Approval') return null
                   const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
                   if (diagnosisMedia.length === 0) return null
                   return (
@@ -2075,6 +2085,24 @@ export default function CustomerPortal() {
                       {selectedUnit.notes || 'Jesse has a repair recommendation for this unit.'}
                     </p>
                   )}
+                  {(() => {
+                    const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
+                    if (diagnosisMedia.length === 0) return null
+                    const shown = diagnosisMedia.slice(0, 4)
+                    const remaining = diagnosisMedia.length - shown.length
+                    return (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <UnitPhotoGallery
+                          size="sm"
+                          photos={shown.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
+                          onPhotoClick={p => setLightboxMedia({ url: p.url, isVideo: p.mediaType === 'video', caption: p.caption ?? null })}
+                        />
+                        {remaining > 0 && (
+                          <span className="text-xs text-gray-500">+{remaining} more</span>
+                        )}
+                      </div>
+                    )
+                  })()}
                   {invoiceTotals[selectedUnit.id] != null && (
                     <p className="text-sm font-bold text-yellow-300">
                       Estimate total: ${invoiceTotals[selectedUnit.id].toFixed(2)}
@@ -2164,6 +2192,38 @@ export default function CustomerPortal() {
                 Remove from my list
               </button>
             </div>
+          </div>
+        )}
+
+        {lightboxMedia && (
+          <div
+            onClick={() => setLightboxMedia(null)}
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxMedia(null)}
+              className="absolute top-4 right-4 text-white text-2xl leading-none h-10 w-10 flex items-center justify-center rounded-full bg-zinc-800/80 hover:bg-zinc-700"
+              aria-label="Close preview"
+            >
+              &times;
+            </button>
+            {lightboxMedia.isVideo ? (
+              <video
+                src={lightboxMedia.url}
+                controls
+                autoPlay
+                onClick={e => e.stopPropagation()}
+                className="max-h-[85vh] max-w-full rounded-lg"
+              />
+            ) : (
+              <img
+                src={lightboxMedia.url}
+                alt={lightboxMedia.caption || 'Diagnosis photo'}
+                onClick={e => e.stopPropagation()}
+                className="max-h-[85vh] max-w-full object-contain rounded-lg"
+              />
+            )}
           </div>
         )}
 
