@@ -1053,16 +1053,34 @@ export default function CustomerPortal() {
     if (selectedUnit?.id === unitId) closeUnit()
   }
 
-  const activeUnits = units.filter(u => ACTIVE_STATUSES.includes(u.status))
-  // Every unit on the account, active service or not - a unit currently
-  // checked in for service is still equipment this customer owns, so it
-  // shows here too (alongside "In Service" above), same as if it had been
-  // added to the fleet directly. Matches the admin dashboard's own Fleet
-  // Units list, which has never been status-gated.
-  const fleetUnits = units
-  const otherUnits = units.filter(
+  // Mirrors the admin dashboard's "pin the opened unit to the top of its
+  // list" behavior - admin achieves this with CSS order on native
+  // <details> elements, but these cards aren't <details> (they share one
+  // detail panel instead of expanding in place), so the equivalent here
+  // is just reordering the array before rendering. "Collapse others" is
+  // already inherent - there's only ever one shared panel open at a time.
+  function pinSelectedFirst<T extends { id: string }>(list: T[]): T[] {
+    if (!selectedUnit) return list
+    const idx = list.findIndex(u => u.id === selectedUnit.id)
+    if (idx <= 0) return list
+    const copy = [...list]
+    const [item] = copy.splice(idx, 1)
+    copy.unshift(item)
+    return copy
+  }
+
+  const activeUnits = pinSelectedFirst(units.filter(u => ACTIVE_STATUSES.includes(u.status)))
+  // A unit is in exactly one of these three lists at a time - once it's
+  // checked in / has an active service request it moves out of Fleet and
+  // shows only in "In Service" above; once that service completes
+  // (markPickedUp sets status back to 'Fleet') it moves back out of "In
+  // Service" and shows only here again, picking up its current
+  // warranty_end and most recent service_history entry automatically
+  // since those are read live off the same unit row, not duplicated.
+  const fleetUnits = pinSelectedFirst(units.filter(u => u.status === 'Fleet'))
+  const otherUnits = pinSelectedFirst(units.filter(
     u => !ACTIVE_STATUSES.includes(u.status) && u.status !== 'Fleet'
-  )
+  ))
 
   const total = units.length
   const needsApproval = units.filter(u => u.status === 'Needs Approval').length
@@ -1786,31 +1804,41 @@ export default function CustomerPortal() {
               const countdown = warrantyCountdown(selectedUnit.warranty_end)
               if (!countdown) return null
               return (
-                <p className={`text-xs ${countdown.colorClass}`}>
+                <p className={`text-xs font-bold ${countdown.colorClass}`}>
                   Warranty: {countdown.label} - end date {formatShortDate(selectedUnit.warranty_end)}
                 </p>
               )
             })()}
 
-            <div className="border-t border-zinc-800 pt-3">
-              <label className="block text-xs text-gray-500 mb-1">
-                Private Notes <span className="text-zinc-600">(only visible to you, not Jesse)</span>
-              </label>
-              <textarea
-                value={privateNote}
-                onChange={e => setPrivateNote(e.target.value)}
-                rows={2}
-                placeholder="e.g. This unit has a hard time starting..."
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-              />
-              <button
-                onClick={savePrivateNote}
-                disabled={privateNoteBusy || privateNote === privateNoteSavedNote}
-                className="mt-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-              >
-                {privateNoteBusy ? 'Saving...' : 'Save Private Note'}
-              </button>
-            </div>
+            {canEditDetails && serviceHistory.length > 0 && (
+              <div className="border-t border-zinc-800 pt-3">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Most Recent Service</p>
+                <p className="text-xs text-gray-500">{formatShortDate(serviceHistory[0].service_date)}</p>
+                <p className="text-sm text-gray-300 whitespace-pre-wrap">{serviceHistory[0].description}</p>
+              </div>
+            )}
+
+            {canEditDetails && (
+              <div className="border-t border-zinc-800 pt-3">
+                <label className="block text-xs text-gray-500 mb-1">
+                  Private Notes <span className="text-zinc-600">(only visible to you, not Jesse)</span>
+                </label>
+                <textarea
+                  value={privateNote}
+                  onChange={e => setPrivateNote(e.target.value)}
+                  rows={2}
+                  placeholder="e.g. This unit has a hard time starting..."
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={savePrivateNote}
+                  disabled={privateNoteBusy || privateNote === privateNoteSavedNote}
+                  className="mt-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                >
+                  {privateNoteBusy ? 'Saving...' : 'Save Private Note'}
+                </button>
+              </div>
+            )}
 
             {canEditDetails && (
               <div className="space-y-3 border-t border-zinc-800 pt-3">
@@ -1885,57 +1913,38 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {!canEditDetails && (
+            {canEditDetails && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Nickname (your label)</label>
-                <div className="flex gap-2">
-                  <input
-                    value={editNickname}
-                    onChange={e => setEditNickname(e.target.value)}
-                    placeholder="e.g. Shop mower #2"
-                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  />
-                  <button
-                    onClick={saveUnitDetails}
-                    disabled={detailBusy}
-                    className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50"
-                  >
-                    Save
-                  </button>
+                <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
+                <div className="flex flex-col gap-3">
+                  {thumbPreview && (
+                    <img
+                      src={thumbPreview}
+                      alt="New thumbnail preview"
+                      className="h-24 w-24 object-cover rounded-lg border border-orange-500/50"
+                    />
+                  )}
+                  <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-full sm:w-auto">
+                    {thumbFile ? 'Choose Different Photo' : 'Choose Photo'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={e => onThumbPick(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                  {thumbFile && (
+                    <button
+                      onClick={saveThumbnail}
+                      disabled={detailBusy}
+                      className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg w-full sm:w-auto"
+                    >
+                      {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
-
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
-              <div className="flex flex-col gap-3">
-                {thumbPreview && (
-                  <img
-                    src={thumbPreview}
-                    alt="New thumbnail preview"
-                    className="h-24 w-24 object-cover rounded-lg border border-orange-500/50"
-                  />
-                )}
-                <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-full sm:w-auto">
-                  {thumbFile ? 'Choose Different Photo' : 'Choose Photo'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => onThumbPick(e.target.files?.[0] || null)}
-                  />
-                </label>
-                {thumbFile && (
-                  <button
-                    onClick={saveThumbnail}
-                    disabled={detailBusy}
-                    className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg w-full sm:w-auto"
-                  >
-                    {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
-                  </button>
-                )}
-              </div>
-            </div>
 
             {canEditDetails && (
               <div className="border-t border-zinc-800 pt-3">
