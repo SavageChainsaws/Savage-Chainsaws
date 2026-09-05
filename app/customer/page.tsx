@@ -1395,9 +1395,23 @@ export default function CustomerPortal() {
                     {[...units]
                       .sort((a, b) => (a.model || a.nickname || '').localeCompare(b.model || b.nickname || ''))
                       .map(unit => (
-                        <tr key={unit.id} className="hover:bg-zinc-800/40">
+                        <tr
+                          key={unit.id}
+                          onClick={() => openUnit(unit)}
+                          className={`cursor-pointer hover:bg-zinc-800/40 transition ${
+                            unit.status === 'Needs Approval' ? 'bg-red-500/10 border-l-4 border-l-red-500' : ''
+                          }`}
+                        >
                           <td className="px-4 sm:px-6 py-3 font-medium">
-                            {unit.model || '-'}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {unit.status === 'Needs Approval' && (
+                                <span className="inline-flex items-center gap-1 shrink-0 text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                                  Action Needed
+                                </span>
+                              )}
+                              <span>{unit.model || '-'}</span>
+                            </div>
                             {unit.nickname && (
                               <span className="block text-xs text-gray-500 font-normal">{unit.nickname}</span>
                             )}
@@ -2280,8 +2294,8 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          <div className="px-4 sm:px-6 py-3 border-b border-zinc-800">
+        <div className="bg-zinc-900 border border-zinc-800 border-l-4 border-l-orange-500 rounded-xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 bg-orange-500/10">
             <h2 className="text-lg font-semibold text-orange-400">
               In Service ({activeUnits.length})
             </h2>
@@ -2299,9 +2313,9 @@ export default function CustomerPortal() {
           </div>
         </div>
 
-        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group" open={fleetUnits.length > 0 && fleetUnits.length <= 6}>
-          <summary className="cursor-pointer list-none flex items-center justify-between px-4 sm:px-6 py-3 hover:bg-zinc-800/40 transition">
-            <h2 className="text-lg font-semibold text-orange-300">
+        <details className="bg-zinc-900 border border-zinc-800 border-l-4 border-l-blue-500 rounded-xl overflow-hidden group" open={fleetUnits.length > 0 && fleetUnits.length <= 6}>
+          <summary className="cursor-pointer list-none flex items-center justify-between px-4 sm:px-6 py-3 bg-blue-500/10 hover:bg-blue-500/20 transition">
+            <h2 className="text-lg font-semibold text-blue-300">
               Fleet ({fleetUnits.length})
             </h2>
             <div className="flex items-center gap-3">
@@ -2320,7 +2334,7 @@ export default function CustomerPortal() {
               >
                 {showAddFleet ? 'Close' : 'Add to Fleet'}
               </button>
-              <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+              <span className="text-blue-300/70 text-sm group-open:rotate-180 transition">v</span>
             </div>
           </summary>
           <div className="border-t border-zinc-800 p-3 sm:p-4 space-y-2">
@@ -2334,12 +2348,12 @@ export default function CustomerPortal() {
           </div>
         </details>
 
-        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group">
-          <summary className="cursor-pointer list-none flex items-center justify-between px-4 sm:px-6 py-3 hover:bg-zinc-800/40 transition">
-            <h2 className="text-lg font-semibold text-gray-300">
+        <details className="bg-zinc-900 border border-zinc-800 border-l-4 border-l-purple-500 rounded-xl overflow-hidden group">
+          <summary className="cursor-pointer list-none flex items-center justify-between px-4 sm:px-6 py-3 bg-purple-500/10 hover:bg-purple-500/20 transition">
+            <h2 className="text-lg font-semibold text-purple-300">
               Other Units ({otherUnits.length})
             </h2>
-            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+            <span className="text-purple-300/70 text-sm group-open:rotate-180 transition">v</span>
           </summary>
           <div className="border-t border-zinc-800 p-3 sm:p-4 space-y-2">
             {otherUnits.length === 0 ? (
