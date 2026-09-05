@@ -8,11 +8,16 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 // correct them in place rather than deleting and re-adding the unit. One
 // pencil control gates edit mode for both the bold model/type description
 // (UnitDescriptionField, rendered where the label already sits) and the
-// Serial Number/Warranty box (UnitIdentityBox, rendered to its right),
-// so they share one context rather than needing two separate controls.
-// Both submit through the same physical <form> that UnitIdentityBox
-// owns - UnitDescriptionField's inputs associate to it by id via
-// `form={formId}` since they're not DOM descendants of it.
+// Serial Number box (UnitIdentityBox, rendered to its right), so they
+// share one context rather than needing two separate controls. Both
+// submit through the same physical <form> that UnitIdentityBox owns -
+// UnitDescriptionField's inputs associate to it by id via `form={formId}`
+// since they're not DOM descendants of it.
+//
+// Warranty (WarrantyBox, below) is deliberately NOT part of that shared
+// edit-mode/context - it's its own always-visible, always-interactive
+// Yes/No toggle sitting next to the Serial box, with its own action and
+// form, so admins can flip it without first clicking the identity pencil.
 type IdentityContextValue = {
   isEditing: boolean
   setIsEditing: (v: boolean) => void
@@ -103,9 +108,6 @@ export function UnitIdentityBox({
   action: (formData: FormData) => void
 }) {
   const { isEditing, setIsEditing, formId } = useIdentityContext()
-  const today = new Date().toISOString().slice(0, 10)
-  const initiallyUnderWarranty = !!unit.warranty_end && unit.warranty_end >= today
-  const [warrantyOn, setWarrantyOn] = useState(initiallyUnderWarranty)
 
   if (!isEditing) {
     return (
@@ -113,14 +115,11 @@ export function UnitIdentityBox({
         <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-700 text-gray-300">
           Serial: {unit.serial_number || '-'}
         </span>
-        {initiallyUnderWarranty && (
-          <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-400">Under Warranty</span>
-        )}
         <button
           type="button"
           onClick={() => setIsEditing(true)}
           className="text-gray-500 hover:text-orange-400 text-sm px-1"
-          title="Edit unit type, serial number & warranty"
+          title="Edit unit type & serial number"
           aria-label="Edit unit details"
         >
           &#9998;
@@ -144,23 +143,6 @@ export function UnitIdentityBox({
         placeholder="Serial number"
         className="w-32 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm"
       />
-      <div className="flex items-center gap-1 text-xs text-gray-400">
-        Warranty:
-        <label className="flex items-center gap-0.5 cursor-pointer">
-          <input type="radio" name="is_under_warranty" value="true" checked={warrantyOn} onChange={() => setWarrantyOn(true)} /> Yes
-        </label>
-        <label className="flex items-center gap-0.5 cursor-pointer">
-          <input type="radio" name="is_under_warranty" value="false" checked={!warrantyOn} onChange={() => setWarrantyOn(false)} /> No
-        </label>
-      </div>
-      {warrantyOn && (
-        <input
-          type="date"
-          name="warranty_end"
-          defaultValue={unit.warranty_end || ''}
-          className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm"
-        />
-      )}
       <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg">
         Save
       </button>
@@ -170,6 +152,53 @@ export function UnitIdentityBox({
         className="text-gray-400 hover:text-white text-xs px-2 py-1.5"
       >
         Cancel
+      </button>
+    </form>
+  )
+}
+
+// Standalone - unlike Model/Type/Serial, the Warranty Yes/No toggle is
+// always visible and interactive right next to the Serial box, not gated
+// behind the pencil/edit control, and submits through its own action
+// (updateUnitWarranty) so it never touches the identity fields. Reuses
+// the same "is this unit currently under warranty" rule (warranty_end >=
+// today) that the Fleet section's "Under Warranty" pill already uses,
+// just as the live toggle's initial position instead of a read-only pill.
+export function WarrantyBox({
+  unit,
+  action,
+}: {
+  unit: { id: string; warranty_end: string | null }
+  action: (formData: FormData) => void
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+  const initiallyUnderWarranty = !!unit.warranty_end && unit.warranty_end >= today
+  const [warrantyOn, setWarrantyOn] = useState(initiallyUnderWarranty)
+
+  return (
+    <form
+      action={action}
+      onClick={stopClickBubble}
+      className="flex flex-wrap items-center gap-1.5 shrink-0 bg-zinc-800/60 border border-zinc-700 rounded-full pl-3 pr-1.5 py-1 text-xs text-gray-300"
+    >
+      <input type="hidden" name="id" value={unit.id} />
+      <span className="text-gray-400">Warranty:</span>
+      <label className="flex items-center gap-0.5 cursor-pointer">
+        <input type="radio" name="is_under_warranty" value="true" checked={warrantyOn} onChange={() => setWarrantyOn(true)} /> Yes
+      </label>
+      <label className="flex items-center gap-0.5 cursor-pointer">
+        <input type="radio" name="is_under_warranty" value="false" checked={!warrantyOn} onChange={() => setWarrantyOn(false)} /> No
+      </label>
+      {warrantyOn && (
+        <input
+          type="date"
+          name="warranty_end"
+          defaultValue={unit.warranty_end || ''}
+          className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs"
+        />
+      )}
+      <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium px-2.5 py-1 rounded-full">
+        Save
       </button>
     </form>
   )
