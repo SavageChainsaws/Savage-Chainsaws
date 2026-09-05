@@ -1982,63 +1982,76 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {selectedUnit.diagnosis_notes && (
-              <div className="border border-orange-500/30 rounded-xl bg-orange-500/[0.03] p-3 sm:p-4 space-y-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
-                    {selectedUnit.diagnosis_notes_updated_at && (
-                      <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
-                        Updated {formatShortDate(selectedUnit.diagnosis_notes_updated_at)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
-                </div>
+            {selectedUnit.status === 'Needs Approval' ? (
+              // One unified card while a decision is pending - previously
+              // this was two separately-styled, stacked boxes (a Diagnosis
+              // Notes card and a "Repair decision needed" card) that
+              // largely repeated the same diagnosis text/estimate link,
+              // reading as disconnected. Now every piece of the decision -
+              // findings, photos, the number, and the actions - lives in
+              // one card.
+              <div className="border border-yellow-500/30 rounded-xl bg-yellow-500/10 p-3 sm:p-4 space-y-3">
+                <p className="text-xs text-yellow-400 uppercase tracking-wider">Repair decision needed</p>
 
-                {selectedUnit.notes && (
+                {selectedUnit.diagnosis_notes ? (
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
+                      {selectedUnit.diagnosis_notes_updated_at && (
+                        <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
+                          Updated {formatShortDate(selectedUnit.diagnosis_notes_updated_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-200">
+                    {selectedUnit.notes || 'Jesse has a repair recommendation for this unit.'}
+                  </p>
+                )}
+
+                {selectedUnit.diagnosis_notes && selectedUnit.notes && (
                   <div>
                     <p className="text-sm font-bold text-blue-300 mb-1">Your Reported Issue</p>
                     <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedUnit.notes}</p>
                   </div>
                 )}
 
+                {(() => {
+                  const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
+                  if (diagnosisMedia.length === 0) return null
+                  const shown = diagnosisMedia.slice(0, 4)
+                  const remaining = diagnosisMedia.length - shown.length
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <UnitPhotoGallery
+                        size="sm"
+                        photos={shown.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
+                        onPhotoClick={p => setLightboxMedia({ url: p.url, isVideo: p.mediaType === 'video', caption: p.caption ?? null })}
+                      />
+                      {remaining > 0 && (
+                        <span className="text-xs text-gray-500">+{remaining} more</span>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                {invoiceTotals[selectedUnit.id] != null && (
+                  <p className="text-sm font-bold text-yellow-300">
+                    Estimate total: ${invoiceTotals[selectedUnit.id].toFixed(2)}
+                  </p>
+                )}
                 {selectedUnit.invoice_url && (
                   <a
                     href={selectedUnit.invoice_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-block text-sm text-orange-400 hover:text-orange-300 underline"
+                    className="inline-block text-xs text-orange-400 hover:text-orange-300 underline"
                   >
-                    View Estimate / Quote (PDF) {'->'}
+                    View Full Estimate (PDF) {'->'}
                   </a>
                 )}
-
-                {(() => {
-                  // While a decision is pending, these thumbnails render
-                  // inline in the Repair Decision Needed card below
-                  // instead - showing them here too would be a confusing
-                  // duplicate right above it.
-                  if (selectedUnit.status === 'Needs Approval') return null
-                  const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
-                  if (diagnosisMedia.length === 0) return null
-                  return (
-                    <div className="space-y-2">
-                      {/* Deliberately loud - easy to overlook as plain text,
-                          so it gets the same highlighted-box treatment as
-                          the admin side. */}
-                      <div className="flex items-center gap-2 bg-orange-500/15 border border-orange-500/40 rounded-lg px-3 py-2.5">
-                        <span className="text-sm font-bold text-orange-300 uppercase tracking-wide">
-                          Diagnosis Findings - Photos &amp; Videos
-                        </span>
-                        <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">{diagnosisMedia.length}</span>
-                      </div>
-                      <UnitPhotoGallery
-                        photos={diagnosisMedia.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
-                      />
-                    </div>
-                  )
-                })()}
 
                 <div className="space-y-2">
                   <p className="text-xs text-gray-500 uppercase tracking-wider">
@@ -2071,55 +2084,8 @@ export default function CustomerPortal() {
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {selectedUnit.status === 'Needs Approval' && (
-              <div className="border-t border-zinc-800 pt-3 space-y-3">
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-3 space-y-2">
-                  <p className="text-xs text-yellow-400 uppercase tracking-wider">Repair decision needed</p>
-                  {selectedUnit.diagnosis_notes ? (
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
-                  ) : (
-                    <p className="text-sm text-gray-200">
-                      {selectedUnit.notes || 'Jesse has a repair recommendation for this unit.'}
-                    </p>
-                  )}
-                  {(() => {
-                    const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
-                    if (diagnosisMedia.length === 0) return null
-                    const shown = diagnosisMedia.slice(0, 4)
-                    const remaining = diagnosisMedia.length - shown.length
-                    return (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <UnitPhotoGallery
-                          size="sm"
-                          photos={shown.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
-                          onPhotoClick={p => setLightboxMedia({ url: p.url, isVideo: p.mediaType === 'video', caption: p.caption ?? null })}
-                        />
-                        {remaining > 0 && (
-                          <span className="text-xs text-gray-500">+{remaining} more</span>
-                        )}
-                      </div>
-                    )
-                  })()}
-                  {invoiceTotals[selectedUnit.id] != null && (
-                    <p className="text-sm font-bold text-yellow-300">
-                      Estimate total: ${invoiceTotals[selectedUnit.id].toFixed(2)}
-                    </p>
-                  )}
-                  {selectedUnit.invoice_url && (
-                    <a
-                      href={selectedUnit.invoice_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-block text-xs text-orange-400 hover:text-orange-300 underline"
-                    >
-                      View Full Estimate (PDF) {'->'}
-                    </a>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 pt-1">
                   <button
                     onClick={() => handleDecision(selectedUnit.id, 'approve')}
                     className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
@@ -2144,6 +2110,93 @@ export default function CustomerPortal() {
                   </button>
                 </div>
               </div>
+            ) : (
+              selectedUnit.diagnosis_notes && (
+                <div className="border border-orange-500/30 rounded-xl bg-orange-500/[0.03] p-3 sm:p-4 space-y-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
+                      {selectedUnit.diagnosis_notes_updated_at && (
+                        <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
+                          Updated {formatShortDate(selectedUnit.diagnosis_notes_updated_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
+                  </div>
+
+                  {selectedUnit.notes && (
+                    <div>
+                      <p className="text-sm font-bold text-blue-300 mb-1">Your Reported Issue</p>
+                      <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedUnit.notes}</p>
+                    </div>
+                  )}
+
+                  {selectedUnit.invoice_url && (
+                    <a
+                      href={selectedUnit.invoice_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-sm text-orange-400 hover:text-orange-300 underline"
+                    >
+                      View Estimate / Quote (PDF) {'->'}
+                    </a>
+                  )}
+
+                  {(() => {
+                    const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
+                    if (diagnosisMedia.length === 0) return null
+                    return (
+                      <div className="space-y-2">
+                        {/* Deliberately loud - easy to overlook as plain text,
+                            so it gets the same highlighted-box treatment as
+                            the admin side. */}
+                        <div className="flex items-center gap-2 bg-orange-500/15 border border-orange-500/40 rounded-lg px-3 py-2.5">
+                          <span className="text-sm font-bold text-orange-300 uppercase tracking-wide">
+                            Diagnosis Findings - Photos &amp; Videos
+                          </span>
+                          <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">{diagnosisMedia.length}</span>
+                        </div>
+                        <UnitPhotoGallery
+                          photos={diagnosisMedia.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
+                        />
+                      </div>
+                    )
+                  })()}
+
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider">
+                      {unitReplies.length > 0 ? 'Your Replies' : 'Have a question about this?'}
+                    </p>
+                    {unitReplies.map(r => (
+                      <div key={r.id} className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
+                        <p className="text-xs text-gray-500">
+                          {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </p>
+                        <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{r.message}</p>
+                      </div>
+                    ))}
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        ref={replyInputRef}
+                        value={replyText}
+                        onChange={e => setReplyText(e.target.value)}
+                        placeholder="Ask a question about the diagnosis or quote..."
+                        className={`flex-1 bg-zinc-800 border rounded-lg px-3 py-2 text-sm ${
+                          askingQuestion ? 'border-orange-500 ring-1 ring-orange-500/50' : 'border-zinc-700'
+                        }`}
+                      />
+                      <button
+                        onClick={submitReply}
+                        disabled={replyBusy || !replyText.trim()}
+                        className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0"
+                      >
+                        {replyBusy ? 'Sending...' : 'Send Reply'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
             )}
 
             <div className="border-t border-zinc-800 pt-3">
