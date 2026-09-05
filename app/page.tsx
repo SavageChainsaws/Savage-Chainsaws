@@ -869,12 +869,23 @@ function isUnderWarranty(unit: any): boolean {
 // this is deliberately just an icon rather than the interactive Yes/No/
 // Save WarrantyBox control used on the Repair Flow header above. Same
 // isUnderWarranty()/warranty_end data, just a lighter-weight presentation.
-function WarrantyIcon({ title }: { title: string }) {
+// Always rendered (not hidden when false) - filled/blue when under
+// warranty, outlined/grey when not - so it's a glanceable two-state
+// indicator rather than something that's only ever present or absent.
+function WarrantyIcon({ underWarranty, title }: { underWarranty: boolean; title: string }) {
   return (
-    <span title={title} className="text-blue-400 shrink-0">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+    <span title={title} className={`shrink-0 ${underWarranty ? 'text-blue-400' : 'text-zinc-600'}`}>
+      <svg
+        viewBox="0 0 24 24"
+        fill={underWarranty ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-4 w-4"
+      >
         <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
-        <path d="m9 12 2 2 4-4" />
+        {underWarranty && <path d="m9 12 2 2 4-4" stroke="#09090b" />}
       </svg>
     </span>
   )
@@ -2023,9 +2034,10 @@ export default async function Home({
                                 </div>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                {isUnderWarranty(unit) && (
-                                  <WarrantyIcon title={`Under warranty until ${formatShortDate(unit.warranty_end)}`} />
-                                )}
+                                <WarrantyIcon
+                                  underWarranty={isUnderWarranty(unit)}
+                                  title={isUnderWarranty(unit) ? `Under warranty until ${formatShortDate(unit.warranty_end)}` : 'Not under warranty'}
+                                />
                                 {unit.shortblock_replaced && (
                                   <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-400">Shortblock Replaced</span>
                                 )}
