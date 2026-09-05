@@ -71,7 +71,7 @@ export function UnitDescriptionField({ unit, label }: { unit: IdentityUnit; labe
   const { isEditing, formId } = useIdentityContext()
 
   if (!isEditing) {
-    return <p className="font-medium truncate">{label}</p>
+    return <p className="font-bold truncate">{label}</p>
   }
 
   const typeOptions = unit.equipment_type && !EQUIPMENT_TYPES.includes(unit.equipment_type)
@@ -100,6 +100,23 @@ export function UnitDescriptionField({ unit, label }: { unit: IdentityUnit; labe
   )
 }
 
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  )
+}
+
 export function UnitIdentityBox({
   unit,
   action,
@@ -108,12 +125,36 @@ export function UnitIdentityBox({
   action: (formData: FormData) => void
 }) {
   const { isEditing, setIsEditing, formId } = useIdentityContext()
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy(e: { stopPropagation: () => void }) {
+    e.stopPropagation()
+    if (!unit.serial_number) return
+    try {
+      await navigator.clipboard.writeText(unit.serial_number)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error('Could not copy serial number:', err)
+    }
+  }
 
   if (!isEditing) {
     return (
       <div className="flex items-center gap-2 shrink-0" onClick={stopClickBubble}>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-700 text-gray-300">
+        <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-700 text-yellow-300 font-semibold flex items-center gap-1.5">
           Serial: {unit.serial_number || '-'}
+          {unit.serial_number && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="text-yellow-300/70 hover:text-yellow-200"
+              title="Copy serial number"
+              aria-label="Copy serial number"
+            >
+              {copied ? <CheckIcon /> : <CopyIcon />}
+            </button>
+          )}
         </span>
         <button
           type="button"
