@@ -1574,6 +1574,14 @@ export default async function Home({
     )
   }
 
+  function statusAccentBorder(status?: string): string {
+    if (status === 'Needs Approval' || status === 'Repair Requested') return 'border-yellow-500'
+    if (status === 'Ready for Pickup') return 'border-green-400'
+    if (status === 'In Repair') return 'border-blue-400'
+    if (status === 'Fleet') return 'border-zinc-600'
+    return 'border-orange-500'
+  }
+
   function groupUnitsByCustomer(unitList: any[]) {
     const groups = new Map<string, { customer: any; units: any[] }>()
     for (const unit of unitList) {
@@ -1589,9 +1597,9 @@ export default async function Home({
     })
   }
 
-  function CustomerGroupHeader({ customer, count }: { customer: any; count: number }) {
+  function CustomerGroupHeader({ customer, count, borderColor }: { customer: any; count: number; borderColor?: string }) {
     return (
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-2 bg-zinc-800 border-b border-zinc-700">
+      <div className={`flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-zinc-800 border-b border-zinc-700 border-l-4 ${borderColor || 'border-zinc-600'}`}>
         {customer?.logo_url ? (
           <img
             src={customer.logo_url}
@@ -1617,8 +1625,8 @@ export default async function Home({
     return (
       <>
         {groupUnitsByCustomer(list).map((group, i) => (
-          <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'border-t-4 border-zinc-950' : ''}>
-            <CustomerGroupHeader customer={group.customer} count={group.units.length} />
+          <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'mt-4 border-t-4 border-zinc-950' : ''}>
+            <CustomerGroupHeader customer={group.customer} count={group.units.length} borderColor={borderColor} />
             <div className="divide-y divide-zinc-800/60">
               {group.units.map(unit => (
                 <ActionCard key={unit.id} unit={unit} borderColor={borderColor}>
@@ -1757,8 +1765,8 @@ export default async function Home({
             ) : (
               <div className="divide-y divide-zinc-800">
                 {groupUnitsByCustomer(statusFilteredUnits).map((group, i) => (
-                  <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'border-t-4 border-zinc-950' : ''}>
-                    <CustomerGroupHeader customer={group.customer} count={group.units.length} />
+                  <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'mt-4 border-t-4 border-zinc-950' : ''}>
+                    <CustomerGroupHeader customer={group.customer} count={group.units.length} borderColor={statusAccentBorder(group.units[0]?.status)} />
                     <div className="divide-y divide-zinc-800/60 flex flex-col">
                       {group.units.map(unit => (
                         <UnitDetailPanel key={unit.id} unit={unit} accordionName="status-queue-unit" />
