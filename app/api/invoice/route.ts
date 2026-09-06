@@ -17,11 +17,25 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData()
   const unitId = (formData.get('unit_id') as string) || ''
-  const serviceFeeRaw = formData.get('service_fee') as string
-  const partsTotalRaw = formData.get('parts_total') as string
+  const partsDescriptions = formData.getAll('parts_description') as string[]
+  const partsPrices = formData.getAll('parts_price') as string[]
+  const laborDescriptions = formData.getAll('labor_description') as string[]
+  const laborPrices = formData.getAll('labor_price') as string[]
   const priorityFeeRaw = formData.get('priority_fee') as string
   if (!unitId) {
     return NextResponse.json({ error: 'Missing unit_id' }, { status: 400 })
+  }
+
+  const partsLineItems = partsDescriptions
+    .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
+    .filter(li => li.description.length > 0)
+  const laborLineItems = laborDescriptions
+    .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
+    .filter(li => li.description.length > 0)
+  const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
+
+  if (partsLineItems.length === 0 && laborLineItems.length === 0 && !priorityFee) {
+    return NextResponse.json({ error: 'Add at least one line item with a description.' }, { status: 400 })
   }
 
   const { data: unit } = await supabase
@@ -47,10 +61,12 @@ export async function POST(request: NextRequest) {
   const invoiceNumber = `SC-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${unitId.slice(0, 6).toUpperCase()}`
   const logoUrl = new URL('/images/logo.png', request.url).toString()
 
-  const serviceFee = serviceFeeRaw ? Number(serviceFeeRaw) : 0
-  const partsTotal = partsTotalRaw ? Number(partsTotalRaw) : 0
-  const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
-  const invoiceTotal = serviceFee + partsTotal + priorityFee
+  const lineItems = [
+    ...partsLineItems,
+    ...laborLineItems,
+    ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
+  ]
+  const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 
   const pdfBuffer = await renderInvoicePdf({
     invoiceNumber,
@@ -65,11 +81,7 @@ export async function POST(request: NextRequest) {
       serialNumber: unit.serial_number,
       equipmentType: unit.equipment_type,
     },
-    lineItems: [
-      { description: 'Labor / Service Fee', amount: serviceFee },
-      { description: 'Parts Total', amount: partsTotal },
-      ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
-    ],
+    lineItems,
     parts: parts.map(p => ({ name: p.part_name, sku: p.sku })),
     logoUrl,
   })
