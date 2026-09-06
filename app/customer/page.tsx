@@ -225,6 +225,7 @@ export default function CustomerPortal() {
   const [askingQuestion, setAskingQuestion] = useState(false)
   const detailRef = useRef<HTMLDivElement | null>(null)
   const replyInputRef = useRef<HTMLInputElement | null>(null)
+  const unitsTopRef = useRef<HTMLDivElement | null>(null)
 
   // Lightbox for the Diagnosis Findings thumbnails shown inline in the
   // Repair Decision Needed card - a quick zoomed-in preview without
@@ -1094,6 +1095,16 @@ export default function CustomerPortal() {
   ).length
   const completed = units.filter(u => u.status === 'Ready for Pickup').length
 
+  // Stat tiles jump to a representative unit for their category, reusing
+  // the same openUnit()/pin-to-top/scroll-into-view path as clicking a
+  // card directly - when a category has more than one unit, the first
+  // match is opened and the rest stay visible (pinned) in their section.
+  const firstNeedsApproval = units.find(u => u.status === 'Needs Approval')
+  const firstInProgress = units.find(u =>
+    ['Diagnosing', 'In Repair', 'Repair Requested', 'Received'].includes(u.status)
+  )
+  const firstReadyForPickup = units.find(u => u.status === 'Ready for Pickup')
+
   function displayName(u: Unit) {
     const model = (u.model || '').trim()
     const type = (u.equipment_type || '').trim()
@@ -1280,26 +1291,53 @@ export default function CustomerPortal() {
 
       <div className="max-w-4xl mx-auto p-3 sm:p-4 space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+          <button
+            type="button"
+            onClick={() => unitsTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-xl p-3 text-left transition"
+          >
             <p className="text-xs text-gray-500 uppercase">Total Units</p>
             <p className="text-2xl font-bold text-orange-400">{total}</p>
-          </div>
-          <div className={`rounded-xl p-3 ${
-            needsApproval > 0
-              ? 'bg-red-500/10 border border-red-500/50'
-              : 'bg-zinc-900 border border-zinc-800'
-          }`}>
+          </button>
+          <button
+            type="button"
+            onClick={() => firstNeedsApproval && openUnit(firstNeedsApproval)}
+            disabled={!firstNeedsApproval}
+            className={`rounded-xl p-3 text-left transition ${
+              needsApproval > 0
+                ? 'bg-red-500/10 border border-red-500/50 hover:border-red-400'
+                : 'bg-zinc-900 border border-zinc-800 cursor-default'
+            }`}
+          >
             <p className={`text-xs uppercase ${needsApproval > 0 ? 'text-red-400' : 'text-gray-500'}`}>Needs Approval</p>
             <p className={`text-2xl font-bold ${needsApproval > 0 ? 'text-red-400' : 'text-yellow-400'}`}>{needsApproval}</p>
-          </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-            <p className="text-xs text-gray-500 uppercase">In Progress</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => firstInProgress && openUnit(firstInProgress)}
+            disabled={!firstInProgress}
+            className={`rounded-xl p-3 text-left transition ${
+              inProgress > 0
+                ? 'bg-blue-500/10 border border-blue-500/40 hover:border-blue-400'
+                : 'bg-zinc-900 border border-zinc-800 cursor-default'
+            }`}
+          >
+            <p className={`text-xs uppercase ${inProgress > 0 ? 'text-blue-400' : 'text-gray-500'}`}>In Progress</p>
             <p className="text-2xl font-bold text-blue-400">{inProgress}</p>
-          </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3">
-            <p className="text-xs text-gray-500 uppercase">Ready for Pickup</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => firstReadyForPickup && openUnit(firstReadyForPickup)}
+            disabled={!firstReadyForPickup}
+            className={`rounded-xl p-3 text-left transition ${
+              completed > 0
+                ? 'bg-green-500/10 border border-green-500/40 hover:border-green-400'
+                : 'bg-zinc-900 border border-zinc-800 cursor-default'
+            }`}
+          >
+            <p className={`text-xs uppercase ${completed > 0 ? 'text-green-400' : 'text-gray-500'}`}>Ready for Pickup</p>
             <p className="text-2xl font-bold text-green-400">{completed}</p>
-          </div>
+          </button>
         </div>
 
         {message && (
@@ -2294,7 +2332,7 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        <div className="bg-zinc-900 border border-zinc-800 border-l-4 border-l-orange-500 rounded-xl overflow-hidden">
+        <div ref={unitsTopRef} className="bg-zinc-900 border border-zinc-800 border-l-4 border-l-orange-500 rounded-xl overflow-hidden">
           <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 bg-orange-500/10">
             <h2 className="text-lg font-semibold text-orange-400">
               In Service ({activeUnits.length})
