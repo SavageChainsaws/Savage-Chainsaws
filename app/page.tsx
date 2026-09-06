@@ -22,6 +22,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
+import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
@@ -1303,12 +1304,12 @@ export default async function Home({
     )
   }
 
-  // Admin-only. Generates a PDF invoice on demand via /api/invoice - fee
-  // amounts are entered fresh each time (not stored), since not every job
-  // is billed the same. Service fee defaults to the unit's most recent
-  // logged service cost as a starting point, left fully editable; parts
-  // total has no price data to draw from (Parts & SKUs tracks name/SKU/
-  // OEM-Aftermarket only, no pricing) so it's always blank/editable.
+  // Admin-only. Generates a PDF invoice on demand via /api/invoice - line
+  // items are entered fresh each time (not stored), since not every job is
+  // billed the same. The first labor line defaults its price to the unit's
+  // most recent logged service cost as a starting point, left fully
+  // editable; parts have no price data to draw from (Parts & SKUs tracks
+  // name/SKU/OEM-Aftermarket only, no pricing) so they're always blank.
   function CreateInvoiceSection({ unit }: { unit: any }) {
     const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
     const history = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
@@ -1320,48 +1321,11 @@ export default async function Home({
           <span className="text-xs group-open/invoice-panel:rotate-180 transition">v</span>
         </summary>
         <div className="w-full mt-2">
-          <form action="/api/invoice" method="POST" target="_blank" className="flex flex-wrap items-end gap-2">
-            <input type="hidden" name="unit_id" value={unit.id} />
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Labor / Service Fee $</label>
-              <input
-                name="service_fee"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={latestCost}
-                placeholder="0.00"
-                className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Parts Total $</label>
-              <input
-                name="parts_total"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Priority Fee $</label>
-              <input
-                name="priority_fee"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={unit.is_priority ? PRIORITY_FEE : ''}
-                placeholder="0.00"
-                title="Auto-filled from the unit's Priority flag - editable if needed."
-                className="w-32 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-              />
-            </div>
-            <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
-              Create Invoice
-            </button>
-          </form>
+          <CreateUnitInvoiceForm
+            unitId={unit.id}
+            defaultLaborPrice={latestCost}
+            defaultPriorityFee={unit.is_priority ? PRIORITY_FEE : ''}
+          />
           <p className="text-xs text-gray-600 mt-1.5">
             {parts.length > 0
               ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file will be listed on the invoice.`
