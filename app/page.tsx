@@ -1538,12 +1538,20 @@ export default async function Home({
     )
   }
 
-  function statusAccentBorder(status?: string): string {
-    if (status === 'Needs Approval' || status === 'Repair Requested') return 'border-yellow-500'
-    if (status === 'Ready for Pickup') return 'border-green-400'
-    if (status === 'In Repair') return 'border-blue-400'
-    if (status === 'Fleet') return 'border-zinc-600'
-    return 'border-orange-500'
+  // Falls back to the Savage Chainsaws brand orange for any customer who
+  // hasn't set their own brand_color (paired with their logo on the
+  // customer portal) - used to box off each customer's units on this page.
+  const SAVAGE_BRAND_COLOR = '#ea580c'
+
+  function hexToRgba(hex: string, alpha: number): string {
+    const clean = hex.replace('#', '')
+    const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean
+    const num = parseInt(full, 16)
+    if (full.length !== 6 || Number.isNaN(num)) return `rgba(234, 88, 12, ${alpha})`
+    const r = (num >> 16) & 255
+    const g = (num >> 8) & 255
+    const b = num & 255
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
   }
 
   function groupUnitsByCustomer(unitList: any[]) {
@@ -1561,9 +1569,13 @@ export default async function Home({
     })
   }
 
-  function CustomerGroupHeader({ customer, count, borderColor }: { customer: any; count: number; borderColor?: string }) {
+  function CustomerGroupHeader({ customer, count }: { customer: any; count: number }) {
+    const accent = customer?.brand_color || SAVAGE_BRAND_COLOR
     return (
-      <div className={`flex items-center gap-3 px-4 sm:px-6 py-2.5 bg-zinc-800 border-b border-zinc-700 border-l-4 ${borderColor || 'border-zinc-600'}`}>
+      <div
+        className="flex items-center gap-3 px-4 sm:px-6 py-2.5 border-b"
+        style={{ backgroundColor: hexToRgba(accent, 0.16), borderBottomColor: hexToRgba(accent, 0.4) }}
+      >
         {customer?.logo_url ? (
           <img
             src={customer.logo_url}
@@ -1588,9 +1600,13 @@ export default async function Home({
   }) {
     return (
       <>
-        {groupUnitsByCustomer(list).map((group, i) => (
-          <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'mt-4 border-t-4 border-zinc-950' : ''}>
-            <CustomerGroupHeader customer={group.customer} count={group.units.length} borderColor={borderColor} />
+        {groupUnitsByCustomer(list).map(group => (
+          <div
+            key={group.customer?.id || 'unknown'}
+            className="rounded-lg overflow-hidden"
+            style={{ border: `2px solid ${group.customer?.brand_color || SAVAGE_BRAND_COLOR}` }}
+          >
+            <CustomerGroupHeader customer={group.customer} count={group.units.length} />
             <div className="divide-y divide-zinc-800/60">
               {group.units.map(unit => (
                 <ActionCard key={unit.id} unit={unit} borderColor={borderColor}>
@@ -1727,10 +1743,14 @@ export default async function Home({
             {statusFilteredUnits.length === 0 ? (
               <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No units found.</p>
             ) : (
-              <div className="divide-y divide-zinc-800">
-                {groupUnitsByCustomer(statusFilteredUnits).map((group, i) => (
-                  <div key={group.customer?.id || 'unknown'} className={i > 0 ? 'mt-4 border-t-4 border-zinc-950' : ''}>
-                    <CustomerGroupHeader customer={group.customer} count={group.units.length} borderColor={statusAccentBorder(group.units[0]?.status)} />
+              <div className="p-3 sm:p-4 space-y-4">
+                {groupUnitsByCustomer(statusFilteredUnits).map(group => (
+                  <div
+                    key={group.customer?.id || 'unknown'}
+                    className="rounded-lg overflow-hidden"
+                    style={{ border: `2px solid ${group.customer?.brand_color || SAVAGE_BRAND_COLOR}` }}
+                  >
+                    <CustomerGroupHeader customer={group.customer} count={group.units.length} />
                     <div className="divide-y divide-zinc-800/60 flex flex-col">
                       {group.units.map(unit => (
                         <UnitDetailPanel key={unit.id} unit={unit} accordionName="status-queue-unit" />
@@ -1748,7 +1768,7 @@ export default async function Home({
             {priorityUnits.length > 0 && (
               <div className="bg-zinc-900 border border-orange-500/50 rounded-xl overflow-hidden mb-5">
                 <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Priority Units ({priorityUnits.length})</h2></div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={priorityUnits}
                     borderColor="border-orange-500"
@@ -1762,7 +1782,7 @@ export default async function Home({
             {readyForPickupUnits.length > 0 && (
               <div className="bg-zinc-900 border border-green-500/40 rounded-xl overflow-hidden mb-5">
                 <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-300">Ready for Pickup ({readyForPickupUnits.length})</h2></div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={readyForPickupUnits}
                     borderColor="border-green-400"
@@ -1776,7 +1796,7 @@ export default async function Home({
             {repairRequestedUnits.length > 0 && (
               <div className="bg-zinc-900 border border-blue-500/30 rounded-xl overflow-hidden mb-5">
                 <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-blue-300">Repair Requested ({repairRequestedUnits.length})</h2></div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={repairRequestedUnits}
                     borderColor="border-blue-400"
@@ -1790,7 +1810,7 @@ export default async function Home({
             {diagnosingUnits.length > 0 && (
               <div className="bg-zinc-900 border border-orange-500/30 rounded-xl overflow-hidden mb-5">
                 <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-orange-400">Diagnosing ({diagnosingUnits.length})</h2></div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={diagnosingUnits}
                     borderColor="border-orange-500"
@@ -1807,7 +1827,7 @@ export default async function Home({
                   <h2 className="text-lg font-semibold text-red-400">Stagnant Units ({staleUnits.length})</h2>
                   <p className="text-xs text-red-300/80">Over 7 days with no action</p>
                 </div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={staleUnits}
                     borderColor="border-red-500"
@@ -1821,7 +1841,7 @@ export default async function Home({
             {approvedDecisions.length > 0 && (
               <div className="bg-zinc-900 border border-green-500/30 rounded-xl overflow-hidden mb-5">
                 <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-green-400">Customer Approved ({approvedDecisions.length})</h2></div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={approvedDecisions}
                     borderColor="border-green-500"
@@ -1835,7 +1855,7 @@ export default async function Home({
             {deniedDecisions.length > 0 && (
               <div className="bg-zinc-900 border border-red-500/30 rounded-xl overflow-hidden mb-5">
                 <div className="px-4 sm:px-6 py-3 border-b border-zinc-800"><h2 className="text-lg font-semibold text-red-400">Customer Denied ({deniedDecisions.length})</h2></div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={deniedDecisions}
                     borderColor="border-red-500"
@@ -1851,7 +1871,7 @@ export default async function Home({
               {waitingOnCustomer.length === 0 ? (
                 <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No units currently waiting on customer approval.</p>
               ) : (
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={waitingOnCustomer}
                     borderColor="border-yellow-500"
