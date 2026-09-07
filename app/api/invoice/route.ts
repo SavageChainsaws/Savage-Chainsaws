@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   const { data: unit } = await supabase
     .from('units')
-    .select('id, model, serial_number, equipment_type, customer_id')
+    .select('id, model, serial_number, equipment_type, customer_id, nickname, thumbnail_url, photo_url')
     .eq('id', unitId)
     .single()
   if (!unit) {
@@ -80,6 +80,8 @@ export async function POST(request: NextRequest) {
       model: unit.model,
       serialNumber: unit.serial_number,
       equipmentType: unit.equipment_type,
+      nickname: unit.nickname,
+      thumbnailUrl: unit.thumbnail_url || unit.photo_url || null,
     },
     lineItems,
     parts: parts.map(p => ({ name: p.part_name, sku: p.sku })),
