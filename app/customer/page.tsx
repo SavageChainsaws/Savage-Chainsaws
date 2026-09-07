@@ -143,6 +143,7 @@ type Customer = {
   email: string | null
   secondary_email: string | null
   logo_url: string | null
+  brand_color: string | null
 }
 
 const ACTIVE_STATUSES = [
@@ -283,6 +284,9 @@ export default function CustomerPortal() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [logoBusy, setLogoBusy] = useState(false)
 
+  const [brandColor, setBrandColor] = useState('#ea580c')
+  const [brandColorBusy, setBrandColorBusy] = useState(false)
+
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -360,7 +364,7 @@ export default function CustomerPortal() {
 
     const { data: cust } = await supabase
       .from('customers')
-      .select('id, name, email, secondary_email, logo_url')
+      .select('id, name, email, secondary_email, logo_url, brand_color')
       .ilike('email', user.email ?? '')
       .maybeSingle()
 
@@ -389,6 +393,7 @@ export default function CustomerPortal() {
 
     setCustomer(cust)
     setSecondaryEmail(cust.secondary_email || '')
+    setBrandColor(cust.brand_color || '#ea580c')
     const { data: unitData } = await supabase
       .from('units')
       .select('*')
@@ -483,6 +488,43 @@ export default function CustomerPortal() {
     }
     setCustomer(prev => prev ? { ...prev, logo_url: null } : null)
     setMessage('Company logo removed.')
+  }
+
+  // Lets a customer pair a brand color with their logo - shown alongside
+  // it here since the two travel together everywhere they're used (e.g.
+  // the admin Repair Flow page boxes off each customer's units using this
+  // color, falling back to the Savage Chainsaws orange when unset).
+  async function saveBrandColor() {
+    if (!customer) return
+    setBrandColorBusy(true)
+    const { error } = await supabase
+      .from('customers')
+      .update({ brand_color: brandColor })
+      .eq('id', customer.id)
+    setBrandColorBusy(false)
+    if (error) {
+      setMessage('Could not save brand color.')
+      return
+    }
+    setCustomer(prev => prev ? { ...prev, brand_color: brandColor } : null)
+    setMessage('Brand color saved.')
+  }
+
+  async function resetBrandColor() {
+    if (!customer) return
+    setBrandColorBusy(true)
+    const { error } = await supabase
+      .from('customers')
+      .update({ brand_color: null })
+      .eq('id', customer.id)
+    setBrandColorBusy(false)
+    if (error) {
+      setMessage('Could not reset brand color.')
+      return
+    }
+    setCustomer(prev => prev ? { ...prev, brand_color: null } : null)
+    setBrandColor('#ea580c')
+    setMessage('Brand color reset to default.')
   }
 
   // Same validation as /reset-password (the flow this replaces the need
@@ -1540,6 +1582,37 @@ export default function CustomerPortal() {
                     className="block text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
                   >
                     Remove logo
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-3 space-y-2">
+              <p className="text-sm font-medium text-white">Brand Color</p>
+              <p className="text-xs text-gray-500">
+                Used to box off your units on our end - defaults to Savage Chainsaws orange if you skip this.
+              </p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={brandColor}
+                  onChange={e => setBrandColor(e.target.value)}
+                  className="h-9 w-14 bg-zinc-900 border border-zinc-700 rounded-lg cursor-pointer"
+                />
+                <button
+                  onClick={saveBrandColor}
+                  disabled={brandColorBusy}
+                  className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                >
+                  {brandColorBusy ? 'Saving...' : 'Save Color'}
+                </button>
+                {customer.brand_color && (
+                  <button
+                    onClick={resetBrandColor}
+                    disabled={brandColorBusy}
+                    className="text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
+                  >
+                    Reset to default
                   </button>
                 )}
               </div>
