@@ -343,7 +343,18 @@ export default function CustomerPortal() {
   async function loadData() {
     setLoading(true)
     setMessage(null)
-    const { data: { user } } = await supabase.auth.getUser()
+    let { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      // Backgrounding the app for a while (access token expires after ~1hr)
+      // means this first getUser() call is what triggers the actual token
+      // refresh on return - a one-off network blip right at resume time, or
+      // a race with a concurrent refresh elsewhere using the same
+      // soon-to-rotate refresh token, can fail that single attempt even
+      // though the session is otherwise still perfectly valid. Retry once
+      // before treating it as a real logout.
+      await new Promise(resolve => setTimeout(resolve, 400))
+      ;({ data: { user } } = await supabase.auth.getUser())
+    }
     if (!user) {
       router.push('/customer/login')
       return
