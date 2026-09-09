@@ -10,6 +10,15 @@ import { NextResponse, type NextRequest } from 'next/server'
 // actually-invalid session on its own, one page load later, without a 504.
 const AUTH_CHECK_TIMEOUT_MS = 5000
 
+// Opts this request out of Next.js's fetch memoization/Data Cache - an auth
+// check must never be served a cached response from an earlier request. Per
+// Next.js's docs, memoization itself is only bypassed by giving the fetch
+// its own AbortController signal; `cache: 'no-store'` alone only affects
+// the separate, persistent Data Cache.
+function noStoreFetch(input: RequestInfo | URL, init?: RequestInit) {
+  return fetch(input, { ...init, cache: 'no-store', signal: new AbortController().signal })
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
@@ -17,6 +26,7 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: noStoreFetch },
       cookies: {
         getAll() {
           return request.cookies.getAll()

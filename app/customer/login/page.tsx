@@ -78,7 +78,16 @@ export default function CustomerLogin() {
   // actually a customer.
   const redirectIfSignedIn = useCallback(async () => {
     if (formInProgressRef.current) return
-    const { data: { user } } = await supabase.auth.getUser()
+    let { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      // The immediate on-mount check races this client's own initial
+      // session refresh (e.g. right after the PWA relaunches with an
+      // already-expired access token) - give it one more try before
+      // accepting "not signed in" and leaving the login form up.
+      await new Promise(resolve => setTimeout(resolve, 400))
+      if (formInProgressRef.current) return
+      ;({ data: { user } } = await supabase.auth.getUser())
+    }
     if (!user) return
     if (formInProgressRef.current) return
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
@@ -88,7 +97,15 @@ export default function CustomerLogin() {
     router.refresh()
   }, [router])
 
-  useEffect(() => watchForAuthChangeAcrossTabs(redirectIfSignedIn), [redirectIfSignedIn])
+  // Checks immediately on mount too, not just on a future broadcast/
+  // visibility/interval tick - otherwise a fresh load that lands here with
+  // an already-valid session (e.g. the PWA relaunching to this page after
+  // being backgrounded) sits showing the login form until one of those
+  // later triggers happens to fire, instead of forwarding right away.
+  useEffect(() => {
+    redirectIfSignedIn()
+    return watchForAuthChangeAcrossTabs(redirectIfSignedIn)
+  }, [redirectIfSignedIn])
 
   async function handleForgotPassword(e: React.FormEvent) {
     e.preventDefault()
