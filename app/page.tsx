@@ -19,6 +19,8 @@ import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
 import { sendEmail } from '@/lib/email'
+import { sendPushToCustomer } from '@/lib/push'
+import { unitLabel } from '@/lib/units'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
@@ -28,6 +30,7 @@ import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './compone
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
+import PushToggle from './components/PushToggle'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -523,7 +526,11 @@ async function updateStatus(formData: FormData) {
   const diagnosisNotes = diagnosisNotesRaw?.trim() || null
   const file = formData.get('invoice') as File
   const isPriority = formData.get('is_priority') === 'true'
-  const { data: existing } = await supabase.from('units').select('status, history, is_priority, problem_type, diagnosis_notes').eq('id', id).single()
+  const { data: existing } = await supabase
+    .from('units')
+    .select('status, history, is_priority, problem_type, diagnosis_notes, customer_id, model, equipment_type, nickname, serial_number')
+    .eq('id', id)
+    .single()
   const wasAlreadyDone = existing ? existing.status === 'Ready for Pickup' : false
 
   // "Deny Repair" is a dropdown trigger, not a real persisted status - it
@@ -605,6 +612,27 @@ async function updateStatus(formData: FormData) {
     }
   }
   await supabase.from('units').update(updateData).eq('id', id)
+
+  // Push on top of the in-app badges, only on an actual transition into one
+  // of these two states - never on a resubmit that leaves status unchanged.
+  if (existing && existing.customer_id && existing.status !== status) {
+    const label = unitLabel(existing)
+    if (status === 'Needs Approval') {
+      await sendPushToCustomer(existing.customer_id, {
+        title: 'Diagnosis ready for your decision',
+        body: `Your ${label} is ready for approval - review the diagnosis and quote.`,
+        url: '/customer',
+        tag: `unit-${id}`,
+      })
+    } else if (status === 'Ready for Pickup' && !wasAlreadyDone) {
+      await sendPushToCustomer(existing.customer_id, {
+        title: 'Ready for pickup',
+        body: `Your ${label} is ready for pickup!`,
+        url: '/customer',
+        tag: `unit-${id}`,
+      })
+    }
+  }
   revalidatePath('/')
 }
 
@@ -690,6 +718,38 @@ async function nudgeUnit(formData: FormData) {
       result.ok ? `Reminder emailed to ${recipients.join(', ')}` : `Nudge attempted - ${result.error}`
     ),
   }).eq('id', id)
+  revalidatePath('/')
+}
+
+// Admin's side of the messages thread - previously read-only (see
+// UnitReplies below). Reuses the same messages table as the customer's own
+// questions, distinguished by is_admin, so both sides render from one
+// ordered list instead of two separate ones.
+async function replyToMessage(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const unitId = formData.get('unit_id') as string
+  const message = (formData.get('message') as string || '').trim()
+  if (!unitId || !message) return
+
+  const { data: unit } = await supabase.from('units').select('customer_id').eq('id', unitId).single()
+  if (!unit?.customer_id) return
+
+  await supabase.from('messages').insert({
+    unit_id: unitId,
+    customer_id: unit.customer_id,
+    is_admin: true,
+    message,
+  })
+
+  await sendPushToCustomer(unit.customer_id, {
+    title: 'New reply from Savage Chainsaws',
+    body: message.length > 120 ? `${message.slice(0, 117)}...` : message,
+    url: '/customer',
+    tag: `unit-${unitId}`,
+  })
+
   revalidatePath('/')
 }
 
@@ -849,16 +909,6 @@ function groupLabel(n: number) {
   if (n === 1) return 'Riding Mowers'
   if (n === 2) return 'Chainsaws / Handheld'
   return 'Trimmers & Misc'
-}
-
-// Model - Type first - never lead with serial
-function unitLabel(unit: any) {
-  const model = (unit.model || '').trim()
-  const type = (unit.equipment_type || '').trim()
-  if (model && type) return `${model} - ${type}`
-  if (model) return model
-  if (type) return type
-  return unit.nickname || unit.serial_number || 'No model'
 }
 
 function isUnderWarranty(unit: any): boolean {
@@ -1355,26 +1405,43 @@ export default async function Home({
     )
   }
 
-  // Read-only view of a customer's written replies about this unit (the
-  // messages table, scoped by unit_id - reused rather than a new table).
-  // Not a back-and-forth chat, just a way for the admin to see a question
-  // or concern the customer left about the diagnosis/quote.
-  type UnitReply = { id: string; customer_name: string | null; created_at: string; message: string }
-  function UnitReplies({ messages }: { messages: UnitReply[] }) {
-    if (messages.length === 0) return null
+  // The messages thread for this unit (customer questions and admin
+  // replies, distinguished by is_admin) plus a small form to send a new
+  // admin reply - previously read-only from the admin side.
+  type UnitReply = { id: string; customer_name: string | null; is_admin: boolean; created_at: string; message: string }
+  function UnitReplies({ unitId, messages }: { unitId: string; messages: UnitReply[] }) {
     return (
       <div className="mt-3 border-t border-zinc-800 pt-2.5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Customer Replies</p>
-        <div className="space-y-2">
-          {messages.map(m => (
-            <div key={m.id} className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
-              <p className="text-xs text-gray-500">
-                {m.customer_name || 'Customer'} - {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              </p>
-              <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{m.message}</p>
-            </div>
-          ))}
-        </div>
+        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Messages</p>
+        {messages.length > 0 && (
+          <div className="space-y-2 mb-2">
+            {messages.map(m => (
+              <div
+                key={m.id}
+                className={`border rounded-lg px-3 py-2 ${
+                  m.is_admin ? 'bg-orange-500/10 border-orange-500/30' : 'bg-zinc-800/60 border-zinc-700'
+                }`}
+              >
+                <p className="text-xs text-gray-500">
+                  {m.is_admin ? 'Savage Chainsaws' : m.customer_name || 'Customer'} -{' '}
+                  {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </p>
+                <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{m.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <form action={replyToMessage} className="flex flex-col sm:flex-row gap-2">
+          <input type="hidden" name="unit_id" value={unitId} />
+          <input
+            name="message"
+            placeholder="Reply to the customer..."
+            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+          />
+          <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0">
+            Reply
+          </button>
+        </form>
       </div>
     )
   }
@@ -1534,7 +1601,7 @@ export default async function Home({
             )
           })()}
 
-          <UnitReplies messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
+          <UnitReplies unitId={unit.id} messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
 
           {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
             <form action={returnToFleet} className="pt-3">
@@ -1696,6 +1763,7 @@ export default async function Home({
               Parts
             </Link>
             <ContactLinksBar />
+            <PushToggle label="Push" />
             <AdminLogout />
           </div>
         </div>

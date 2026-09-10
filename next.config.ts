@@ -9,6 +9,17 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '10mb',
     },
   },
+  async headers() {
+    return [
+      {
+        // Static files are otherwise cached aggressively - without this, a
+        // deployed sw.js update can take a long time to actually reach
+        // returning users, since the browser keeps using its cached copy.
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache' }],
+      },
+    ]
+  },
 };
 
 export default nextConfig;

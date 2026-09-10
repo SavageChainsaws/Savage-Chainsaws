@@ -8,6 +8,7 @@ import AppNav from '../components/AppNav'
 import { UnitPhoto } from '../components/UnitPhoto'
 import { UnitPhotoGallery } from '../components/UnitPhotoGallery'
 import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
+import PushToggle from '../components/PushToggle'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
@@ -137,6 +138,7 @@ type UnitReply = {
   message: string
   created_at: string
   customer_name: string | null
+  is_admin: boolean
 }
 
 type Customer = {
@@ -203,6 +205,20 @@ function isIdentifyingSerial(value: string) {
 // either is matched literally instead of as a pattern.
 function escapeLikePattern(value: string) {
   return value.replace(/[\\%_]/g, '\\$&')
+}
+
+// Fires the admin-facing push for an event this page just wrote to
+// Supabase directly (client-side, under RLS) - the actual send needs the
+// VAPID private key, which only the server route holds. Best-effort: the
+// unit change itself already succeeded by the time this is called, so a
+// failed/slow push here should never block or error out the customer's
+// own flow.
+function notifyAdminPush(event: 'service_request' | 'decision', unitId: string, decision?: 'approve' | 'deny') {
+  fetch('/api/push/notify-admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event, unitId, decision }),
+  }).catch(() => {})
 }
 
 export default function CustomerPortal() {
@@ -628,7 +644,7 @@ export default function CustomerPortal() {
         created_at: createdAt,
       }
 
-      const { error } = existingUnit
+      const { data: mutatedUnit, error } = existingUnit
         ? await supabase
             .from('units')
             .update({
@@ -636,18 +652,25 @@ export default function CustomerPortal() {
               ...(photoUrl ? { photo_url: photoUrl, thumbnail_url: photoUrl } : {}),
             })
             .eq('id', existingUnit.id)
-        : await supabase.from('units').insert({
-            ...checkInFields,
-            photo_url: photoUrl,
-            thumbnail_url: photoUrl,
-            customer_id: customer.id,
-          })
+            .select('id')
+            .single()
+        : await supabase
+            .from('units')
+            .insert({
+              ...checkInFields,
+              photo_url: photoUrl,
+              thumbnail_url: photoUrl,
+              customer_id: customer.id,
+            })
+            .select('id')
+            .single()
       if (error) {
         console.error(error)
         setMessage('Could not check in this unit. Let Jesse know if this keeps happening.')
         setSubmitting(false)
         return
       }
+      notifyAdminPush('service_request', mutatedUnit.id)
       setSerial('')
       setModel('')
       setUnitType('')
@@ -806,7 +829,7 @@ export default function CustomerPortal() {
     setReplyText('')
     supabase
       .from('messages')
-      .select('id, message, created_at, customer_name')
+      .select('id, message, created_at, customer_name, is_admin')
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitReplies(data || []))
@@ -876,7 +899,7 @@ export default function CustomerPortal() {
         customer_name: customer.name || userEmail || 'Customer',
         message: replyText.trim(),
       })
-      .select('id, message, created_at, customer_name')
+      .select('id, message, created_at, customer_name, is_admin')
       .single()
     setReplyBusy(false)
     if (error) {
@@ -1094,6 +1117,7 @@ export default function CustomerPortal() {
       setMessage('Could not save decision. Try again.')
       return
     }
+    notifyAdminPush('decision', unitId, decision)
     if (decision === 'deny') {
       // Applies the existing $49.99 diagnostic/check-in fee as a real,
       // itemized charge in Service History rather than just a note - this
@@ -1897,6 +1921,14 @@ export default function CustomerPortal() {
               )}
             </div>
 
+            <div className="border-t border-zinc-800 pt-4 space-y-2">
+              <p className="text-sm font-medium text-orange-300">Push Notifications</p>
+              <p className="text-xs text-gray-500">
+                Get notified on this device when a diagnosis is ready for approval, a unit is ready for pickup, or Savage Chainsaws replies to a message.
+              </p>
+              <PushToggle />
+            </div>
+
             <div className="border-t border-zinc-800 pt-4">
               <Link
                 href="/feedback"
@@ -2193,11 +2225,17 @@ export default function CustomerPortal() {
 
                 <div className="space-y-2">
                   <p className="text-xs text-gray-500 uppercase tracking-wider">
-                    {unitReplies.length > 0 ? 'Your Replies' : 'Have a question about this?'}
+                    {unitReplies.length > 0 ? 'Messages' : 'Have a question about this?'}
                   </p>
                   {unitReplies.map(r => (
-                    <div key={r.id} className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
+                    <div
+                      key={r.id}
+                      className={`border rounded-lg px-3 py-2 ${
+                        r.is_admin ? 'bg-orange-500/10 border-orange-500/30' : 'bg-zinc-800/60 border-zinc-700'
+                      }`}
+                    >
                       <p className="text-xs text-gray-500">
+                        {r.is_admin ? 'Savage Chainsaws' : 'You'} -{' '}
                         {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                       </p>
                       <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{r.message}</p>
@@ -2304,11 +2342,17 @@ export default function CustomerPortal() {
 
                   <div className="space-y-2">
                     <p className="text-xs text-gray-500 uppercase tracking-wider">
-                      {unitReplies.length > 0 ? 'Your Replies' : 'Have a question about this?'}
+                      {unitReplies.length > 0 ? 'Messages' : 'Have a question about this?'}
                     </p>
                     {unitReplies.map(r => (
-                      <div key={r.id} className="bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2">
+                      <div
+                        key={r.id}
+                        className={`border rounded-lg px-3 py-2 ${
+                          r.is_admin ? 'bg-orange-500/10 border-orange-500/30' : 'bg-zinc-800/60 border-zinc-700'
+                        }`}
+                      >
                         <p className="text-xs text-gray-500">
+                          {r.is_admin ? 'Savage Chainsaws' : 'You'} -{' '}
                           {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                         </p>
                         <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{r.message}</p>
