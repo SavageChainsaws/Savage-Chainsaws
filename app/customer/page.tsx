@@ -7,6 +7,7 @@ import Link from 'next/link'
 import AppNav from '../components/AppNav'
 import { UnitPhoto } from '../components/UnitPhoto'
 import { UnitPhotoGallery } from '../components/UnitPhotoGallery'
+import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
@@ -124,6 +125,7 @@ type UnitPhotoEntry = {
   caption: string | null
   media_type: 'photo' | 'video'
   stage: 'checkin' | 'diagnosis'
+  created_at: string
 }
 
 // A customer's written reply about a unit's diagnosis/quote - reuses the
@@ -795,7 +797,7 @@ export default function CustomerPortal() {
     setUnitPhotos([])
     supabase
       .from('unit_photos')
-      .select('id, url, caption, media_type, stage')
+      .select('id, url, caption, media_type, stage, created_at')
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitPhotos(data || []))
@@ -2349,6 +2351,20 @@ export default function CustomerPortal() {
                 ) : (
                   <UnitPhotoGallery photos={photos} />
                 )
+              })()}
+              {(() => {
+                const beforePhotos = [
+                  ...(selectedUnit.photo_url
+                    ? [{ id: 'checkin-primary', url: selectedUnit.photo_url, label: formatShortDate(selectedUnit.created_at) }]
+                    : []),
+                  ...unitPhotos
+                    .filter(p => p.stage === 'checkin')
+                    .map(p => ({ id: p.id, url: p.url, label: p.caption || formatShortDate(p.created_at) })),
+                ]
+                const afterPhotos = unitPhotos
+                  .filter(p => p.stage === 'diagnosis' && p.media_type !== 'video')
+                  .map(p => ({ id: p.id, url: p.url, label: p.caption || formatShortDate(p.created_at) }))
+                return <BeforeAfterCompare beforePhotos={beforePhotos} afterPhotos={afterPhotos} />
               })()}
             </div>
 

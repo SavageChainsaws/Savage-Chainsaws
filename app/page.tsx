@@ -12,6 +12,7 @@ import NotesForm from './components/NotesForm'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
 import { UnitPhotoGallery } from './components/UnitPhotoGallery'
+import { BeforeAfterCompare } from './components/BeforeAfterCompare'
 import UnitPhotoUpload from './components/UnitPhotoUpload'
 import UppercaseInput from './components/UppercaseInput'
 import ContactLinksBar from './components/ContactLinksBar'
@@ -1223,6 +1224,24 @@ export default async function Home({
     )
   }
 
+  // Pairs the earliest check-in photo with the most recent diagnosis photo
+  // on file so drop-off vs. pickup condition is visible at a glance -
+  // renders nothing (via BeforeAfterCompare's own guard) unless both a
+  // check-in and a diagnosis photo actually exist for this unit. Works
+  // retroactively on any unit's existing photos, not just future check-ins.
+  function BeforeAfterCompareSection({ unit }: { unit: { id: string; photo_url: string | null; created_at: string } }) {
+    const beforePhotos = [
+      ...(unit.photo_url ? [{ id: 'checkin-primary', url: unit.photo_url as string, label: formatShortDate(unit.created_at) }] : []),
+      ...(unitPhotosAll || [])
+        .filter(p => p.unit_id === unit.id && p.stage === 'checkin')
+        .map(p => ({ id: p.id as string, url: p.url as string, label: p.caption || formatShortDate(p.created_at) })),
+    ]
+    const afterPhotos = (unitPhotosAll || [])
+      .filter(p => p.unit_id === unit.id && p.stage === 'diagnosis' && p.media_type !== 'video')
+      .map(p => ({ id: p.id as string, url: p.url as string, label: p.caption || formatShortDate(p.created_at) }))
+    return <BeforeAfterCompare beforePhotos={beforePhotos} afterPhotos={afterPhotos} />
+  }
+
   // Replaces the old raw unit.history timestamp log - a quick "this unit
   // was last in for X" reference instead. service_history rows are only
   // created when a unit reaches Ready for Pickup, so the most recent entry
@@ -1508,6 +1527,7 @@ export default async function Home({
                     <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
                   )}
                   <DiagnosisFindingsSection unit={unit} />
+                  <BeforeAfterCompareSection unit={unit} />
                   <UnitPartsSection unit={unit} />
                 </div>
               </UnitStatusProvider>
@@ -2113,6 +2133,7 @@ export default async function Home({
                               </form>
 
                               <UnitPhotosSection unit={unit} />
+                              <BeforeAfterCompareSection unit={unit} />
                               <UnitPartsSection unit={unit} />
                               <ServiceHistorySection unit={unit} />
                               <CreateInvoiceSection unit={unit} />
