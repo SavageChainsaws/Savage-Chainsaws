@@ -6,11 +6,24 @@ import { createAdminClient } from './supabase/admin'
 // every send is a silent no-op rather than a crash, so the app works fine
 // before that setup step happens.
 let vapidConfigured = false
+let warnedMissingVapid = false
 function ensureVapidConfigured(): boolean {
   if (vapidConfigured) return true
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   const privateKey = process.env.VAPID_PRIVATE_KEY
-  if (!publicKey || !privateKey) return false
+  if (!publicKey || !privateKey) {
+    // Logged once per server instance (not per call) so a misconfigured
+    // deployment is visible in Vercel's function logs instead of only
+    // showing up as a silent no-op here and a client-side toggle error -
+    // the two can otherwise look unrelated when debugging.
+    if (!warnedMissingVapid) {
+      console.warn(
+        `push notifications disabled - missing ${!publicKey ? 'NEXT_PUBLIC_VAPID_PUBLIC_KEY' : ''}${!publicKey && !privateKey ? ' and ' : ''}${!privateKey ? 'VAPID_PRIVATE_KEY' : ''} env var(s)`
+      )
+      warnedMissingVapid = true
+    }
+    return false
+  }
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT || 'mailto:service@savagechainsaws.com',
     publicKey,
