@@ -385,16 +385,15 @@ export default function CustomerPortal() {
     // instead of being left showing the old logged-out form.
     notifyAuthChangedAcrossTabs()
 
-    // Links this auth user to a matching, not-yet-linked customers row (by
-    // verified email) so RLS on units - which checks auth_user_id, not
-    // email - can see their existing records. No-ops if already linked or
-    // no match exists.
-    await supabase.rpc('link_customer_account')
-
+    // Customer accounts are only ever linked by an admin (Create Customer
+    // Login, which sets auth_user_id directly on the customers row) - there
+    // is no self-service or automatic linking here. A signed-in user with
+    // no linked customers row simply isn't a customer yet (see the !cust
+    // branch below), regardless of what email they authenticated with.
     const { data: cust } = await supabase
       .from('customers')
       .select('id, name, email, secondary_email, logo_url, brand_color')
-      .ilike('email', user.email ?? '')
+      .eq('auth_user_id', user.id)
       .maybeSingle()
 
     if (!cust) {
