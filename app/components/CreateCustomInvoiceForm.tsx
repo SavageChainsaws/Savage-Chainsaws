@@ -47,6 +47,7 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
 
   return (
     <form action="/api/invoice/custom" method="POST" target="_blank" className="space-y-3">
+      <input type="hidden" name="customer_id" value={selectedId} />
       <div>
         <label className="block text-xs text-gray-500 mb-1">Link an existing customer (optional)</label>
         <select

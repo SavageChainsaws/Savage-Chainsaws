@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: customer } = unit.customer_id
-    ? await supabase.from('customers').select('name, email, phone').eq('id', unit.customer_id).single()
+    ? await supabase.from('customers').select('name, email, phone, logo_url, brand_color').eq('id', unit.customer_id).single()
     : { data: null }
 
   const [{ data: modelPartsAll }, { data: unitOverrides }] = await Promise.all([
@@ -75,6 +75,8 @@ export async function POST(request: NextRequest) {
       name: customer?.name || 'Customer',
       email: customer?.email ?? null,
       phone: customer?.phone ?? null,
+      logoUrl: customer?.logo_url ?? null,
+      brandColor: customer?.brand_color ?? null,
     },
     unit: {
       model: unit.model,
@@ -90,29 +92,45 @@ export async function POST(request: NextRequest) {
 
   // Best-effort: save this as the unit's current invoice/quote so it shows
   // up for the customer (e.g. alongside diagnosis notes, before they
-  // decide). A storage/DB hiccup here shouldn't block handing the admin
-  // back the PDF they just generated. Also records the total in the
-  // invoices table - previously unused - so the customer's simplified
-  // Needs Approval prompt can show the dollar amount without requiring
-  // them to open the PDF.
+  // decide), and as a full itemized record in the invoices table for the
+  // admin's own bookkeeping (see /invoices). A storage/DB hiccup here
+  // shouldn't block handing the admin back the PDF they just generated.
+  //
+  // The invoices row is inserted BEFORE the storage upload so the upload
+  // path can key off the row's own id, which is always unique - the
+  // previous `${unitId}-${invoiceNumber}` filename collided (same day +
+  // same unit = same name) whenever a unit was re-invoiced more than once
+  // in one day, silently failing the re-upload since it used upsert:false.
   try {
-    const fileName = `${unitId}-${invoiceNumber}.pdf`
+    const { data: invoiceRow } = await supabase
+      .from('invoices')
+      .insert({
+        unit_id: unitId,
+        customer_id: unit.customer_id,
+        customer_name: customer?.name || null,
+        invoice_number: invoiceNumber,
+        line_items: lineItems,
+        amount: invoiceTotal,
+        description: `Invoice ${invoiceNumber}`,
+        status: 'sent',
+      })
+      .select('id')
+      .single()
+
+    const fileName = `${invoiceRow?.id || `${unitId}-${invoiceNumber}`}.pdf`
     const { error: uploadError } = await supabase.storage
       .from('invoices')
       .upload(fileName, pdfBuffer, {
         contentType: 'application/pdf',
-        upsert: false,
+        upsert: true,
       })
     if (!uploadError) {
       const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
       await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
+      if (invoiceRow?.id) {
+        await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceRow.id)
+      }
     }
-    await supabase.from('invoices').insert({
-      unit_id: unitId,
-      amount: invoiceTotal,
-      description: `Invoice ${invoiceNumber}`,
-      status: 'sent',
-    })
   } catch (err) {
     console.error('Failed to save generated invoice to unit:', err)
   }

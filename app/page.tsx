@@ -1814,6 +1814,12 @@ export default async function Home({
             >
               Parts
             </Link>
+            <Link
+              href="/invoices"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Invoices
+            </Link>
             <ContactLinksBar />
             <PushToggle label="Push" />
             <AdminLogout />
