@@ -88,3 +88,11 @@ export async function sendPushToCustomer(customerId: string, payload: PushPayloa
   if (!customer?.auth_user_id) return
   await sendPushToUserIds([customer.auth_user_id], payload)
 }
+
+export async function sendPushToReferralSource(referralSourceId: string, payload: PushPayload): Promise<void> {
+  const admin = createAdminClient()
+  if (!admin) return
+  const { data: source } = await admin.from('referral_sources').select('auth_user_id').eq('id', referralSourceId).maybeSingle()
+  if (!source?.auth_user_id) return
+  await sendPushToUserIds([source.auth_user_id], payload)
+}

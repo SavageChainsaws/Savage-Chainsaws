@@ -70,7 +70,11 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: customer } = unit.customer_id
-    ? await supabase.from('customers').select('name, email, phone, logo_url, brand_color').eq('id', unit.customer_id).single()
+    ? await supabase
+        .from('customers')
+        .select('name, email, phone, logo_url, brand_color, referral_source_id, referral_discount_used')
+        .eq('id', unit.customer_id)
+        .single()
     : { data: null }
 
   const [{ data: modelPartsAll }, { data: unitOverrides }] = await Promise.all([
@@ -95,9 +99,19 @@ export async function POST(request: NextRequest) {
   }
   const logoUrl = new URL('/images/logo.png', request.url).toString()
 
+  // First-service referral discount - 10% off the itemized parts+labor
+  // subtotal only (never the priority fee), applied automatically exactly
+  // once per referred customer. referral_discount_used is flipped after the
+  // invoice row below is successfully saved, so a failed save never burns
+  // the discount without the customer actually getting it on a document.
+  const applyReferralDiscount = !!customer?.referral_source_id && !customer?.referral_discount_used
+  const partsAndLaborSubtotal = [...partsLineItems, ...laborLineItems].reduce((sum, li) => sum + li.amount, 0)
+  const referralDiscountAmount = applyReferralDiscount ? Math.round(partsAndLaborSubtotal * 0.10 * 100) / 100 : 0
+
   const lineItems = [
     ...partsLineItems,
     ...laborLineItems,
+    ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
   ]
   const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
@@ -149,6 +163,10 @@ export async function POST(request: NextRequest) {
       })
       .select('id')
       .single()
+
+    if (applyReferralDiscount && invoiceRow?.id && unit.customer_id) {
+      await supabase.from('customers').update({ referral_discount_used: true }).eq('id', unit.customer_id)
+    }
 
     const fileName = `${invoiceRow?.id || `${unitId}-${invoiceNumber}`}.pdf`
     const { error: uploadError } = await supabase.storage

@@ -11,6 +11,7 @@ import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
 import PushToggle from '../components/PushToggle'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
+import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 
 const supabase = createClient()
@@ -148,7 +149,11 @@ type Customer = {
   secondary_email: string | null
   logo_url: string | null
   brand_color: string | null
+  referral_source_id: string | null
+  referral_welcome_seen: boolean
 }
+
+type ReferralWelcomeInfo = { name: string; contact: string | null }
 
 const ACTIVE_STATUSES = [
   'Received',
@@ -227,6 +232,8 @@ export default function CustomerPortal() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
+  const [referralWelcome, setReferralWelcome] = useState<ReferralWelcomeInfo | null>(null)
+  const [dismissingWelcome, setDismissingWelcome] = useState(false)
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [showAddFleet, setShowAddFleet] = useState(false)
   const [showLogoUpload, setShowLogoUpload] = useState(false)
@@ -392,7 +399,7 @@ export default function CustomerPortal() {
     // branch below), regardless of what email they authenticated with.
     const { data: cust } = await supabase
       .from('customers')
-      .select('id, name, email, secondary_email, logo_url, brand_color')
+      .select('id, name, email, secondary_email, logo_url, brand_color, referral_source_id, referral_welcome_seen')
       .eq('auth_user_id', user.id)
       .maybeSingle()
 
@@ -422,6 +429,23 @@ export default function CustomerPortal() {
     setCustomer(cust)
     setSecondaryEmail(cust.secondary_email || '')
     setBrandColor(cust.brand_color || '#ea580c')
+
+    // One-time branded welcome moment for a customer referred by a partner -
+    // fetched here (rather than joined into the customers select above)
+    // since it's only ever needed once, the first time this loads after
+    // referral_source_id gets set. RLS scopes this to exactly the one
+    // referral_sources row this customer is linked to (see "customers read
+    // own referral source" in the add_referral_sources migration).
+    if (cust.referral_source_id && !cust.referral_welcome_seen) {
+      const { data: source } = await supabase
+        .from('referral_sources')
+        .select('name, contact_phone, contact_email')
+        .eq('id', cust.referral_source_id)
+        .maybeSingle()
+      if (source) {
+        setReferralWelcome({ name: source.name, contact: source.contact_phone || source.contact_email || null })
+      }
+    }
     const { data: unitData } = await supabase
       .from('units')
       .select('*')
@@ -457,6 +481,14 @@ export default function CustomerPortal() {
     // completely fresh client/session state instead of racing signOut's
     // cookie-clearing against an in-flight soft navigation.
     window.location.href = '/login'
+  }
+
+  async function dismissReferralWelcome() {
+    if (!customer) return
+    setDismissingWelcome(true)
+    await supabase.from('customers').update({ referral_welcome_seen: true }).eq('id', customer.id)
+    setDismissingWelcome(false)
+    setReferralWelcome(null)
   }
 
   async function uploadFile(file: File, prefix: string) {
@@ -1298,6 +1330,17 @@ export default function CustomerPortal() {
           <SiteFooter />
         </div>
       </main>
+    )
+  }
+
+  if (referralWelcome) {
+    return (
+      <ReferralWelcomeScreen
+        referrerName={referralWelcome.name}
+        referrerContact={referralWelcome.contact}
+        busy={dismissingWelcome}
+        onContinue={dismissReferralWelcome}
+      />
     )
   }
 

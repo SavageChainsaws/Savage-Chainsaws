@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
 })
 
 function money(n: number): string {
-  return `$${n.toFixed(2)}`
+  return n < 0 ? `-$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`
 }
 
 // sku is optional and only ever set for a tracked unit's Parts line items,

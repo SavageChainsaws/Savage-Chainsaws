@@ -71,6 +71,11 @@ export default function CreateCustomerLoginForm({
           placeholder="Password (blank = auto-generate)"
           className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
         />
+        <input
+          name="referral_code"
+          placeholder="Referral code (optional)"
+          className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm uppercase"
+        />
         <button
           type="submit"
           disabled={isPending}

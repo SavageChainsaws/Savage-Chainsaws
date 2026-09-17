@@ -24,7 +24,11 @@ export async function POST(request: NextRequest) {
   const customerPhone = ((formData.get('customer_phone') as string) || '').trim() || null
 
   const { data: linkedCustomer } = customerId
-    ? await supabase.from('customers').select('logo_url, brand_color').eq('id', customerId).maybeSingle()
+    ? await supabase
+        .from('customers')
+        .select('logo_url, brand_color, referral_source_id, referral_discount_used')
+        .eq('id', customerId)
+        .maybeSingle()
     : { data: null }
 
   const unitModel = ((formData.get('unit_model') as string) || '').trim() || null
@@ -34,13 +38,24 @@ export async function POST(request: NextRequest) {
 
   const descriptions = formData.getAll('description') as string[]
   const prices = formData.getAll('price') as string[]
-  const lineItems = descriptions
+  const typedLineItems = descriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(prices[i]) || 0 }))
     .filter(li => li.description.length > 0)
 
-  if (lineItems.length === 0) {
+  if (typedLineItems.length === 0) {
     return NextResponse.json({ error: 'Add at least one line item with a description.' }, { status: 400 })
   }
+
+  // First-service referral discount - see app/api/invoice/route.ts for the
+  // full reasoning. Here the whole typed subtotal counts as "itemized
+  // parts+labor" since this form has no separate priority-fee field.
+  const applyReferralDiscount = !!linkedCustomer?.referral_source_id && !linkedCustomer?.referral_discount_used
+  const typedSubtotal = typedLineItems.reduce((sum, li) => sum + li.amount, 0)
+  const referralDiscountAmount = applyReferralDiscount ? Math.round(typedSubtotal * 0.10 * 100) / 100 : 0
+  const lineItems = [
+    ...typedLineItems,
+    ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
+  ]
 
   const now = new Date()
   // Shared, atomic sequence (SC-0001, SC-0002, ...) - same one the
@@ -87,6 +102,10 @@ export async function POST(request: NextRequest) {
       })
       .select('id')
       .single()
+
+    if (applyReferralDiscount && invoiceRow?.id && customerId) {
+      await supabase.from('customers').update({ referral_discount_used: true }).eq('id', customerId)
+    }
 
     if (invoiceRow?.id) {
       const fileName = `${invoiceRow.id}.pdf`
