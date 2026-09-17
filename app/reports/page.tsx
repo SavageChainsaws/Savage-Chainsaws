@@ -17,6 +17,12 @@ export default async function ReportsPage() {
     .order('created_at', { ascending: false })
   const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
   const { data: unitOverridesAll } = await supabase.from('unit_part_overrides').select('*')
+  const { data: referralSources } = await supabase.from('referral_sources').select('id, name, referral_code').order('name')
+  const { data: referredCustomers } = await supabase
+    .from('customers')
+    .select('id, name, referral_source_id, referral_discount_used')
+    .not('referral_source_id', 'is', null)
+  const { data: invoicesForReferrals } = await supabase.from('invoices').select('customer_id, amount')
 
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -75,6 +81,23 @@ export default async function ReportsPage() {
   const partsBreakdown = Array.from(byPartName.values()).sort(
     (a, b) => (b.oem + b.aftermarket) - (a.oem + a.aftermarket)
   )
+
+  // Referrals report - customers grouped by referral source, with unit
+  // count, total invoiced, and whether their first-service discount has
+  // been used, per the referral partner feature spec.
+  const referralsReport = (referralSources || []).map(rs => {
+    const theirCustomers = (referredCustomers || [])
+      .filter(c => c.referral_source_id === rs.id)
+      .map(c => {
+        const unitCount = (units || []).filter(u => u.customer_id === c.id).length
+        const totalInvoiced = (invoicesForReferrals || [])
+          .filter(inv => inv.customer_id === c.id)
+          .reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0)
+        return { id: c.id, name: c.name, unitCount, totalInvoiced, discountUsed: !!c.referral_discount_used }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+    return { ...rs, customers: theirCustomers }
+  })
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white p-4 sm:p-6 md:p-10">
@@ -276,6 +299,57 @@ export default async function ReportsPage() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
+            <h2 className="text-lg font-semibold text-orange-400">Referral partners</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Customers grouped by who referred them - units, total invoiced, and first-service discount status.
+            </p>
+          </div>
+          <div className="divide-y divide-zinc-800">
+            {referralsReport.map(rs => {
+              const totalInvoiced = rs.customers.reduce((sum, c) => sum + c.totalInvoiced, 0)
+              return (
+                <div key={rs.id}>
+                  <div className="px-4 sm:px-6 py-3 bg-zinc-800/40 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{rs.name}</p>
+                      <p className="text-xs text-gray-500 font-mono">{rs.referral_code}</p>
+                    </div>
+                    <div className="text-right text-sm">
+                      <p className="text-gray-400">{rs.customers.length} referred</p>
+                      <p className="text-orange-400 font-bold">${totalInvoiced.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  {rs.customers.length > 0 && (
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-zinc-800">
+                        {rs.customers.map(c => (
+                          <tr key={c.id} className="hover:bg-zinc-800/40">
+                            <td className="px-4 sm:px-6 py-2.5 pl-8">{c.name}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-400">{c.unitCount} unit{c.unitCount !== 1 ? 's' : ''}</td>
+                            <td className="px-3 py-2.5 text-right text-gray-300">${c.totalInvoiced.toFixed(2)}</td>
+                            <td className="px-3 py-2.5 text-right">
+                              <span className={c.discountUsed ? 'text-green-400' : 'text-gray-500'}>
+                                {c.discountUsed ? 'Discount used' : 'Discount not used'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )
+            })}
+            {referralsReport.length === 0 && (
+              <p className="px-4 sm:px-6 py-8 text-gray-500 text-center text-sm">
+                No referral partners set up yet - add one from the Action Center.
+              </p>
+            )}
           </div>
         </div>
       </div>

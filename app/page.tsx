@@ -19,11 +19,13 @@ import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
 import { sendEmail } from '@/lib/email'
-import { sendPushToCustomer } from '@/lib/push'
+import { sendPushToCustomer, sendPushToReferralSource } from '@/lib/push'
 import { unitLabel } from '@/lib/units'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
+import CreateReferralSourceLoginForm from './components/CreateReferralSourceLoginForm'
+import DeleteReferralSourceLoginForm from './components/DeleteReferralSourceLoginForm'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
@@ -50,6 +52,27 @@ function isIdentifyingSerial(value: string) {
 // either is matched literally instead of as a pattern.
 function escapeLikePattern(value: string) {
   return value.replace(/[\\%_]/g, '\\$&')
+}
+
+// Case-insensitive referral code lookup, shared by every flow that can
+// attach a referral_source_id to a customer (createCustomerLogin, addUnit).
+// Codes are always stored/matched uppercase (see createReferralSourceLogin)
+// so this is a plain equality match, never a LIKE pattern. Returns null with
+// no error for a blank code (nothing to look up) as well as an unrecognized
+// one (best-effort - never blocks the caller's real action over a typo'd
+// code).
+async function resolveReferralCode(
+  supabase: Awaited<ReturnType<typeof getSessionInfo>>['supabase'],
+  formData: FormData
+): Promise<string | null> {
+  const raw = ((formData.get('referral_code') as string) || '').trim()
+  if (!raw) return null
+  const { data } = await supabase
+    .from('referral_sources')
+    .select('id')
+    .eq('referral_code', raw.toUpperCase())
+    .maybeSingle()
+  return data?.id ?? null
 }
 
 async function addUnit(formData: FormData) {
@@ -133,6 +156,28 @@ async function addUnit(formData: FormData) {
   // same as photos added later via UnitPhotoUpload.
   if (unitId && extraPhotoUrls.length > 0) {
     await supabase.from('unit_photos').insert(extraPhotoUrls.map(url => ({ unit_id: unitId, url })))
+  }
+
+  // Referral code at check-in - only ever attaches a referral a customer
+  // doesn't already have (never overwrites one already on file), so a
+  // repeat visit typing a different/blank code can't silently reassign an
+  // existing referral relationship or its first-service discount eligibility.
+  const referralSourceId = await resolveReferralCode(supabase, formData)
+  if (referralSourceId) {
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('name, referral_source_id')
+      .eq('id', customerId)
+      .maybeSingle()
+    if (existingCustomer && !existingCustomer.referral_source_id) {
+      await supabase.from('customers').update({ referral_source_id: referralSourceId }).eq('id', customerId)
+      await sendPushToReferralSource(referralSourceId, {
+        title: 'New referral signed up!',
+        body: `${existingCustomer.name} just checked in using your referral code.`,
+        url: '/referrer',
+        tag: 'referral-signup',
+      })
+    }
   }
 
   revalidatePath('/')
@@ -357,14 +402,45 @@ async function createCustomerLogin(_prevState: CreateLoginState, formData: FormD
     return { success: false, message: 'Account created, but no user id was returned - cannot link it to a customer.' }
   }
 
+  // Referral code, if entered, is resolved before the write below so it can
+  // ride along in the same insert (new customer) or be added to the update
+  // (existing customer) - never overwrites a referral already on file for
+  // an existing customer, same reasoning as the check-in path in addUnit.
+  const referralSourceId = await resolveReferralCode(supabase, formData)
+  let existingReferralSourceId: string | null = null
+  if (customerId) {
+    const { data: existingCustomer } = await supabase
+      .from('customers')
+      .select('referral_source_id')
+      .eq('id', customerId)
+      .maybeSingle()
+    existingReferralSourceId = existingCustomer?.referral_source_id ?? null
+  }
+  const attachReferralId = referralSourceId && !existingReferralSourceId ? referralSourceId : null
+
   const { error: linkErr } = customerId
-    ? await supabase.from('customers').update({ email, auth_user_id: authUserId }).eq('id', customerId)
-    : await supabase.from('customers').insert({ name: newCustomerName, email, auth_user_id: authUserId })
+    ? await supabase
+        .from('customers')
+        .update({ email, auth_user_id: authUserId, ...(attachReferralId ? { referral_source_id: attachReferralId } : {}) })
+        .eq('id', customerId)
+    : await supabase
+        .from('customers')
+        .insert({ name: newCustomerName, email, auth_user_id: authUserId, referral_source_id: referralSourceId })
   if (linkErr) {
     return {
       success: false,
       message: `Account created, but linking it to the customer record failed: ${linkErr.message}. The login (${email}) exists but won't see any records yet - contact support.`,
     }
+  }
+
+  const finalReferralId = customerId ? attachReferralId : referralSourceId
+  if (finalReferralId) {
+    await sendPushToReferralSource(finalReferralId, {
+      title: 'New referral signed up!',
+      body: `${customerId ? email : newCustomerName} just signed up using your referral code.`,
+      url: '/referrer',
+      tag: 'referral-signup',
+    })
   }
 
   revalidatePath('/')
@@ -438,6 +514,128 @@ async function deleteCustomerLogin(_prevState: DeleteLoginState, formData: FormD
   }
   revalidatePath('/')
   return { success: true, message: `${customer.name} removed, along with its login account if it had one.` }
+}
+
+type CreateReferralState = { success: boolean; message: string; password?: string } | null
+
+// Mirrors createCustomerLogin above - admin-controlled account creation via
+// the service-role client, extensible to any number of referral partners
+// through this same form rather than anything hardcoded to one entry.
+async function createReferralSourceLogin(_prevState: CreateReferralState, formData: FormData): Promise<CreateReferralState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const name = ((formData.get('name') as string) || '').trim()
+  const email = ((formData.get('email') as string) || '').trim()
+  const phone = ((formData.get('phone') as string) || '').trim() || null
+  const codeRaw = ((formData.get('referral_code') as string) || '').trim()
+  const passwordInput = ((formData.get('password') as string) || '').trim()
+
+  if (!name) return { success: false, message: 'Partner name is required.' }
+  if (!email) return { success: false, message: 'Email is required.' }
+  if (!codeRaw) return { success: false, message: 'Referral code is required.' }
+  const referralCode = codeRaw.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (!referralCode) return { success: false, message: 'Referral code must contain letters or numbers.' }
+
+  const adminClient = createAdminClient()
+  if (!adminClient) {
+    return { success: false, message: 'SUPABASE_SERVICE_ROLE_KEY is not configured yet - cannot create login accounts.' }
+  }
+
+  const password = passwordInput || generateDefaultPassword()
+  const { data: createData, error: createErr } = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  })
+  if (createErr) {
+    return { success: false, message: `Could not create account: ${createErr.message}` }
+  }
+  const authUserId = createData.user?.id
+  if (!authUserId) {
+    return { success: false, message: 'Account created, but no user id was returned - cannot link it to a referral partner.' }
+  }
+
+  const { error: insertErr } = await supabase.from('referral_sources').insert({
+    name,
+    contact_email: email,
+    contact_phone: phone,
+    referral_code: referralCode,
+    auth_user_id: authUserId,
+  })
+  if (insertErr) {
+    return {
+      success: false,
+      message: `Account created, but saving the referral partner record failed: ${insertErr.message}. The login (${email}) exists but isn't linked yet - contact support.`,
+    }
+  }
+
+  revalidatePath('/')
+  return {
+    success: true,
+    message: `Referral partner login created for ${name} (code: ${referralCode}).`,
+    password: passwordInput ? undefined : password,
+  }
+}
+
+type DeleteReferralState = { success: boolean; message: string } | null
+
+// Companion to createReferralSourceLogin. Refuses to run while any customer
+// is still linked to this referral source, same reasoning as
+// deleteCustomerLogin refusing while units are still attached - detaching
+// customers from their referral history isn't this action's job.
+async function deleteReferralSourceLogin(_prevState: DeleteReferralState, formData: FormData): Promise<DeleteReferralState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const referralSourceId = (formData.get('referral_source_id') as string) || ''
+  if (!referralSourceId) return { success: false, message: 'Choose a referral partner.' }
+
+  const { data: source } = await supabase
+    .from('referral_sources')
+    .select('id, name, auth_user_id')
+    .eq('id', referralSourceId)
+    .single()
+  if (!source) return { success: false, message: 'Referral partner not found.' }
+
+  const { count: customerCount } = await supabase
+    .from('customers')
+    .select('id', { count: 'exact', head: true })
+    .eq('referral_source_id', referralSourceId)
+  if ((customerCount ?? 0) > 0) {
+    return { success: false, message: `${source.name} still has ${customerCount} customer(s) linked - this can't be removed while referral history exists.` }
+  }
+
+  if (source.auth_user_id) {
+    const adminClient = createAdminClient()
+    if (!adminClient) {
+      return { success: false, message: 'SUPABASE_SERVICE_ROLE_KEY is not configured yet - cannot remove the login account.' }
+    }
+    const { error: deleteAuthErr } = await adminClient.auth.admin.deleteUser(source.auth_user_id)
+    const alreadyGone = deleteAuthErr && (
+      (deleteAuthErr as { status?: number }).status === 404 ||
+      /not.?found/i.test(deleteAuthErr.message)
+    )
+    if (deleteAuthErr && !alreadyGone) {
+      return { success: false, message: `Could not remove login account: ${deleteAuthErr.message}` }
+    }
+  }
+
+  const { data: deletedRows, error: deleteErr } = await supabase
+    .from('referral_sources')
+    .delete()
+    .eq('id', referralSourceId)
+    .select('id')
+  if (deleteErr) {
+    return { success: false, message: `Could not remove referral partner record: ${deleteErr.message}` }
+  }
+  if (!deletedRows || deletedRows.length === 0) {
+    return { success: false, message: `${source.name} was not removed - the delete affected no rows (likely a permissions issue).` }
+  }
+  revalidatePath('/')
+  return { success: true, message: `${source.name} removed, along with its login account if it had one.` }
 }
 
 async function scheduleFleetService(formData: FormData) {
@@ -972,6 +1170,7 @@ export default async function Home({
   const openUnitId = params.open || null
 
   const { data: customers } = await supabase.from('customers').select('*').order('name')
+  const { data: referralSources } = await supabase.from('referral_sources').select('*').order('name')
   const { data: allUnits } = await supabase.from('units').select('*').order('created_at', { ascending: false })
   const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
   const { data: unitOverridesAll } = await supabase.from('unit_part_overrides').select('*')
@@ -1723,6 +1922,14 @@ export default async function Home({
           />
         ) : null}
         <h3 className="text-lg sm:text-xl font-bold text-white truncate">{customer?.name || 'Unknown Customer'}</h3>
+        {customer?.referral_source_id && (
+          <span
+            title="Referred customer - premier welcome + first-service discount"
+            className="shrink-0 flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40"
+          >
+            ★ Referred
+          </span>
+        )}
         <span className="text-xs text-gray-400 shrink-0 ml-auto">{count} unit{count !== 1 ? 's' : ''}</span>
       </div>
     )
@@ -2334,6 +2541,52 @@ export default async function Home({
               customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
               action={createCustomerLogin}
             />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Referral Partners</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6 space-y-4">
+            <p className="text-xs text-gray-500">
+              Referral partners get their own read-only portal (<span className="text-orange-400">/referrer</span>) showing only the
+              customers who signed up with their code. Add as many as you like here - each gets their own login.
+            </p>
+            {(referralSources || []).length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
+                      <th className="py-2 pr-3">Name</th>
+                      <th className="py-2 pr-3">Code</th>
+                      <th className="py-2 pr-3">Email</th>
+                      <th className="py-2 pr-3">Phone</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {(referralSources || []).map(rs => (
+                      <tr key={rs.id}>
+                        <td className="py-2 pr-3 font-medium">{rs.name}</td>
+                        <td className="py-2 pr-3 text-orange-400 font-mono">{rs.referral_code}</td>
+                        <td className="py-2 pr-3 text-gray-400">{rs.contact_email}</td>
+                        <td className="py-2 pr-3 text-gray-400">{rs.contact_phone || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <CreateReferralSourceLoginForm action={createReferralSourceLogin} />
+            {(referralSources || []).length > 0 && (
+              <div className="pt-2 border-t border-zinc-800">
+                <DeleteReferralSourceLoginForm
+                  sources={(referralSources || []).map(rs => ({ id: rs.id, name: rs.name, referral_code: rs.referral_code }))}
+                  action={deleteReferralSourceLogin}
+                />
+              </div>
+            )}
           </div>
         </details>
 

@@ -255,6 +255,18 @@ export default function CheckInForm({
         {success && <p className="text-xs text-green-400 mt-1">Unit checked in</p>}
       </div>
 
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Referral Code (optional)</label>
+        <input
+          name="referral_code"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:border-orange-500"
+          placeholder="e.g. ELVIS"
+        />
+        <p className="text-xs text-gray-600 mt-1">
+          Only applies if this customer doesn&apos;t already have a referral on file.
+        </p>
+      </div>
+
       <div className="md:col-span-2 lg:col-span-3">
         <label className="block text-xs text-gray-500 mb-1">Customer Notes (optional)</label>
         <textarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="What the customer said is wrong..." />
