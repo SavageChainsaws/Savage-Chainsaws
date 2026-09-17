@@ -43,8 +43,14 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date()
-  const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
-  const invoiceNumber = `SC-${stamp}`
+  // Shared, atomic sequence (SC-0001, SC-0002, ...) - same one the
+  // per-unit route uses (see migration add_sequential_invoice_numbering),
+  // so numbering stays continuous across both invoice creation paths
+  // instead of each having its own disjoint scheme.
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number')
+  if (numberError || !invoiceNumber) {
+    return NextResponse.json({ error: 'Could not generate an invoice number. Please try again.' }, { status: 500 })
+  }
   const logoUrl = new URL('/images/logo.png', request.url).toString()
   const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 

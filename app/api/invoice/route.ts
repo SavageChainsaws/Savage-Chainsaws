@@ -85,7 +85,14 @@ export async function POST(request: NextRequest) {
   const partsLineItems = rawPartsLineItems.map(li => ({ ...li, sku: matchPartSku(li.description, resolvedParts) }))
 
   const now = new Date()
-  const invoiceNumber = `SC-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${unitId.slice(0, 6).toUpperCase()}`
+  // Shared, atomic sequence (SC-0001, SC-0002, ...) - see migration
+  // add_sequential_invoice_numbering. Replaces the old
+  // SC-<date>-<unit id prefix> format, which wasn't a clean sequence and
+  // wasn't unique across re-invoices of different units on the same day.
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number')
+  if (numberError || !invoiceNumber) {
+    return NextResponse.json({ error: 'Could not generate an invoice number. Please try again.' }, { status: 500 })
+  }
   const logoUrl = new URL('/images/logo.png', request.url).toString()
 
   const lineItems = [
