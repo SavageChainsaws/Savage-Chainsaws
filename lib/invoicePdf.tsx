@@ -24,8 +24,7 @@ const BRAND = {
 
 // Same fallback a customer's brand_color gets everywhere else it's used
 // (the customer-group divider on the admin dashboard) - keeps an
-// unbranded customer's Bill To box from looking unstyled/broken next to
-// Savage's own orange-accented From box.
+// unbranded customer's Bill To box from looking unstyled/broken.
 const DEFAULT_ACCENT = BRAND.orange
 
 const styles = StyleSheet.create({
@@ -33,11 +32,18 @@ const styles = StyleSheet.create({
   topBar: { height: 8, backgroundColor: BRAND.orange },
   body: { padding: 36, paddingTop: 28 },
 
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
   logo: { width: 150, height: 150, objectFit: 'contain', marginRight: 16 },
-  wordmark: { fontSize: 24, fontWeight: 700, color: BRAND.dark, letterSpacing: 0.5 },
+  headerRight: { alignItems: 'flex-end' },
+  wordmark: { fontSize: 24, fontWeight: 700, color: BRAND.dark, letterSpacing: 0.5, textAlign: 'right' },
   wordmarkAccent: { color: BRAND.orange },
-  invoiceTitle: { fontSize: 13, color: BRAND.muted, textTransform: 'uppercase', letterSpacing: 2, marginTop: 4 },
+  invoiceTitle: { fontSize: 13, color: BRAND.muted, textTransform: 'uppercase', letterSpacing: 2, marginTop: 4, textAlign: 'right' },
+  // Savage's own business info, printed compact right under the wordmark
+  // rather than in its own box - the itemized work and the customer's own
+  // info are what should dominate the page below this.
+  fromCompact: { marginTop: 14, alignItems: 'flex-end' },
+  fromCompactName: { fontSize: 10, fontWeight: 700, color: BRAND.dark, textAlign: 'right' },
+  fromCompactLine: { fontSize: 8.5, color: BRAND.muted, textAlign: 'right', marginTop: 1.5 },
 
   metaRow: {
     flexDirection: 'row',
@@ -51,12 +57,11 @@ const styles = StyleSheet.create({
   metaLabel: { fontSize: 8, color: '#bbbbbb', textTransform: 'uppercase', letterSpacing: 0.5 },
   metaValue: { fontSize: 12, fontWeight: 700, color: '#ffffff', marginTop: 2 },
 
-  twoCol: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   box: {
-    flex: 1,
     border: `1 solid ${BRAND.border}`,
     borderRadius: 6,
     padding: 12,
+    marginBottom: 12,
   },
   boxAccentBar: { height: 4, borderRadius: 2, marginBottom: 9 },
   boxTitle: {
@@ -69,8 +74,6 @@ const styles = StyleSheet.create({
   },
   boxLine: { fontSize: 9.5, color: '#333333', marginBottom: 2, lineHeight: 1.4 },
   boxNameLine: { fontSize: 12, fontWeight: 700, color: BRAND.dark, marginBottom: 3 },
-  legalDivider: { borderTop: `1 solid ${BRAND.border}`, marginTop: 6, marginBottom: 6 },
-  einLine: { fontSize: 8, color: '#888888', marginTop: 1 },
 
   billToLogoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   billToLogo: { width: 32, height: 32, objectFit: 'contain', marginRight: 8, borderRadius: 4 },
@@ -193,11 +196,25 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems
         <View style={styles.body}>
           <View style={styles.headerRow}>
             {logoUrl ? <PdfImage src={logoUrl} style={styles.logo} /> : <View />}
-            <View>
+            <View style={styles.headerRight}>
               <Text style={styles.wordmark}>
                 SAVAGE <Text style={styles.wordmarkAccent}>CHAINSAWS</Text>
               </Text>
               <Text style={styles.invoiceTitle}>Invoice</Text>
+
+              {/* Savage's own legal/contact info, kept compact under the
+                  wordmark rather than a full box - the customer's info and
+                  the actual work done are what fill the rest of the page. */}
+              <View style={styles.fromCompact}>
+                <Text style={styles.fromCompactName}>{BUSINESS.legalName}</Text>
+                <Text style={styles.fromCompactLine}>
+                  {BUSINESS.address}, {BUSINESS.addressLine2}
+                </Text>
+                <Text style={styles.fromCompactLine}>EIN {BUSINESS.ein}</Text>
+                <Text style={styles.fromCompactLine}>
+                  {BUSINESS.phone}  ·  {BUSINESS.email}  ·  {BUSINESS.website}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -212,34 +229,19 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems
             </View>
           </View>
 
-          <View style={styles.twoCol}>
-            <View style={styles.box}>
-              <View style={[styles.boxAccentBar, { backgroundColor: BRAND.orange }]} />
-              <Text style={styles.boxTitle}>From</Text>
-              <Text style={styles.boxNameLine}>{BUSINESS.legalName}</Text>
-              <Text style={styles.boxLine}>{BUSINESS.address}</Text>
-              <Text style={styles.boxLine}>{BUSINESS.addressLine2}</Text>
-              <Text style={styles.einLine}>EIN {BUSINESS.ein}</Text>
-              <View style={styles.legalDivider} />
-              <Text style={styles.boxLine}>{BUSINESS.phone}</Text>
-              <Text style={styles.boxLine}>{BUSINESS.email}</Text>
-              <Text style={styles.boxLine}>{BUSINESS.website}</Text>
-            </View>
-
-            <View style={styles.box}>
-              <View style={[styles.boxAccentBar, { backgroundColor: customerAccent }]} />
-              <Text style={styles.boxTitle}>Bill To</Text>
-              {customer.logoUrl ? (
-                <View style={styles.billToLogoRow}>
-                  <PdfImage src={customer.logoUrl} style={styles.billToLogo} />
-                  <Text style={styles.boxNameLine}>{customer.name}</Text>
-                </View>
-              ) : (
+          <View style={styles.box}>
+            <View style={[styles.boxAccentBar, { backgroundColor: customerAccent }]} />
+            <Text style={styles.boxTitle}>Bill To</Text>
+            {customer.logoUrl ? (
+              <View style={styles.billToLogoRow}>
+                <PdfImage src={customer.logoUrl} style={styles.billToLogo} />
                 <Text style={styles.boxNameLine}>{customer.name}</Text>
-              )}
-              {customer.email && <Text style={styles.boxLine}>{customer.email}</Text>}
-              {customer.phone && <Text style={styles.boxLine}>{customer.phone}</Text>}
-            </View>
+              </View>
+            ) : (
+              <Text style={styles.boxNameLine}>{customer.name}</Text>
+            )}
+            {customer.email && <Text style={styles.boxLine}>{customer.email}</Text>}
+            {customer.phone && <Text style={styles.boxLine}>{customer.phone}</Text>}
           </View>
 
           {hasUnit && unit && (
