@@ -15,19 +15,20 @@ const supabase = createClient()
 // hit hardest (double-clicking "send" or trying resend right away), and the
 // raw message ("For security purposes, you can only request this after Ns")
 // reads like a developer error, not something a customer expects.
-function getFriendlyOtpError(err: unknown): string {
+function isRateLimitedOtpError(err: unknown): boolean {
   const status = (err as { status?: number })?.status
   const code = ((err as { code?: string })?.code || '').toLowerCase()
   const message = ((err as { message?: string })?.message || '').toLowerCase()
-  const isRateLimited =
+  return (
     status === 429 ||
     code.includes('rate_limit') ||
     message.includes('rate limit') ||
     message.includes('security purposes')
-  if (isRateLimited) {
-    return "You've requested a login link recently. For security we limit how often we can send one - please wait about a minute and try again. Also worth checking your spam/junk folder for the earlier email."
-  }
-  return (err as { message?: string })?.message || 'Could not send a login link. Please try again in a moment.'
+  )
+}
+
+function getFriendlyOtpError(): string {
+  return "You've requested a login link recently. For security we limit how often we can send one - please wait about a minute and try again. Also worth checking your spam/junk folder for the earlier email."
 }
 
 // useSearchParams() requires a Suspense boundary to opt this one small
@@ -129,33 +130,27 @@ export default function CustomerLogin() {
     setError('')
     setLoading(true)
 
-    // Check the email belongs to a known customer before sending anything -
-    // otherwise a typo'd or unregistered address still shows "check your
-    // email" even though nothing was actually sent.
-    const { data: knownEmail, error: lookupError } = await supabase.rpc('customer_email_exists', {
-      check_email: targetEmail,
-    })
-    if (lookupError) {
-      setError('Could not verify that email right now. Please try again in a moment.')
-      setLoading(false)
-      return
-    }
-    if (!knownEmail) {
-      setError("We don't have an account for that email. Double-check for typos, or create a new account below.")
-      setLoading(false)
-      return
-    }
-
+    // shouldCreateUser: false so a typo'd or unregistered address doesn't
+    // silently create a brand new, forever-unlinked auth account on every
+    // attempt. Whether or not that rejection happens (or the email really
+    // doesn't have an account), we deliberately don't reveal which - same
+    // anti-enumeration reasoning as handleForgotPassword above. There used
+    // to be an upfront existence check here to show a more specific "no
+    // account for that email" message, but it was itself an oracle
+    // (customer_email_exists, callable by anyone, unauthenticated) - a
+    // rate-limit error is the one case still worth surfacing distinctly,
+    // since it isn't account-specific.
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email: targetEmail,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/customer`,
+        shouldCreateUser: false,
       },
     })
 
     setLoading(false)
-    if (otpError) {
-      setError(getFriendlyOtpError(otpError))
+    if (otpError && isRateLimitedOtpError(otpError)) {
+      setError(getFriendlyOtpError())
       return
     }
     setLinkSent(true)

@@ -51,7 +51,7 @@ export default function FeedbackPage() {
     const { data: cust } = await supabase
       .from('customers')
       .select('id, name, email')
-      .ilike('email', user.email ?? '')
+      .eq('auth_user_id', user.id)
       .maybeSingle()
 
     if (cust) {

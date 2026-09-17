@@ -5,19 +5,27 @@ import { renderInvoicePdf } from '@/lib/invoicePdf'
 // Admin-only. Builds a free-form, itemized PDF invoice from whatever the
 // admin submitted - whether those fields came from selecting a customer
 // (autofilled client-side, then possibly hand-edited) or were typed from
-// scratch. Either way the server just takes the submitted values as-is;
-// there's no server-side customer lookup, so this also works for a
-// one-off invoice with no tracked customer or unit at all.
+// scratch. The submitted name/email/phone are always taken as-is (an
+// admin can hand-edit them after selecting a customer, and that edit
+// should stick) - this also works for a one-off invoice with no tracked
+// customer or unit at all. customer_id is only used to pull that
+// customer's logo/brand color for the PDF and to link the saved invoices
+// row back to them; it's never used to override the text fields.
 export async function POST(request: NextRequest) {
-  const { isAdmin } = await getSessionInfo()
+  const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   }
 
   const formData = await request.formData()
+  const customerId = ((formData.get('customer_id') as string) || '').trim() || null
   const customerName = ((formData.get('customer_name') as string) || '').trim() || 'Customer'
   const customerEmail = ((formData.get('customer_email') as string) || '').trim() || null
   const customerPhone = ((formData.get('customer_phone') as string) || '').trim() || null
+
+  const { data: linkedCustomer } = customerId
+    ? await supabase.from('customers').select('logo_url, brand_color').eq('id', customerId).maybeSingle()
+    : { data: null }
 
   const unitModel = ((formData.get('unit_model') as string) || '').trim() || null
   const unitSerial = ((formData.get('unit_serial') as string) || '').trim() || null
@@ -35,18 +43,64 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date()
-  const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
-  const invoiceNumber = `SC-${stamp}`
+  // Shared, atomic sequence (SC-0001, SC-0002, ...) - same one the
+  // per-unit route uses (see migration add_sequential_invoice_numbering),
+  // so numbering stays continuous across both invoice creation paths
+  // instead of each having its own disjoint scheme.
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number')
+  if (numberError || !invoiceNumber) {
+    return NextResponse.json({ error: 'Could not generate an invoice number. Please try again.' }, { status: 500 })
+  }
   const logoUrl = new URL('/images/logo.png', request.url).toString()
+  const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 
   const pdfBuffer = await renderInvoicePdf({
     invoiceNumber,
     invoiceDate: now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-    customer: { name: customerName, email: customerEmail, phone: customerPhone },
+    customer: {
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone,
+      logoUrl: linkedCustomer?.logo_url ?? null,
+      brandColor: linkedCustomer?.brand_color ?? null,
+    },
     unit: hasUnitInfo ? { model: unitModel, serialNumber: unitSerial, equipmentType: unitEquipmentType } : null,
     lineItems,
     logoUrl,
   })
+
+  // Best-effort record for the admin's own bookkeeping (see /invoices) -
+  // standalone invoices didn't save anything at all before this. No
+  // unit_id, since "unit info" here is free-typed text, not a real
+  // tracked unit to link to.
+  try {
+    const { data: invoiceRow } = await supabase
+      .from('invoices')
+      .insert({
+        customer_id: customerId,
+        customer_name: customerName,
+        invoice_number: invoiceNumber,
+        line_items: lineItems,
+        amount: invoiceTotal,
+        description: `Invoice ${invoiceNumber}`,
+        status: 'sent',
+      })
+      .select('id')
+      .single()
+
+    if (invoiceRow?.id) {
+      const fileName = `${invoiceRow.id}.pdf`
+      const { error: uploadError } = await supabase.storage
+        .from('invoices')
+        .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true })
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+        await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceRow.id)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to save generated custom invoice:', err)
+  }
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     headers: {

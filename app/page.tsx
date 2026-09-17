@@ -291,10 +291,11 @@ async function updateUnitWarranty(formData: FormData) {
   revalidatePath('/')
 }
 
-// Sets the email a customer logs into their portal with. link_customer_account
-// (called from the customer portal on load) matches against this same
-// column, so this is also what links a customer's portal account to their
-// records.
+// Sets the email a customer logs into their portal with. Note this does NOT
+// change which auth account the customer row is linked to - auth_user_id is
+// only ever set by createCustomerLogin below. If a login already exists and
+// its actual Auth email differs from what's set here, re-run "Create
+// Customer Login" for the same customer to keep them in sync.
 async function updateCustomerEmail(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -314,9 +315,14 @@ function generateDefaultPassword() {
 // Admin-controlled account creation - creates the Supabase Auth user
 // directly (via the service-role client, since the anon-key client can't
 // call auth.admin.createUser) rather than the customer signing up
-// themselves. link_customer_account (called from the customer portal on
-// login) picks up the auth_user_id <-> customers link automatically once
-// customers.email matches, same as the public signup flow.
+// themselves. This is the ONLY path that links a customers row to an
+// auth_user_id: it sets auth_user_id directly from the id createUser()
+// just returned, rather than relying on any email-match lookup, so a
+// customers row is never linked to an account nobody here explicitly
+// created. Do not reintroduce an email-based auto-link - that was the
+// account-takeover vulnerability (see link_customer_account in the DB,
+// now admin-only and id-based, and the removed public-signup insert
+// policy on customers).
 async function createCustomerLogin(_prevState: CreateLoginState, formData: FormData): Promise<CreateLoginState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -338,7 +344,7 @@ async function createCustomerLogin(_prevState: CreateLoginState, formData: FormD
   }
 
   const password = passwordInput || generateDefaultPassword()
-  const { error: createErr } = await adminClient.auth.admin.createUser({
+  const { data: createData, error: createErr } = await adminClient.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -346,11 +352,19 @@ async function createCustomerLogin(_prevState: CreateLoginState, formData: FormD
   if (createErr) {
     return { success: false, message: `Could not create account: ${createErr.message}` }
   }
+  const authUserId = createData.user?.id
+  if (!authUserId) {
+    return { success: false, message: 'Account created, but no user id was returned - cannot link it to a customer.' }
+  }
 
-  if (customerId) {
-    await supabase.from('customers').update({ email }).eq('id', customerId)
-  } else {
-    await supabase.from('customers').insert({ name: newCustomerName, email })
+  const { error: linkErr } = customerId
+    ? await supabase.from('customers').update({ email, auth_user_id: authUserId }).eq('id', customerId)
+    : await supabase.from('customers').insert({ name: newCustomerName, email, auth_user_id: authUserId })
+  if (linkErr) {
+    return {
+      success: false,
+      message: `Account created, but linking it to the customer record failed: ${linkErr.message}. The login (${email}) exists but won't see any records yet - contact support.`,
+    }
   }
 
   revalidatePath('/')
@@ -1799,6 +1813,12 @@ export default async function Home({
               className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
             >
               Parts
+            </Link>
+            <Link
+              href="/invoices"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Invoices
             </Link>
             <ContactLinksBar />
             <PushToggle label="Push" />

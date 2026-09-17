@@ -1,7 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionInfo } from '@/lib/supabase/server'
-import { resolveUnitParts } from '@/lib/parts'
+import { resolveUnitParts, type ResolvedPart } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
+
+// Admin types a free-text Parts line item (e.g. "Replacement chain") with
+// no dropdown tying it to a specific catalog part, so there's no exact key
+// to join on - only the resolved model-parts/overrides list for this unit.
+// Score each candidate by how many significant (4+ letter/digit) words it
+// shares with the typed description and take the best match, so "Stock
+// mower blade" correctly prefers "STOCK MOWER BLADE" over the less
+// specific "HIGH LIFT BLADE" rather than matching on "blade" alone.
+// Returns undefined (no SKU shown) rather than guess when nothing shares
+// a word - a missing SKU is far less misleading than a wrong one on a
+// document customers use for their own bookkeeping.
+function matchPartSku(description: string, parts: ResolvedPart[]): string | undefined {
+  const descWords = new Set((description.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length >= 4))
+  if (descWords.size === 0) return undefined
+  let best: { sku: string; score: number } | null = null
+  for (const p of parts) {
+    const nameWords = (p.part_name.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length >= 4)
+    const score = nameWords.filter(w => descWords.has(w)).length
+    if (score > 0 && (!best || score > best.score)) best = { sku: p.sku, score }
+  }
+  return best?.sku
+}
 
 // Admin-only. Generates a PDF invoice on demand from a unit's current
 // data plus admin-entered fee amounts, and saves it as the unit's current
@@ -26,7 +48,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing unit_id' }, { status: 400 })
   }
 
-  const partsLineItems = partsDescriptions
+  const rawPartsLineItems = partsDescriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
   const laborLineItems = laborDescriptions
@@ -34,7 +56,7 @@ export async function POST(request: NextRequest) {
     .filter(li => li.description.length > 0)
   const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
 
-  if (partsLineItems.length === 0 && laborLineItems.length === 0 && !priorityFee) {
+  if (rawPartsLineItems.length === 0 && laborLineItems.length === 0 && !priorityFee) {
     return NextResponse.json({ error: 'Add at least one line item with a description.' }, { status: 400 })
   }
 
@@ -48,17 +70,29 @@ export async function POST(request: NextRequest) {
   }
 
   const { data: customer } = unit.customer_id
-    ? await supabase.from('customers').select('name, email, phone').eq('id', unit.customer_id).single()
+    ? await supabase.from('customers').select('name, email, phone, logo_url, brand_color').eq('id', unit.customer_id).single()
     : { data: null }
 
   const [{ data: modelPartsAll }, { data: unitOverrides }] = await Promise.all([
     supabase.from('model_parts').select('*'),
     supabase.from('unit_part_overrides').select('*').eq('unit_id', unitId),
   ])
-  const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverrides || [])
+  const resolvedParts = resolveUnitParts(unit, modelPartsAll || [], unitOverrides || [])
+  // Attach each Parts line item's best-matching SKU (if any) so it prints
+  // directly under that line in the PDF, instead of every resolved part
+  // for the unit's model being dumped in one disconnected list at the
+  // bottom regardless of what was actually invoiced.
+  const partsLineItems = rawPartsLineItems.map(li => ({ ...li, sku: matchPartSku(li.description, resolvedParts) }))
 
   const now = new Date()
-  const invoiceNumber = `SC-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${unitId.slice(0, 6).toUpperCase()}`
+  // Shared, atomic sequence (SC-0001, SC-0002, ...) - see migration
+  // add_sequential_invoice_numbering. Replaces the old
+  // SC-<date>-<unit id prefix> format, which wasn't a clean sequence and
+  // wasn't unique across re-invoices of different units on the same day.
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number')
+  if (numberError || !invoiceNumber) {
+    return NextResponse.json({ error: 'Could not generate an invoice number. Please try again.' }, { status: 500 })
+  }
   const logoUrl = new URL('/images/logo.png', request.url).toString()
 
   const lineItems = [
@@ -75,6 +109,8 @@ export async function POST(request: NextRequest) {
       name: customer?.name || 'Customer',
       email: customer?.email ?? null,
       phone: customer?.phone ?? null,
+      logoUrl: customer?.logo_url ?? null,
+      brandColor: customer?.brand_color ?? null,
     },
     unit: {
       model: unit.model,
@@ -84,35 +120,50 @@ export async function POST(request: NextRequest) {
       thumbnailUrl: unit.thumbnail_url || unit.photo_url || null,
     },
     lineItems,
-    parts: parts.map(p => ({ name: p.part_name, sku: p.sku })),
     logoUrl,
   })
 
   // Best-effort: save this as the unit's current invoice/quote so it shows
   // up for the customer (e.g. alongside diagnosis notes, before they
-  // decide). A storage/DB hiccup here shouldn't block handing the admin
-  // back the PDF they just generated. Also records the total in the
-  // invoices table - previously unused - so the customer's simplified
-  // Needs Approval prompt can show the dollar amount without requiring
-  // them to open the PDF.
+  // decide), and as a full itemized record in the invoices table for the
+  // admin's own bookkeeping (see /invoices). A storage/DB hiccup here
+  // shouldn't block handing the admin back the PDF they just generated.
+  //
+  // The invoices row is inserted BEFORE the storage upload so the upload
+  // path can key off the row's own id, which is always unique - the
+  // previous `${unitId}-${invoiceNumber}` filename collided (same day +
+  // same unit = same name) whenever a unit was re-invoiced more than once
+  // in one day, silently failing the re-upload since it used upsert:false.
   try {
-    const fileName = `${unitId}-${invoiceNumber}.pdf`
+    const { data: invoiceRow } = await supabase
+      .from('invoices')
+      .insert({
+        unit_id: unitId,
+        customer_id: unit.customer_id,
+        customer_name: customer?.name || null,
+        invoice_number: invoiceNumber,
+        line_items: lineItems,
+        amount: invoiceTotal,
+        description: `Invoice ${invoiceNumber}`,
+        status: 'sent',
+      })
+      .select('id')
+      .single()
+
+    const fileName = `${invoiceRow?.id || `${unitId}-${invoiceNumber}`}.pdf`
     const { error: uploadError } = await supabase.storage
       .from('invoices')
       .upload(fileName, pdfBuffer, {
         contentType: 'application/pdf',
-        upsert: false,
+        upsert: true,
       })
     if (!uploadError) {
       const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
       await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
+      if (invoiceRow?.id) {
+        await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceRow.id)
+      }
     }
-    await supabase.from('invoices').insert({
-      unit_id: unitId,
-      amount: invoiceTotal,
-      description: `Invoice ${invoiceNumber}`,
-      status: 'sent',
-    })
   } catch (err) {
     console.error('Failed to save generated invoice to unit:', err)
   }

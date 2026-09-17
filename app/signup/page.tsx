@@ -2,18 +2,25 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SiteFooter from '../components/SiteFooter'
 
+// Public signup creates an Auth user ONLY - it never creates or links a
+// customers row. That linking (setting customers.auth_user_id) is done
+// exclusively by an admin via "Create Customer Login" in app/page.tsx,
+// which sets it directly from the id it just created. This is deliberate:
+// a self-service signup used to also insert/match a customers row by
+// email with no verification, which let anyone claim an existing
+// company's account just by typing their email address. Do not restore
+// that - see the account-takeover fix this replaced.
 export default function SignupPage() {
-  const router = useRouter()
   const [companyName, setCompanyName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [submitted, setSubmitted] = useState<{ needsConfirmation: boolean } | null>(null)
 
   const supabase = createClient()
 
@@ -37,8 +44,7 @@ export default function SignupPage() {
       return
     }
 
-    // 1) Create login
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
       options: {
@@ -55,36 +61,51 @@ export default function SignupPage() {
       return
     }
 
-    const userId = authData.user?.id ?? null
-
-    // 2) Create company row so portal works immediately
-    const { error: customerError } = await supabase.from('customers').insert({
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      auth_user_id: userId,
-    })
-
-    if (customerError) {
-      const msg = (customerError.message || '').toLowerCase()
-      if (!msg.includes('duplicate') && !msg.includes('unique')) {
-        setError(
-          `Account created, but company setup failed: ${customerError.message}. Contact Jesse with this email: ${cleanEmail}`
-        )
-        setLoading(false)
-        return
-      }
+    // Never grant portal access from this flow - only an admin creating a
+    // login (Create Customer Login) links an account to real data. If
+    // email confirmation is off at the project level this may still return
+    // an active session; sign it out immediately so nobody is left with a
+    // dangling authenticated-but-unlinked session.
+    if (data.session) {
+      await supabase.auth.signOut()
     }
 
-    // 3) Into the portal (or login if email confirm is on)
-    if (authData.session) {
-      router.push('/customer')
-      router.refresh()
-    } else {
-      setLoading(false)
-      alert('Account created. Log in to open your portal.')
-      router.push('/login')
-    }
+    setSubmitted({ needsConfirmation: !data.session })
+    setLoading(false)
+  }
+
+  if (submitted) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <img
+            src="/images/logo.png"
+            alt="Savage Chainsaws"
+            className="h-16 w-16 mx-auto object-contain mb-4"
+          />
+          <h1 className="text-2xl font-bold tracking-tight mb-6">
+            SAVAGE <span className="text-orange-500">CHAINSAWS</span>
+          </h1>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-3">
+            <h2 className="text-lg font-semibold">Request Received</h2>
+            <p className="text-sm text-gray-400">
+              {submitted.needsConfirmation
+                ? 'Check your email and click the confirmation link to verify your address. '
+                : ''}
+              An admin will review your request and set up your portal access - you&apos;ll
+              be notified once it&apos;s ready.
+            </p>
+            <Link
+              href="/login"
+              className="inline-block mt-2 bg-orange-600 hover:bg-orange-500 text-white font-medium py-2.5 px-6 rounded-lg transition"
+            >
+              Back to Login
+            </Link>
+          </div>
+          <SiteFooter />
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -99,7 +120,7 @@ export default function SignupPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             SAVAGE <span className="text-orange-500">CHAINSAWS</span>
           </h1>
-          <p className="text-gray-400 text-sm mt-1">Create Your Customer Account</p>
+          <p className="text-gray-400 text-sm mt-1">Request a Customer Account</p>
         </div>
 
         <form
@@ -158,7 +179,8 @@ export default function SignupPage() {
           </div>
 
           <p className="text-xs text-gray-500 bg-zinc-800/80 rounded-lg px-3 py-2">
-            After you create this account you can open your portal right away. Jesse will see your company and can add units.
+            This submits a request only - an admin reviews every new account and sets up
+            your portal access before you can log in.
           </p>
 
           {error && (
@@ -172,7 +194,7 @@ export default function SignupPage() {
             disabled={loading}
             className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-medium py-2.5 rounded-lg transition"
           >
-            {loading ? 'Creating account…' : 'Create Account & Continue'}
+            {loading ? 'Submitting…' : 'Request Account'}
           </button>
 
           <p className="text-center text-sm text-gray-400">
