@@ -26,6 +26,7 @@ import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateReferralSourceLoginForm from './components/CreateReferralSourceLoginForm'
 import DeleteReferralSourceLoginForm from './components/DeleteReferralSourceLoginForm'
+import CopyReferralLink from './components/CopyReferralLink'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
@@ -2563,6 +2564,7 @@ export default async function Home({
                       <th className="py-2 pr-3">Code</th>
                       <th className="py-2 pr-3">Email</th>
                       <th className="py-2 pr-3">Phone</th>
+                      <th className="py-2 pr-3">Signup Link</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800">
@@ -2572,6 +2574,9 @@ export default async function Home({
                         <td className="py-2 pr-3 text-orange-400 font-mono">{rs.referral_code}</td>
                         <td className="py-2 pr-3 text-gray-400">{rs.contact_email}</td>
                         <td className="py-2 pr-3 text-gray-400">{rs.contact_phone || '-'}</td>
+                        <td className="py-2 pr-3">
+                          <CopyReferralLink code={rs.referral_code} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
