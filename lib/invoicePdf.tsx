@@ -39,9 +39,19 @@ const styles = StyleSheet.create({
   wordmarkAccent: { color: BRAND.orange },
   invoiceTitle: { fontSize: 11, color: BRAND.muted, textTransform: 'uppercase', letterSpacing: 2, marginTop: 2, textAlign: 'right' },
   // Savage's own business info, printed compact right under the wordmark
-  // rather than in its own box - the itemized work and the customer's own
-  // info are what should dominate the page below this.
-  fromCompact: { marginTop: 8, alignItems: 'flex-end' },
+  // rather than a full-width box - the itemized work and the customer's
+  // own info are what should dominate the page below this. Still boxed
+  // (matching Bill To's treatment) but sized to its own content instead
+  // of spanning the page.
+  fromBox: {
+    alignSelf: 'flex-end',
+    alignItems: 'flex-end',
+    marginTop: 8,
+    border: `1 solid ${BRAND.border}`,
+    borderRadius: 6,
+    padding: 8,
+  },
+  fromAccentBar: { height: 3, width: 60, borderRadius: 2, marginBottom: 5, backgroundColor: BRAND.orange, alignSelf: 'flex-end' },
   fromCompactName: { fontSize: 9.5, fontWeight: 700, color: BRAND.dark, textAlign: 'right' },
   fromCompactLine: { fontSize: 8, color: BRAND.muted, textAlign: 'right', marginTop: 1 },
 
@@ -116,7 +126,8 @@ const styles = StyleSheet.create({
   colDescription: { flex: 1 },
   colAmount: { width: 80, textAlign: 'right' },
   tableHeaderText: { fontSize: 8, color: '#ffffff', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 },
-  partLine: { fontSize: 9, color: '#666666', paddingHorizontal: 8, paddingVertical: 1.5 },
+  descriptionText: { fontSize: 10 },
+  skuLine: { fontSize: 7.5, color: BRAND.muted, marginTop: 1 },
 
   totalsRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 },
   totalsBlock: {
@@ -147,7 +158,11 @@ function money(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
-export type InvoiceLineItem = { description: string; amount: number }
+// sku is optional and only ever set for a tracked unit's Parts line items,
+// matched against that unit's resolved model parts/overrides (see
+// app/api/invoice/route.ts) - the custom/free-form invoice has no unit
+// record to resolve parts from, so its line items never carry one.
+export type InvoiceLineItem = { description: string; amount: number; sku?: string | null }
 
 export type InvoicePdfInput = {
   invoiceNumber: string
@@ -175,16 +190,12 @@ export type InvoicePdfInput = {
     thumbnailUrl?: string | null
   } | null
   lineItems: InvoiceLineItem[]
-  // Informational only - the resolved Parts & SKUs list for a tracked unit,
-  // printed under the line items as reference. Not used by the custom/
-  // free-form invoice, which has no unit record to resolve parts from.
-  parts?: { name: string; sku: string }[]
   // Savage Chainsaws' own logo - kept as an input (rather than hardcoded)
   // so the API routes control the absolute URL, same as before.
   logoUrl?: string | null
 }
 
-function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems, parts, logoUrl }: InvoicePdfInput) {
+function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems, logoUrl }: InvoicePdfInput) {
   const grandTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
   const hasUnit = !!unit && (unit.model || unit.serialNumber || unit.equipmentType || unit.nickname || unit.thumbnailUrl)
   const customerAccent = customer.brandColor || DEFAULT_ACCENT
@@ -203,9 +214,13 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems
               <Text style={styles.invoiceTitle}>Invoice</Text>
 
               {/* Savage's own legal/contact info, kept compact under the
-                  wordmark rather than a full box - the customer's info and
-                  the actual work done are what fill the rest of the page. */}
-              <View style={styles.fromCompact}>
+                  wordmark - boxed to match Bill To's treatment, but sized
+                  to its own content rather than spanning the page, since
+                  the customer's info and the actual work done are what
+                  should fill the rest of it. */}
+              <View style={styles.fromBox}>
+                <View style={styles.fromAccentBar} />
+                <Text style={styles.boxTitle}>From</Text>
                 <Text style={styles.fromCompactName}>{BUSINESS.legalName}</Text>
                 <Text style={styles.fromCompactLine}>
                   {BUSINESS.address}, {BUSINESS.addressLine2}
@@ -270,18 +285,13 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems
 
             {lineItems.map((li, i) => (
               <View key={i} style={styles.tableRow}>
-                <Text style={styles.colDescription}>{li.description}</Text>
+                <View style={styles.colDescription}>
+                  <Text style={styles.descriptionText}>{li.description}</Text>
+                  {li.sku && <Text style={styles.skuLine}>SKU: {li.sku}</Text>}
+                </View>
                 <Text style={styles.colAmount}>{money(li.amount)}</Text>
               </View>
             ))}
-
-            {parts && parts.length > 0 && (
-              <View>
-                {parts.map((p, i) => (
-                  <Text key={i} style={styles.partLine}>- {p.name} ({p.sku})</Text>
-                ))}
-              </View>
-            )}
           </View>
 
           <View style={styles.totalsRow}>
