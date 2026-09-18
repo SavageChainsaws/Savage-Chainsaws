@@ -3,11 +3,127 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { sendEmail } from '@/lib/email'
+import { createSquarePaymentLink, getSquareOrderPaidStatus } from '@/lib/square'
 import SendInvoiceButton from '../components/SendInvoiceButton'
 import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
+import InvoicePaymentActions from '../components/InvoicePaymentActions'
+import MarkPaidToggle from '../components/MarkPaidToggle'
 
 type SendInvoiceState = { success: boolean; message: string } | null
 type DeleteInvoiceState = { success: boolean; message: string } | null
+type GenerateLinkState = { success: boolean; message: string; url?: string } | null
+type CheckStatusState = { success: boolean; message: string; paid?: boolean } | null
+type MarkPaidState = { success: boolean; message: string } | null
+
+// Payment links are generated on demand only - never automatically when an
+// invoice is created - so the admin can finalize/edit the invoice first and
+// only generate one once confident the total is correct. Square's own
+// hosted checkout page (Payment Links / Checkout API) collects the card;
+// no payment data ever touches this app.
+async function generatePaymentLink(_prevState: GenerateLinkState, formData: FormData): Promise<GenerateLinkState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, amount, customer_email, customer_id, square_payment_link_url')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { success: false, message: 'Invoice not found.' }
+  if (invoice.square_payment_link_url) {
+    return { success: true, message: 'Payment link already exists.', url: invoice.square_payment_link_url }
+  }
+
+  const invoiceNumber = invoice.invoice_number || invoiceId.slice(0, 8)
+  const amountCents = Math.round((Number(invoice.amount) || 0) * 100)
+  if (amountCents <= 0) {
+    return { success: false, message: 'This invoice has no positive total to charge.' }
+  }
+
+  let buyerEmail = invoice.customer_email
+  if (!buyerEmail && invoice.customer_id) {
+    const { data: customer } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).maybeSingle()
+    buyerEmail = customer?.email ?? null
+  }
+
+  const result = await createSquarePaymentLink({
+    invoiceNumber,
+    amountCents,
+    buyerEmail,
+    redirectUrl: 'https://app.savagechainsaws.com/invoices',
+  })
+  if (!result.ok) return { success: false, message: result.error }
+
+  await supabase
+    .from('invoices')
+    .update({
+      square_payment_link_id: result.paymentLinkId,
+      square_order_id: result.orderId,
+      square_payment_link_url: result.url,
+    })
+    .eq('id', invoiceId)
+  revalidatePath('/invoices')
+
+  return { success: true, message: 'Payment link generated.', url: result.url }
+}
+
+// Manual fallback for payment-status sync, alongside the webhook (see
+// app/api/webhooks/square/route.ts) - checks Square's own Orders API
+// directly rather than assuming payment happened just because a link was
+// generated or opened.
+async function checkPaymentStatus(_prevState: CheckStatusState, formData: FormData): Promise<CheckStatusState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('id, square_order_id, paid_at')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { success: false, message: 'Invoice not found.' }
+  if (!invoice.square_order_id) return { success: false, message: 'No payment link generated yet.' }
+  if (invoice.paid_at) return { success: true, message: 'Already marked paid.', paid: true }
+
+  const result = await getSquareOrderPaidStatus(invoice.square_order_id)
+  if (!result.ok) return { success: false, message: result.error }
+
+  if (result.paid) {
+    await supabase.from('invoices').update({ paid_at: new Date().toISOString(), paid_via: 'square' }).eq('id', invoiceId)
+    revalidatePath('/invoices')
+    return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
+  }
+  return { success: true, message: 'Not paid yet.', paid: false }
+}
+
+// Online payment via Square is additive, never required - a customer who
+// pays by Zelle, Cash App, or tap-to-pay in person still needs the invoice
+// to reflect that they've paid.
+async function toggleManualPaid(_prevState: MarkPaidState, formData: FormData): Promise<MarkPaidState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  const nextPaid = formData.get('next_paid') === 'true'
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+
+  const { error } = await supabase
+    .from('invoices')
+    .update(nextPaid ? { paid_at: new Date().toISOString(), paid_via: 'manual' } : { paid_at: null, paid_via: null })
+    .eq('id', invoiceId)
+  if (error) return { success: false, message: `Could not update: ${error.message}` }
+
+  revalidatePath('/invoices')
+  return { success: true, message: nextPaid ? 'Marked paid.' : 'Marked unpaid.' }
+}
 
 // Permanently removes an invoice record and its stored PDF together - the
 // PDF is deleted first so a failure there (rather than a merely-missing
@@ -77,7 +193,7 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, invoice_number, amount, pdf_url, customer_name')
+    .select('id, invoice_number, amount, pdf_url, customer_name, square_payment_link_url, paid_at')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
@@ -88,11 +204,19 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
   const invoiceNumber = invoice.invoice_number || 'your invoice'
   const total = Number(invoice.amount) || 0
   const greetingName = invoice.customer_name || 'there'
+  // Only included if a payment link was already generated (never auto-
+  // generated here) and the invoice isn't already marked paid - a real
+  // tappable button in the email body, not just something inside the PDF
+  // attachment.
+  const payNowButton = invoice.square_payment_link_url && !invoice.paid_at
+    ? `<p style="margin: 20px 0;"><a href="${invoice.square_payment_link_url}" style="background-color:#ea580c;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Pay Now - $${total.toFixed(2)}</a></p>`
+    : ''
 
   const html = `
     <p>Hi ${greetingName},</p>
     <p>Please find your invoice attached from Savage Chainsaws.</p>
     <p><strong>Invoice ${invoiceNumber}</strong><br/>Total due: <strong>$${total.toFixed(2)}</strong></p>
+    ${payNowButton}
     <p>If you have any questions, just reply to this email.</p>
     <p>Thanks for choosing Savage Chainsaws!</p>
   `
@@ -131,7 +255,7 @@ export default async function InvoicesPage() {
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, unit_id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, units(invoice_url, model, nickname, customers(name, email)), customers(name, email)'
+      'id, unit_id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, units(invoice_url, model, nickname, customers(name, email)), customers(name, email)'
     )
     .order('created_at', { ascending: false })
 
@@ -160,6 +284,9 @@ export default async function InvoicesPage() {
       unitLabel: unitLabel?.nickname || unitLabel?.model || null,
       sentAt: inv.sent_at as string | null,
       sentTo: inv.sent_to as string | null,
+      paymentLinkUrl: inv.square_payment_link_url as string | null,
+      paidAt: inv.paid_at as string | null,
+      paidVia: inv.paid_via as string | null,
     }
   })
 
@@ -222,6 +349,7 @@ export default async function InvoicesPage() {
                   <th className="px-3 py-3 text-right">Total</th>
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">Sent</th>
+                  <th className="px-3 py-3">Payment</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -245,19 +373,33 @@ export default async function InvoicesPage() {
                         <span className="text-gray-600">Not sent</span>
                       )}
                     </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {r.paidAt ? (
+                        <span
+                          className="text-xs px-2 py-1 rounded-full font-medium bg-green-500/20 text-green-400"
+                          title={r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
+                        >
+                          Paid
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-1 rounded-full font-medium bg-zinc-700 text-gray-300">
+                          Unpaid
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex flex-wrap items-start justify-end gap-3">
                         {r.pdfUrl ? (
                           <a
                             href={r.pdfUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-xs text-orange-400 hover:text-orange-300"
+                            className="text-xs text-orange-400 hover:text-orange-300 pt-1"
                           >
                             View PDF →
                           </a>
                         ) : (
-                          <span className="text-xs text-gray-600">No PDF saved</span>
+                          <span className="text-xs text-gray-600 pt-1">No PDF saved</span>
                         )}
                         {r.pdfUrl && (
                           <SendInvoiceButton
@@ -267,6 +409,14 @@ export default async function InvoicesPage() {
                             action={sendInvoiceEmail}
                           />
                         )}
+                        <InvoicePaymentActions
+                          invoiceId={r.id}
+                          paymentLinkUrl={r.paymentLinkUrl}
+                          isPaid={!!r.paidAt}
+                          generateAction={generatePaymentLink}
+                          checkStatusAction={checkPaymentStatus}
+                        />
+                        <MarkPaidToggle invoiceId={r.id} isPaid={!!r.paidAt} action={toggleManualPaid} />
                         <DeleteInvoiceButton
                           invoiceId={r.id}
                           invoiceNumber={r.invoiceNumber}
@@ -278,7 +428,7 @@ export default async function InvoicesPage() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-gray-500 text-center">
+                    <td colSpan={9} className="px-6 py-8 text-gray-500 text-center">
                       No invoices generated yet.
                     </td>
                   </tr>
