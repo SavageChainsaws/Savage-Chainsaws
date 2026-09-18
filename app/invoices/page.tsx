@@ -4,8 +4,48 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { sendEmail } from '@/lib/email'
 import SendInvoiceButton from '../components/SendInvoiceButton'
+import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
 
 type SendInvoiceState = { success: boolean; message: string } | null
+type DeleteInvoiceState = { success: boolean; message: string } | null
+
+// Permanently removes an invoice record and its stored PDF together - the
+// PDF is deleted first so a failure there (rather than a merely-missing
+// file, which Supabase Storage treats as a no-op) blocks the DB delete too,
+// never leaving an orphaned file with nothing left pointing at it. The
+// filename is always `${invoiceId}.pdf` (see app/api/invoice/route.ts and
+// app/api/invoice/custom/route.ts - both key the upload off the row's own
+// id), so there's no need to parse it back out of pdf_url.
+async function deleteInvoice(_prevState: DeleteInvoiceState, formData: FormData): Promise<DeleteInvoiceState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, pdf_url')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { success: false, message: 'Invoice not found.' }
+
+  if (invoice.pdf_url) {
+    const { error: removeError } = await supabase.storage.from('invoices').remove([`${invoiceId}.pdf`])
+    if (removeError) {
+      return { success: false, message: `Could not delete the stored PDF: ${removeError.message}. Nothing was removed.` }
+    }
+  }
+
+  const { error: deleteError } = await supabase.from('invoices').delete().eq('id', invoiceId)
+  if (deleteError) {
+    return { success: false, message: `Could not delete invoice record: ${deleteError.message}` }
+  }
+
+  revalidatePath('/invoices')
+  return { success: true, message: `Invoice ${invoice.invoice_number || ''} deleted.` }
+}
 
 // Emails the already-generated PDF (from Supabase Storage, same public
 // "invoices" bucket every invoice route already uploads to) to whatever
@@ -227,6 +267,11 @@ export default async function InvoicesPage() {
                             action={sendInvoiceEmail}
                           />
                         )}
+                        <DeleteInvoiceButton
+                          invoiceId={r.id}
+                          invoiceNumber={r.invoiceNumber}
+                          action={deleteInvoice}
+                        />
                       </div>
                     </td>
                   </tr>
