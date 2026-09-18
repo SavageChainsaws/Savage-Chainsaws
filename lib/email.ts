@@ -1,4 +1,20 @@
-type SendEmailArgs = { to: string | string[]; subject: string; html: string; replyTo?: string }
+// Resend fetches the file itself from a public URL rather than us reading
+// and base64-encoding it here - simpler and more reliable than round-
+// tripping the PDF bytes through our own function first, and it still
+// shows up as a real attachment (not just a link) in the customer's inbox.
+type EmailAttachment = { filename: string; path: string }
+type SendEmailArgs = {
+  to: string | string[]
+  subject: string
+  html: string
+  replyTo?: string
+  // Overrides RESEND_FROM_EMAIL for this send - e.g. invoice emails go from
+  // service@savagechainsaws.com (a real monitored mailbox) rather than
+  // whatever no-reply/notifications sender other emails default to.
+  from?: string
+  bcc?: string | string[]
+  attachments?: EmailAttachment[]
+}
 type SendEmailResult = { ok: true } | { ok: false; error: string }
 
 // Thin wrapper around Resend's HTTP API - no SDK dependency, just a plain
@@ -6,7 +22,7 @@ type SendEmailResult = { ok: true } | { ok: false; error: string }
 // production, every send fails fast with a clear error instead of making a
 // network call, so callers can surface why nothing went out (e.g. logged to
 // a unit's history) rather than silently doing nothing.
-export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): Promise<SendEmailResult> {
+export async function sendEmail({ to, subject, html, replyTo, from: fromOverride, bcc, attachments }: SendEmailArgs): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     return { ok: false, error: 'email not sent - RESEND_API_KEY is not configured yet' }
@@ -14,7 +30,7 @@ export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): 
   // Resend's shared sandbox sender works with no domain verification, so
   // nudges can go out the moment an API key is added - swap in a verified
   // domain sender (RESEND_FROM_EMAIL) once one's set up.
-  const from = process.env.RESEND_FROM_EMAIL || 'Savage Chainsaws <onboarding@resend.dev>'
+  const from = fromOverride || process.env.RESEND_FROM_EMAIL || 'Savage Chainsaws <onboarding@resend.dev>'
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -22,7 +38,15 @@ export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): 
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        html,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(bcc ? { bcc } : {}),
+        ...(attachments?.length ? { attachments } : {}),
+      }),
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')

@@ -1,6 +1,83 @@
+import { revalidatePath } from 'next/cache'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { sendEmail } from '@/lib/email'
+import SendInvoiceButton from '../components/SendInvoiceButton'
+
+type SendInvoiceState = { success: boolean; message: string } | null
+
+// Emails the already-generated PDF (from Supabase Storage, same public
+// "invoices" bucket every invoice route already uploads to) to whatever
+// email the admin confirms in the form (prefilled from the invoice's own
+// stored customer_email, falling back to the linked customer record's
+// email) - reuses the general-purpose sendEmail() Nudge already uses, but
+// from service@savagechainsaws.com (a real monitored mailbox) rather than
+// whatever sender other system emails default to, since this is customer-
+// facing billing correspondence. Every send is BCC'd to that same inbox so
+// there's always a copy on record.
+//
+// The email is a form field rather than looked up silently server-side
+// because real production invoices (SC-0001..SC-0003) were generated
+// before customer_email existed and have no linked customer_id either
+// (free-form standalone invoices) - there's nothing to look up for them.
+// Letting the admin see/correct the recipient here means those don't need
+// to be regenerated just to become sendable.
+async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData): Promise<SendInvoiceState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  const recipientEmail = ((formData.get('recipient_email') as string) || '').trim()
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+  if (!recipientEmail || !recipientEmail.includes('@')) {
+    return { success: false, message: 'Enter a valid email address to send to.' }
+  }
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, amount, pdf_url, customer_name')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { success: false, message: 'Invoice not found.' }
+  if (!invoice.pdf_url) {
+    return { success: false, message: 'This invoice has no PDF saved - regenerate it first.' }
+  }
+
+  const invoiceNumber = invoice.invoice_number || 'your invoice'
+  const total = Number(invoice.amount) || 0
+  const greetingName = invoice.customer_name || 'there'
+
+  const html = `
+    <p>Hi ${greetingName},</p>
+    <p>Please find your invoice attached from Savage Chainsaws.</p>
+    <p><strong>Invoice ${invoiceNumber}</strong><br/>Total due: <strong>$${total.toFixed(2)}</strong></p>
+    <p>If you have any questions, just reply to this email.</p>
+    <p>Thanks for choosing Savage Chainsaws!</p>
+  `
+
+  const result = await sendEmail({
+    to: recipientEmail,
+    bcc: 'service@savagechainsaws.com',
+    from: 'Savage Chainsaws <service@savagechainsaws.com>',
+    subject: `Invoice ${invoiceNumber} from Savage Chainsaws`,
+    html,
+    attachments: [{ filename: `invoice-${invoiceNumber}.pdf`, path: invoice.pdf_url }],
+  })
+
+  if (!result.ok) {
+    return { success: false, message: `Could not send invoice: ${result.error}` }
+  }
+
+  await supabase
+    .from('invoices')
+    .update({ sent_at: new Date().toISOString(), sent_to: recipientEmail })
+    .eq('id', invoiceId)
+  revalidatePath('/invoices')
+
+  return { success: true, message: `Invoice sent to ${recipientEmail}.` }
+}
 
 // Admin-only running record of every invoice ever generated (per-unit and
 // standalone), for the admin's own tax/bookkeeping use - a plain list
@@ -14,14 +91,20 @@ export default async function InvoicesPage() {
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, unit_id, customer_id, customer_name, invoice_number, amount, description, status, pdf_url, created_at, units(invoice_url, model, nickname, customers(name)), customers(name)'
+      'id, unit_id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, units(invoice_url, model, nickname, customers(name, email)), customers(name, email)'
     )
     .order('created_at', { ascending: false })
 
   const rows = (invoices || []).map(inv => {
-    const unitCustomerName = (inv.units as unknown as { customers?: { name?: string } | null } | null)?.customers?.name
-    const directCustomerName = (inv.customers as unknown as { name?: string } | null)?.name
-    const displayName = inv.customer_name || directCustomerName || unitCustomerName || 'Unknown customer'
+    const unitCustomer = (inv.units as unknown as { customers?: { name?: string; email?: string } | null } | null)?.customers
+    const directCustomer = inv.customers as unknown as { name?: string; email?: string } | null
+    const displayName = inv.customer_name || directCustomer?.name || unitCustomer?.name || 'Unknown customer'
+    // Prefers what was actually on the PDF at send time (customer_email,
+    // captured at generation - see app/api/invoice/*.ts) over the linked
+    // customer record's current email, so the prefill matches what the
+    // customer was billed as, falling back to the record for older
+    // invoices generated before customer_email existed.
+    const defaultEmail = inv.customer_email || directCustomer?.email || unitCustomer?.email || ''
     const pdfUrl = inv.pdf_url || (inv.units as unknown as { invoice_url?: string } | null)?.invoice_url || null
     const unitLabel = (inv.units as unknown as { model?: string; nickname?: string } | null)
     return {
@@ -29,11 +112,14 @@ export default async function InvoicesPage() {
       date: inv.created_at as string,
       invoiceNumber: (inv.invoice_number as string) || (inv.description as string) || '—',
       customerName: displayName,
+      defaultEmail,
       amount: Number(inv.amount) || 0,
       status: (inv.status as string) || 'sent',
       pdfUrl,
       unitId: inv.unit_id as string | null,
       unitLabel: unitLabel?.nickname || unitLabel?.model || null,
+      sentAt: inv.sent_at as string | null,
+      sentTo: inv.sent_to as string | null,
     }
   })
 
@@ -95,6 +181,7 @@ export default async function InvoicesPage() {
                   <th className="px-3 py-3">Unit</th>
                   <th className="px-3 py-3 text-right">Total</th>
                   <th className="px-3 py-3">Status</th>
+                  <th className="px-3 py-3">Sent</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -109,25 +196,44 @@ export default async function InvoicesPage() {
                     <td className="px-3 py-3 text-gray-400">{r.unitLabel || '—'}</td>
                     <td className="px-3 py-3 text-right font-bold text-orange-400">${r.amount.toFixed(2)}</td>
                     <td className="px-3 py-3 text-gray-400 capitalize">{r.status}</td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      {r.pdfUrl ? (
-                        <a
-                          href={r.pdfUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-orange-400 hover:text-orange-300"
-                        >
-                          View PDF →
-                        </a>
+                    <td className="px-3 py-3 text-gray-400 whitespace-nowrap">
+                      {r.sentAt ? (
+                        <span className="text-green-400" title={`Sent to ${r.sentTo}`}>
+                          {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
                       ) : (
-                        <span className="text-xs text-gray-600">No PDF saved</span>
+                        <span className="text-gray-600">Not sent</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-3">
+                        {r.pdfUrl ? (
+                          <a
+                            href={r.pdfUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-orange-400 hover:text-orange-300"
+                          >
+                            View PDF →
+                          </a>
+                        ) : (
+                          <span className="text-xs text-gray-600">No PDF saved</span>
+                        )}
+                        {r.pdfUrl && (
+                          <SendInvoiceButton
+                            invoiceId={r.id}
+                            defaultEmail={r.defaultEmail}
+                            alreadySent={!!r.sentAt}
+                            action={sendInvoiceEmail}
+                          />
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-gray-500 text-center">
+                    <td colSpan={8} className="px-6 py-8 text-gray-500 text-center">
                       No invoices generated yet.
                     </td>
                   </tr>

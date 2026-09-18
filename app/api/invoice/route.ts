@@ -155,6 +155,7 @@ export async function POST(request: NextRequest) {
         unit_id: unitId,
         customer_id: unit.customer_id,
         customer_name: customer?.name || null,
+        customer_email: customer?.email || null,
         invoice_number: invoiceNumber,
         line_items: lineItems,
         amount: invoiceTotal,

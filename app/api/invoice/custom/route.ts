@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       .insert({
         customer_id: customerId,
         customer_name: customerName,
+        customer_email: customerEmail,
         invoice_number: invoiceNumber,
         line_items: lineItems,
         amount: invoiceTotal,
