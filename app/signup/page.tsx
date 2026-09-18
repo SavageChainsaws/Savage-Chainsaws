@@ -1,9 +1,30 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import SiteFooter from '../components/SiteFooter'
+
+// useSearchParams() requires a Suspense boundary to opt this one small
+// piece out of static prerendering (same pattern as
+// app/customer/login/page.tsx's LinkExpiredNotice). onCode is a plain
+// function recreated on every SignupPage render (not a stable setState
+// setter), so a ref guards against re-applying the query value - and
+// re-running validation - on every keystroke elsewhere in the form.
+function ReferralCodeFromQuery({ onCode }: { onCode: (code: string) => void }) {
+  const searchParams = useSearchParams()
+  const applied = useRef(false)
+  useEffect(() => {
+    if (applied.current) return
+    const ref = searchParams.get('ref')
+    if (ref) {
+      applied.current = true
+      onCode(ref)
+    }
+  }, [searchParams, onCode])
+  return null
+}
 
 // Public signup creates an Auth user ONLY - it never creates or links a
 // customers row. That linking (setting customers.auth_user_id) is done
@@ -18,11 +39,31 @@ export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [referralCode, setReferralCode] = useState('')
+  const [referralNote, setReferralNote] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState<{ needsConfirmation: boolean } | null>(null)
 
   const supabase = createClient()
+
+  // Pre-fills from a referral partner's link (e.g. /signup?ref=ELVIS) and
+  // immediately checks it against referral_sources via a public, boolean-
+  // only RPC (validate_referral_code) - anon has no direct read access to
+  // that table, and this never blocks signup either way, just lets a bad/
+  // stale link show a small note instead of silently doing nothing.
+  async function handleReferralFromQuery(code: string) {
+    setReferralCode(code)
+    const { data: isValid } = await supabase.rpc('validate_referral_code', { p_code: code })
+    if (!isValid) {
+      setReferralNote("That referral link wasn't recognized - you can still request an account without it.")
+    }
+  }
+
+  function handleReferralCodeChange(value: string) {
+    setReferralCode(value)
+    setReferralNote(null)
+  }
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
@@ -32,6 +73,7 @@ export default function SignupPage() {
     const cleanEmail = email.trim().toLowerCase()
     const cleanName = companyName.trim()
     const cleanPhone = phone.trim() || null
+    const trimmedReferralCode = referralCode.trim()
 
     if (!cleanName) {
       setError('Business / company name is required.')
@@ -44,6 +86,15 @@ export default function SignupPage() {
       return
     }
 
+    // Validated again here (not just trusted from the earlier query-param
+    // check) since this also covers a code typed or edited by hand -
+    // invalid/unknown just means it's left off, never a blocked signup.
+    let validatedReferralCode: string | null = null
+    if (trimmedReferralCode) {
+      const { data: isValid } = await supabase.rpc('validate_referral_code', { p_code: trimmedReferralCode })
+      validatedReferralCode = isValid ? trimmedReferralCode.toUpperCase() : null
+    }
+
     const { data, error: authError } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
@@ -51,6 +102,7 @@ export default function SignupPage() {
         data: {
           company_name: cleanName,
           phone: cleanPhone,
+          referral_code: validatedReferralCode,
         },
       },
     })
@@ -110,6 +162,9 @@ export default function SignupPage() {
 
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center p-4">
+      <Suspense fallback={null}>
+        <ReferralCodeFromQuery onCode={handleReferralFromQuery} />
+      </Suspense>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img
@@ -176,6 +231,20 @@ export default function SignupPage() {
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500"
             />
             <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1.5">Referral Code (optional)</label>
+            <input
+              type="text"
+              value={referralCode}
+              onChange={(e) => handleReferralCodeChange(e.target.value)}
+              placeholder="e.g. ELVIS"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm uppercase focus:outline-none focus:border-orange-500"
+            />
+            {referralNote && (
+              <p className="text-xs text-gray-500 mt-1">{referralNote}</p>
+            )}
           </div>
 
           <p className="text-xs text-gray-500 bg-zinc-800/80 rounded-lg px-3 py-2">

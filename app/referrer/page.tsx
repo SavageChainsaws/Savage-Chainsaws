@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import PushToggle from '../components/PushToggle'
 import SiteFooter from '../components/SiteFooter'
+import CopyReferralLink from '../components/CopyReferralLink'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 
 const supabase = createClient()
@@ -157,6 +158,13 @@ export default function ReferrerPortal() {
           <p className="text-sm text-gray-400 mt-1">
             Share this code with people you send our way - they mention it when they sign up or check in their first unit.
           </p>
+          <div className="mt-3 pt-3 border-t border-zinc-800">
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1.5">Or just send your link</p>
+            <CopyReferralLink code={source.referral_code} />
+            <p className="text-xs text-gray-500 mt-1.5">
+              Anyone who signs up from this link has your code filled in automatically - nothing for them to type.
+            </p>
+          </div>
         </div>
 
         {error && (
