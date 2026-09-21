@@ -25,7 +25,7 @@ export default function DeleteInvoiceButton({
         type="button"
         onClick={() => setConfirming(true)}
         title="Delete invoice"
-        className="text-xs bg-red-700 hover:bg-red-600 text-white font-medium px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+        className="text-xs bg-red-700 hover:bg-red-600 text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
       >
         Delete
       </button>

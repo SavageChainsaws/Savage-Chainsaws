@@ -43,23 +43,24 @@ export default function InvoicePaymentActions({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         {currentUrl ? (
           <>
             <a
               href={currentUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-xs bg-[#006aff] hover:bg-[#0057d1] text-white font-medium px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+              className="text-xs bg-[#006aff] hover:bg-[#0057d1] text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
             >
               Pay Now
             </a>
             <button
               type="button"
               onClick={copyLink}
+              title="Copy payment link"
               className="text-xs border border-zinc-700 hover:bg-zinc-800 text-gray-300 px-2 py-1 rounded-lg transition whitespace-nowrap"
             >
-              {copied ? 'Copied!' : 'Copy Link'}
+              {copied ? 'Copied!' : 'Copy'}
             </button>
             {!isPaid && (
               <form action={checkAction}>
@@ -67,9 +68,10 @@ export default function InvoicePaymentActions({
                 <button
                   type="submit"
                   disabled={checkPending}
+                  title="Check Payment Status"
                   className="text-xs border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50 text-gray-300 px-2 py-1 rounded-lg transition whitespace-nowrap"
                 >
-                  {checkPending ? 'Checking...' : 'Check Payment Status'}
+                  {checkPending ? 'Checking...' : 'Check Status'}
                 </button>
               </form>
             )}
@@ -80,9 +82,10 @@ export default function InvoicePaymentActions({
             <button
               type="submit"
               disabled={genPending}
-              className="text-xs bg-[#006aff] hover:bg-[#0057d1] disabled:opacity-50 text-white font-medium px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+              title="Generate Payment Link"
+              className="text-xs bg-[#006aff] hover:bg-[#0057d1] disabled:opacity-50 text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
             >
-              {genPending ? 'Generating...' : 'Generate Payment Link'}
+              {genPending ? 'Generating...' : 'Get Link'}
             </button>
           </form>
         )}

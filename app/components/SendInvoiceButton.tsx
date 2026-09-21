@@ -24,20 +24,21 @@ export default function SendInvoiceButton({
   return (
     <form action={formAction} className="flex flex-col items-end gap-1">
       <input type="hidden" name="invoice_id" value={invoiceId} />
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         <input
           type="email"
           name="recipient_email"
           required
           value={email}
           onChange={e => setEmail(e.target.value)}
-          placeholder="customer@email.com"
-          className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 w-40 focus:outline-none focus:border-orange-500"
+          placeholder="email"
+          title={email}
+          className="text-xs bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 py-1 w-24 focus:outline-none focus:border-orange-500 focus:w-40 transition-[width]"
         />
         <button
           type="submit"
           disabled={isPending}
-          className="text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-2.5 py-1 rounded-lg transition whitespace-nowrap"
+          className="text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
         >
           {isPending ? 'Sending...' : alreadySent ? 'Resend' : 'Send Invoice'}
         </button>

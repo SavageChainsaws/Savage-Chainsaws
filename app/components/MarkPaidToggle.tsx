@@ -27,7 +27,7 @@ export default function MarkPaidToggle({
         <button
           type="submit"
           disabled={isPending}
-          className={`text-xs border disabled:opacity-50 px-2 py-1 rounded-lg transition whitespace-nowrap ${
+          className={`text-xs border disabled:opacity-50 px-1.5 py-1 rounded-lg transition whitespace-nowrap ${
             isPaid
               ? 'border-zinc-700 hover:bg-zinc-800 text-gray-300'
               : 'border-green-700 hover:bg-green-900/30 text-green-400'
