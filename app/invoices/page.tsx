@@ -339,7 +339,7 @@ export default async function InvoicesPage() {
             <p className="text-xs text-gray-500 mt-1">Most recent first - for your own tax/bookkeeping records.</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
                   <th className="px-4 sm:px-6 py-3">Date</th>
