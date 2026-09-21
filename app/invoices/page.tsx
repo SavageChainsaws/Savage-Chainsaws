@@ -255,7 +255,7 @@ export default async function InvoicesPage() {
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, unit_id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, units(invoice_url, model, nickname, customers(name, email)), customers(name, email)'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, units(invoice_url, customers(name, email)), customers(name, email)'
     )
     .order('created_at', { ascending: false })
 
@@ -270,7 +270,6 @@ export default async function InvoicesPage() {
     // invoices generated before customer_email existed.
     const defaultEmail = inv.customer_email || directCustomer?.email || unitCustomer?.email || ''
     const pdfUrl = inv.pdf_url || (inv.units as unknown as { invoice_url?: string } | null)?.invoice_url || null
-    const unitLabel = (inv.units as unknown as { model?: string; nickname?: string } | null)
     return {
       id: inv.id as string,
       date: inv.created_at as string,
@@ -280,8 +279,6 @@ export default async function InvoicesPage() {
       amount: Number(inv.amount) || 0,
       status: (inv.status as string) || 'sent',
       pdfUrl,
-      unitId: inv.unit_id as string | null,
-      unitLabel: unitLabel?.nickname || unitLabel?.model || null,
       sentAt: inv.sent_at as string | null,
       sentTo: inv.sent_to as string | null,
       paymentLinkUrl: inv.square_payment_link_url as string | null,
@@ -299,7 +296,12 @@ export default async function InvoicesPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white p-4 sm:p-6 md:p-10">
-      <div className="max-w-5xl mx-auto space-y-6">
+      {/* Wider than the rest of the app's max-w-5xl pages on purpose - this
+          table has a lot of columns plus a dense row of payment/admin
+          actions, and capping it at 1024px forced horizontal scroll even
+          on a full-width desktop monitor. max-w-7xl gives it room to lay
+          out flat on standard screens (1440px+) instead. */}
+      <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img src="/images/logo.png" alt="" className="h-10 w-10 object-contain" />
@@ -343,56 +345,56 @@ export default async function InvoicesPage() {
               scrolling, so there's no hint this table has more columns off to the
               right - a persistent, styled scrollbar makes that discoverable. */}
           <div className="overflow-x-auto [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.700)_theme(colors.zinc.900)] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-zinc-900 [&::-webkit-scrollbar-thumb]:bg-zinc-700 [&::-webkit-scrollbar-thumb]:rounded-full">
-            <table className="w-full min-w-[1100px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
-                  <th className="px-4 sm:px-6 py-3">Date</th>
-                  <th className="px-3 py-3">Invoice #</th>
-                  <th className="px-3 py-3">Customer</th>
-                  <th className="px-3 py-3">Unit</th>
-                  <th className="px-3 py-3 text-right">Total</th>
-                  <th className="px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Sent</th>
-                  <th className="px-3 py-3">Payment</th>
-                  <th className="px-4 py-3"></th>
+                  <th className="px-3 sm:px-4 py-2">Date</th>
+                  <th className="px-2 py-2">Invoice #</th>
+                  <th className="px-2 py-2">Customer</th>
+                  <th className="px-2 py-2 text-right">Total</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Sent</th>
+                  <th className="px-2 py-2">Payment</th>
+                  <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {rows.map(r => (
                   <tr key={r.id} className="hover:bg-zinc-800/40">
-                    <td className="px-4 sm:px-6 py-3 text-gray-300 whitespace-nowrap">
-                      {new Date(r.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    <td className="px-3 sm:px-4 py-2 text-gray-300 whitespace-nowrap">
+                      {new Date(r.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}
                     </td>
-                    <td className="px-3 py-3 text-gray-300 whitespace-nowrap">{r.invoiceNumber}</td>
-                    <td className="px-3 py-3 font-medium">{r.customerName}</td>
-                    <td className="px-3 py-3 text-gray-400">{r.unitLabel || '—'}</td>
-                    <td className="px-3 py-3 text-right font-bold text-orange-400">${r.amount.toFixed(2)}</td>
-                    <td className="px-3 py-3 text-gray-400 capitalize">{r.status}</td>
-                    <td className="px-3 py-3 text-gray-400 whitespace-nowrap">
+                    <td className="px-2 py-2 text-gray-300 whitespace-nowrap">{r.invoiceNumber}</td>
+                    <td className="px-2 py-2 font-medium max-w-[140px] truncate" title={r.customerName}>
+                      {r.customerName}
+                    </td>
+                    <td className="px-2 py-2 text-right font-bold text-orange-400 whitespace-nowrap">${r.amount.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-gray-400 capitalize">{r.status}</td>
+                    <td className="px-2 py-2 text-gray-400 whitespace-nowrap">
                       {r.sentAt ? (
                         <span className="text-green-400" title={`Sent to ${r.sentTo}`}>
-                          {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
                         </span>
                       ) : (
                         <span className="text-gray-600">Not sent</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
+                    <td className="px-2 py-2 whitespace-nowrap">
                       {r.paidAt ? (
                         <span
-                          className="text-xs px-2 py-1 rounded-full font-medium bg-green-500/20 text-green-400"
+                          className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
                           title={r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
                         >
                           Paid
                         </span>
                       ) : (
-                        <span className="text-xs px-2 py-1 rounded-full font-medium bg-zinc-700 text-gray-300">
+                        <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-zinc-700 text-gray-300">
                           Unpaid
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <div className="flex flex-wrap items-start justify-end gap-3">
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <div className="flex flex-wrap items-start justify-end gap-1.5">
                         {r.pdfUrl ? (
                           <a
                             href={r.pdfUrl}
@@ -400,10 +402,10 @@ export default async function InvoicesPage() {
                             rel="noreferrer"
                             className="text-xs text-orange-400 hover:text-orange-300 pt-1"
                           >
-                            View PDF →
+                            PDF
                           </a>
                         ) : (
-                          <span className="text-xs text-gray-600 pt-1">No PDF saved</span>
+                          <span className="text-xs text-gray-600 pt-1">No PDF</span>
                         )}
                         {r.pdfUrl && (
                           <SendInvoiceButton
@@ -432,7 +434,7 @@ export default async function InvoicesPage() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-6 py-8 text-gray-500 text-center">
+                    <td colSpan={8} className="px-6 py-8 text-gray-500 text-center">
                       No invoices generated yet.
                     </td>
                   </tr>
