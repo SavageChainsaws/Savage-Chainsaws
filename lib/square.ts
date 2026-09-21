@@ -105,19 +105,21 @@ type OrderStatusResult =
   | { ok: false; error: string }
 
 // The Orders API is the source of truth for whether a Payment Links order
-// has actually been paid - COMPLETED means a payment was captured against
-// it, never assumed just because a link was generated or opened.
+// has actually been paid - never assumed just because a link was generated
+// or opened. Order.state tracks *fulfillment*, not payment, and only
+// becomes COMPLETED once every fulfillment on the order is marked done;
+// quick_pay orders (what createSquarePaymentLink creates) have no
+// fulfillment at all, so a fully-paid quick_pay order stays OPEN forever.
+// A tender attached to the order is the real signal - Square only adds one
+// once a payment against that order actually succeeds.
 export async function getSquareOrderPaidStatus(orderId: string): Promise<OrderStatusResult> {
   const result = await squareFetch(`/v2/orders/${orderId}`, { method: 'GET' })
   if (!result.ok) return result
-  const state = result.data?.order?.state
-  // Logged unconditionally (this is a 200 response either way, so
-  // squareFetch's own error logging never fires here) - the "Check Payment
-  // Status" button was reporting "Not paid yet" for an order Square's own
-  // dashboard showed as sold, so the actual state Square returns needs to
-  // be visible rather than collapsed into a single paid/not-paid boolean.
-  console.log('Square order status check', { orderId, state, tenders: result.data?.order?.tenders?.length ?? 0 })
-  return { ok: true, paid: state === 'COMPLETED' }
+  const order = result.data?.order
+  const tenderCount = order?.tenders?.length ?? 0
+  const paid = order?.state === 'COMPLETED' || tenderCount > 0
+  console.log('Square order status check', { orderId, state: order?.state, tenders: tenderCount, paid })
+  return { ok: true, paid }
 }
 
 export function isSquareConfigured(): boolean {
