@@ -338,7 +338,11 @@ export default async function InvoicesPage() {
             <h2 className="text-lg font-semibold text-orange-400">Every invoice generated</h2>
             <p className="text-xs text-gray-500 mt-1">Most recent first - for your own tax/bookkeeping records.</p>
           </div>
-          <div className="overflow-x-auto">
+          {/* The scroll here works fine on its own, but most trackpad setups (macOS
+              default included) hide the native scrollbar until you're actively
+              scrolling, so there's no hint this table has more columns off to the
+              right - a persistent, styled scrollbar makes that discoverable. */}
+          <div className="overflow-x-auto [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.700)_theme(colors.zinc.900)] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-zinc-900 [&::-webkit-scrollbar-thumb]:bg-zinc-700 [&::-webkit-scrollbar-thumb]:rounded-full">
             <table className="w-full min-w-[1100px] text-sm">
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
