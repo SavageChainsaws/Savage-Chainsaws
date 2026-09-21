@@ -8,12 +8,14 @@ import SendInvoiceButton from '../components/SendInvoiceButton'
 import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
 import MarkPaidToggle from '../components/MarkPaidToggle'
+import ArchiveToggle from '../components/ArchiveToggle'
 
 type SendInvoiceState = { success: boolean; message: string } | null
 type DeleteInvoiceState = { success: boolean; message: string } | null
 type GenerateLinkState = { success: boolean; message: string; url?: string } | null
 type CheckStatusState = { success: boolean; message: string; paid?: boolean } | null
 type MarkPaidState = { success: boolean; message: string } | null
+type ArchiveState = { success: boolean; message: string } | null
 
 // Payment links are generated on demand only - never automatically when an
 // invoice is created - so the admin can finalize/edit the invoice first and
@@ -123,6 +125,32 @@ async function toggleManualPaid(_prevState: MarkPaidState, formData: FormData): 
 
   revalidatePath('/invoices')
   return { success: true, message: nextPaid ? 'Marked paid.' : 'Marked unpaid.' }
+}
+
+// Lets the admin tuck an invoice into the archive without marking it paid -
+// e.g. one that's been cancelled or written off and shouldn't keep cluttering
+// the Active view, but also shouldn't be falsely shown as collected revenue.
+// Paid invoices already archive automatically (see the view filter below,
+// which treats paid_at OR archived_at as archived) - this only ever toggles
+// archived_at itself, so "Mark Unpaid" on an actually-paid invoice remains
+// the way to bring one back to Active, not this button.
+async function toggleArchived(_prevState: ArchiveState, formData: FormData): Promise<ArchiveState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  const nextArchived = formData.get('next_archived') === 'true'
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+
+  const { error } = await supabase
+    .from('invoices')
+    .update({ archived_at: nextArchived ? new Date().toISOString() : null })
+    .eq('id', invoiceId)
+  if (error) return { success: false, message: `Could not update: ${error.message}` }
+
+  revalidatePath('/invoices')
+  return { success: true, message: nextArchived ? 'Archived.' : 'Unarchived.' }
 }
 
 // Permanently removes an invoice record and its stored PDF together - the
@@ -248,14 +276,21 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
 // pulled straight from the invoices table rather than having to open each
 // unit individually. See app/api/invoice/route.ts and
 // app/api/invoice/custom/route.ts for where these rows get written.
-export default async function InvoicesPage() {
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>
+}) {
   const { supabase, user, isAdmin } = await getSessionInfo()
   if (!user || !isAdmin) redirect('/login')
+
+  const params = await searchParams
+  const view = params.view === 'archived' ? 'archived' : 'active'
 
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, units(invoice_url, customers(name, email)), customers(name, email)'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, units(invoice_url, customers(name, email)), customers(name, email)'
     )
     .order('created_at', { ascending: false })
 
@@ -270,6 +305,8 @@ export default async function InvoicesPage() {
     // invoices generated before customer_email existed.
     const defaultEmail = inv.customer_email || directCustomer?.email || unitCustomer?.email || ''
     const pdfUrl = inv.pdf_url || (inv.units as unknown as { invoice_url?: string } | null)?.invoice_url || null
+    const paidAt = inv.paid_at as string | null
+    const archivedAt = inv.archived_at as string | null
     return {
       id: inv.id as string,
       date: inv.created_at as string,
@@ -282,10 +319,20 @@ export default async function InvoicesPage() {
       sentAt: inv.sent_at as string | null,
       sentTo: inv.sent_to as string | null,
       paymentLinkUrl: inv.square_payment_link_url as string | null,
-      paidAt: inv.paid_at as string | null,
+      paidAt,
       paidVia: inv.paid_via as string | null,
+      archivedAt,
+      // Paid invoices archive automatically the moment paid_at is set - no
+      // separate "move to archive" step needed, the view filter below is
+      // the whole mechanism. archived_at lets the admin also archive an
+      // invoice that isn't paid (e.g. cancelled/written off).
+      isArchived: !!paidAt || !!archivedAt,
     }
   })
+
+  const activeRows = rows.filter(r => !r.isArchived)
+  const archivedRows = rows.filter(r => r.isArchived)
+  const visibleRows = view === 'archived' ? archivedRows : activeRows
 
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -293,6 +340,11 @@ export default async function InvoicesPage() {
     .filter(r => new Date(r.date) >= monthStart)
     .reduce((sum, r) => sum + r.amount, 0)
   const totalAllTime = rows.reduce((sum, r) => sum + r.amount, 0)
+  const pendingTotal = activeRows.reduce((sum, r) => sum + r.amount, 0)
+  // "Collected" means actually paid, not just archived - a manually
+  // archived-but-unpaid invoice sits in the Archived tab too, but its
+  // amount was never actually taken in, so it's excluded from this sum.
+  const collectedTotal = rows.filter(r => r.paidAt).reduce((sum, r) => sum + r.amount, 0)
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white p-4 sm:p-6 md:p-10">
@@ -335,10 +387,50 @@ export default async function InvoicesPage() {
           </div>
         </div>
 
+        {/* Active/Archived is a URL param (?view=), not client state, so the
+            filtered table is still rendered server-side straight from
+            Supabase like the rest of this page - a paid invoice needs no
+            extra step to "move" itself into the archive, it just stops
+            matching the Active filter (paid_at/archived_at both null). */}
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+          <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900 p-1 gap-1 self-start">
+            <Link
+              href="/invoices?view=active"
+              className={`text-sm px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+                view === 'active' ? 'bg-orange-500 text-white font-medium' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Active Invoices ({activeRows.length})
+            </Link>
+            <Link
+              href="/invoices?view=archived"
+              className={`text-sm px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+                view === 'archived' ? 'bg-orange-500 text-white font-medium' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              Archived Invoices ({archivedRows.length})
+            </Link>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-500 uppercase">
+              {view === 'archived' ? 'Total Collected (Archived)' : 'Total Pending Revenue'}
+            </p>
+            <p className={`text-2xl font-bold ${view === 'archived' ? 'text-green-400' : 'text-orange-400'}`}>
+              ${(view === 'archived' ? collectedTotal : pendingTotal).toFixed(2)}
+            </p>
+          </div>
+        </div>
+
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
-            <h2 className="text-lg font-semibold text-orange-400">Every invoice generated</h2>
-            <p className="text-xs text-gray-500 mt-1">Most recent first - for your own tax/bookkeeping records.</p>
+            <h2 className="text-lg font-semibold text-orange-400">
+              {view === 'archived' ? 'Archived invoices' : 'Active invoices'}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              {view === 'archived'
+                ? 'Paid (or manually archived) - tucked away until you need them.'
+                : 'Unpaid and awaiting payment, most recent first.'}
+            </p>
           </div>
           {/* The scroll here works fine on its own, but most trackpad setups (macOS
               default included) hide the native scrollbar until you're actively
@@ -359,7 +451,7 @@ export default async function InvoicesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
-                {rows.map(r => (
+                {visibleRows.map(r => (
                   <tr key={r.id} className="hover:bg-zinc-800/40">
                     <td className="px-3 sm:px-4 py-2 text-gray-300 whitespace-nowrap">
                       {new Date(r.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}
@@ -423,6 +515,13 @@ export default async function InvoicesPage() {
                           checkStatusAction={checkPaymentStatus}
                         />
                         <MarkPaidToggle invoiceId={r.id} isPaid={!!r.paidAt} action={toggleManualPaid} />
+                        {/* Only offered for unpaid invoices - a paid one is already
+                            archived by its paid_at, and un-archiving it here would
+                            do nothing (it'd still show as archived via paid_at),
+                            which is confusing. "Mark Unpaid" is the real undo for those. */}
+                        {!r.paidAt && (
+                          <ArchiveToggle invoiceId={r.id} isArchived={!!r.archivedAt} action={toggleArchived} />
+                        )}
                         <DeleteInvoiceButton
                           invoiceId={r.id}
                           invoiceNumber={r.invoiceNumber}
@@ -432,10 +531,10 @@ export default async function InvoicesPage() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
+                {visibleRows.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-6 py-8 text-gray-500 text-center">
-                      No invoices generated yet.
+                      {view === 'archived' ? 'No archived invoices yet.' : 'No active invoices - all caught up.'}
                     </td>
                   </tr>
                 )}
