@@ -40,6 +40,14 @@ async function squareFetch(path: string, init: RequestInit) {
     const body = await res.json().catch(() => ({}))
     if (!res.ok) {
       const message = body?.errors?.[0]?.detail || `Square API error (${res.status})`
+      // Logged server-side (not returned to the client) so the full Square
+      // error - category/code/detail, not just the truncated UI message -
+      // shows up in Vercel runtime logs when a request is rejected.
+      console.error('Square API error', {
+        path,
+        status: res.status,
+        errors: body?.errors,
+      })
       return { ok: false as const, error: message }
     }
     return { ok: true as const, data: body }
