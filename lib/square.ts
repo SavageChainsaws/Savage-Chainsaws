@@ -111,6 +111,12 @@ export async function getSquareOrderPaidStatus(orderId: string): Promise<OrderSt
   const result = await squareFetch(`/v2/orders/${orderId}`, { method: 'GET' })
   if (!result.ok) return result
   const state = result.data?.order?.state
+  // Logged unconditionally (this is a 200 response either way, so
+  // squareFetch's own error logging never fires here) - the "Check Payment
+  // Status" button was reporting "Not paid yet" for an order Square's own
+  // dashboard showed as sold, so the actual state Square returns needs to
+  // be visible rather than collapsed into a single paid/not-paid boolean.
+  console.log('Square order status check', { orderId, state, tenders: result.data?.order?.tenders?.length ?? 0 })
   return { ok: true, paid: state === 'COMPLETED' }
 }
 
