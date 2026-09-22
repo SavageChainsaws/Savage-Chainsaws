@@ -29,6 +29,7 @@ import CreateReferralSourceLoginForm from './components/CreateReferralSourceLogi
 import DeleteReferralSourceLoginForm from './components/DeleteReferralSourceLoginForm'
 import CopyReferralLink from './components/CopyReferralLink'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
+import EditCustomerButton from './components/EditCustomerButton'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
@@ -338,20 +339,44 @@ async function updateUnitWarranty(formData: FormData) {
   revalidatePath('/')
 }
 
-// Sets the email a customer logs into their portal with. Note this does NOT
-// change which auth account the customer row is linked to - auth_user_id is
-// only ever set by createCustomerLogin below. If a login already exists and
-// its actual Auth email differs from what's set here, re-run "Create
-// Customer Login" for the same customer to keep them in sync.
-async function updateCustomerEmail(formData: FormData) {
+type UpdateCustomerState = { success: boolean; message: string } | null
+
+// Edits an existing customer's own contact fields - name, portal login
+// email, secondary email, phone. Deliberately never touches auth_user_id:
+// that's only ever set by createCustomerLogin below, so editing the email
+// here does NOT change which Auth account (or its actual login
+// credentials) the customer row is linked to. If a login already exists
+// and its real Auth email needs to change too, re-run "Create Customer
+// Login" for the same customer afterward to keep them in sync - the form
+// below says as much next to the email field.
+async function updateCustomerDetails(_prevState: UpdateCustomerState, formData: FormData): Promise<UpdateCustomerState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
-  const id = formData.get('id') as string
+
+  const id = (formData.get('id') as string) || ''
+  if (!id) return { success: false, message: 'Missing customer id.' }
+
+  const nameRaw = ((formData.get('name') as string) || '').trim()
+  if (!nameRaw) return { success: false, message: 'Name is required.' }
+  const name = toTitleCase(nameRaw)
+
   const emailRaw = ((formData.get('email') as string) || '').trim()
-  const email = emailRaw ? normalizeEmail(emailRaw) : ''
-  await supabase.from('customers').update({ email: email || null }).eq('id', id)
+  const email = emailRaw ? normalizeEmail(emailRaw) : null
+
+  const secondaryEmailRaw = ((formData.get('secondary_email') as string) || '').trim()
+  const secondaryEmail = secondaryEmailRaw ? normalizeEmail(secondaryEmailRaw) : null
+
+  const phone = ((formData.get('phone') as string) || '').trim() || null
+
+  const { error } = await supabase
+    .from('customers')
+    .update({ name, email, secondary_email: secondaryEmail, phone })
+    .eq('id', id)
+  if (error) return { success: false, message: `Could not save: ${error.message}` }
+
   revalidatePath('/')
+  return { success: true, message: 'Customer updated.' }
 }
 
 type CreateLoginState = { success: boolean; message: string; password?: string } | null
@@ -2043,21 +2068,25 @@ export default async function Home({
         <Suspense fallback={null}><LastViewedBanner customers={customers || []} /></Suspense>
 
         {currentCustomer && (
-          <div className="mb-3">
-            <p className="text-xl font-semibold text-orange-400">{currentCustomer.name}</p>
-            <p className="text-sm text-gray-400">Total Units: <span className="text-white font-medium">{units?.length || 0}</span></p>
-            <form action={updateCustomerEmail} className="flex flex-wrap items-center gap-2 mt-2">
-              <input type="hidden" name="id" value={currentCustomer.id} />
-              <label className="text-xs text-gray-500">Portal login email:</label>
-              <input
-                name="email"
-                type="email"
-                defaultValue={currentCustomer.email || ''}
-                placeholder="customer@example.com"
-                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm w-64"
-              />
-              <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Save</button>
-            </form>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xl font-semibold text-orange-400">{currentCustomer.name}</p>
+              <p className="text-sm text-gray-400">Total Units: <span className="text-white font-medium">{units?.length || 0}</span></p>
+              <p className="text-xs text-gray-500 mt-1">
+                {currentCustomer.email || 'No portal login email on file'}
+                {currentCustomer.phone ? ` · ${currentCustomer.phone}` : ''}
+              </p>
+            </div>
+            <EditCustomerButton
+              customer={{
+                id: currentCustomer.id,
+                name: currentCustomer.name,
+                email: currentCustomer.email,
+                secondary_email: currentCustomer.secondary_email,
+                phone: currentCustomer.phone,
+              }}
+              action={updateCustomerDetails}
+            />
           </div>
         )}
 
