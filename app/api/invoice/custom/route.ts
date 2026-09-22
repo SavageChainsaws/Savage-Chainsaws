@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
+import { toTitleCase, normalizeEmail } from '@/lib/text'
 
 // Admin-only. Builds a free-form, itemized PDF invoice from whatever the
 // admin submitted - whether those fields came from selecting a customer
 // (autofilled client-side, then possibly hand-edited) or were typed from
-// scratch. The submitted name/email/phone are always taken as-is (an
-// admin can hand-edit them after selecting a customer, and that edit
-// should stick) - this also works for a one-off invoice with no tracked
-// customer or unit at all. customer_id is only used to pull that
-// customer's logo/brand color for the PDF and to link the saved invoices
-// row back to them; it's never used to override the text fields.
+// scratch - this also works for a one-off invoice with no tracked customer
+// or unit at all. customer_id is only used to pull that customer's
+// logo/brand color for the PDF and to link the saved invoices row back to
+// them; it's never used to override the text fields. Name and email are
+// case-normalized (Title Case / lowercase) so a hand-typed "john SMITH"
+// still ends up matching the same convention as every other customer name
+// on file, on the PDF and in the saved invoices row alike.
 export async function POST(request: NextRequest) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) {
@@ -19,8 +21,10 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData()
   const customerId = ((formData.get('customer_id') as string) || '').trim() || null
-  const customerName = ((formData.get('customer_name') as string) || '').trim() || 'Customer'
-  const customerEmail = ((formData.get('customer_email') as string) || '').trim() || null
+  const customerNameRaw = ((formData.get('customer_name') as string) || '').trim() || 'Customer'
+  const customerName = toTitleCase(customerNameRaw)
+  const customerEmailRaw = ((formData.get('customer_email') as string) || '').trim()
+  const customerEmail = customerEmailRaw ? normalizeEmail(customerEmailRaw) : null
   const customerPhone = ((formData.get('customer_phone') as string) || '').trim() || null
 
   const { data: linkedCustomer } = customerId

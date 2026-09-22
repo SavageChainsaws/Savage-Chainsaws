@@ -303,7 +303,7 @@ export default async function InvoicesPage({
   const rows = (invoices || []).map(inv => {
     const unitCustomer = (inv.units as unknown as { customers?: { name?: string; email?: string } | null } | null)?.customers
     const directCustomer = inv.customers as unknown as { name?: string; email?: string } | null
-    const displayName = inv.customer_name || directCustomer?.name || unitCustomer?.name || 'Unknown customer'
+    const displayName = inv.customer_name || directCustomer?.name || unitCustomer?.name || 'Unknown Customer'
     // Prefers what was actually on the PDF at send time (customer_email,
     // captured at generation - see app/api/invoice/*.ts) over the linked
     // customer record's current email, so the prefill matches what the
@@ -385,15 +385,15 @@ export default async function InvoicesPage({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase">Invoiced this month</p>
+            <p className="text-xs text-gray-500 uppercase">Invoiced This Month</p>
             <p className="text-3xl font-bold text-orange-400">${totalThisMonth.toFixed(2)}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase">Invoiced all-time</p>
+            <p className="text-xs text-gray-500 uppercase">Invoiced All-Time</p>
             <p className="text-3xl font-bold text-white">${totalAllTime.toFixed(2)}</p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase">Total invoices</p>
+            <p className="text-xs text-gray-500 uppercase">Total Invoices</p>
             <p className="text-3xl font-bold text-white">{rows.length}</p>
           </div>
         </div>
@@ -435,7 +435,7 @@ export default async function InvoicesPage({
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
           <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
             <h2 className="text-lg font-semibold text-orange-400">
-              {view === 'archived' ? 'Archived invoices' : 'Active invoices'}
+              {view === 'archived' ? 'Archived Invoices' : 'Active Invoices'}
             </h2>
             <p className="text-xs text-gray-500 mt-1">
               {view === 'archived'
@@ -479,7 +479,7 @@ export default async function InvoicesPage({
                           {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
                         </span>
                       ) : (
-                        <span className="text-gray-600">Not sent</span>
+                        <span className="text-gray-600">Not Sent</span>
                       )}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">

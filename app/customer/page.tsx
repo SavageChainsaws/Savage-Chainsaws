@@ -13,6 +13,7 @@ import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
+import { normalizeEmail } from '@/lib/text'
 
 const supabase = createClient()
 
@@ -617,7 +618,7 @@ export default function CustomerPortal() {
     if (!customer) return
     setSecondaryEmailBusy(true)
     setSecondaryEmailSaved(false)
-    const trimmed = secondaryEmail.trim()
+    const trimmed = secondaryEmail.trim() ? normalizeEmail(secondaryEmail) : ''
     const { error } = await supabase
       .from('customers')
       .update({ secondary_email: trimmed || null })
