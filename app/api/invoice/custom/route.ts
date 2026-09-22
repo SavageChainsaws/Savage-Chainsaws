@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
+import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
 
 // Admin-only. Builds a free-form, itemized PDF invoice from whatever the
 // admin submitted - whether those fields came from selecting a customer
@@ -40,25 +41,56 @@ export async function POST(request: NextRequest) {
   const unitEquipmentType = ((formData.get('unit_equipment_type') as string) || '').trim() || null
   const hasUnitInfo = !!(unitModel || unitSerial || unitEquipmentType)
 
-  const descriptions = formData.getAll('description') as string[]
-  const prices = formData.getAll('price') as string[]
-  const typedLineItems = descriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(prices[i]) || 0 }))
+  const partsDescriptions = formData.getAll('parts_description') as string[]
+  const partsPrices = formData.getAll('parts_price') as string[]
+  const laborDescriptions = formData.getAll('labor_description') as string[]
+  const laborPrices = formData.getAll('labor_price') as string[]
+  const laborTypeRaw = formData.get('labor_type') as string
+  const taxRatePercentRaw = formData.get('tax_rate_percent') as string
+  const includeCardSurcharge = formData.get('include_card_surcharge') === 'true'
+
+  const partsLineItems = partsDescriptions
+    .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
+    .filter(li => li.description.length > 0)
+  const rawLaborLineItems = laborDescriptions
+    .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
 
-  if (typedLineItems.length === 0) {
+  if (partsLineItems.length === 0 && rawLaborLineItems.length === 0) {
     return NextResponse.json({ error: 'Add at least one line item with a description.' }, { status: 400 })
   }
 
+  // Any Parts line item at all makes the whole invoice taxable (Fla. Admin.
+  // Code 12A-1.006) and selects the labor line's STLA type - see
+  // app/api/invoice/route.ts for the full reasoning, mirrored here.
+  const hasParts = partsLineItems.length > 0
+  const laborType: LaborType = laborTypeRaw === 'STLA' || laborTypeRaw === 'NTSTLA' ? laborTypeRaw : hasParts ? 'STLA' : 'NTSTLA'
+  const laborLineItems = rawLaborLineItems.map(li => ({ ...li, description: `${li.description} (${laborType})` }))
+  const taxRatePercent = taxRatePercentRaw && Number.isFinite(Number(taxRatePercentRaw))
+    ? Number(taxRatePercentRaw)
+    : await getDefaultTaxRatePercent(supabase)
+
   // First-service referral discount - see app/api/invoice/route.ts for the
-  // full reasoning. Here the whole typed subtotal counts as "itemized
-  // parts+labor" since this form has no separate priority-fee field.
+  // full reasoning. Here the parts+labor subtotal is the whole "itemized"
+  // total since this form has no separate priority-fee field.
   const applyReferralDiscount = !!linkedCustomer?.referral_source_id && !linkedCustomer?.referral_discount_used
-  const typedSubtotal = typedLineItems.reduce((sum, li) => sum + li.amount, 0)
-  const referralDiscountAmount = applyReferralDiscount ? Math.round(typedSubtotal * 0.10 * 100) / 100 : 0
+  const taxableSubtotal = [...partsLineItems, ...laborLineItems].reduce((sum, li) => sum + li.amount, 0)
+  const referralDiscountAmount = applyReferralDiscount ? Math.round(taxableSubtotal * 0.10 * 100) / 100 : 0
+
+  const billing = computeInvoiceBilling({
+    taxableSubtotal,
+    otherCharges: -referralDiscountAmount,
+    hasParts,
+    taxRatePercent,
+    includeCardSurcharge,
+  })
+
   const lineItems = [
-    ...typedLineItems,
+    ...partsLineItems,
+    ...laborLineItems,
     ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
+    ...(billing.taxLine ? [billing.taxLine] : []),
+    ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
 
   const now = new Date()
@@ -86,6 +118,8 @@ export async function POST(request: NextRequest) {
     unit: hasUnitInfo ? { model: unitModel, serialNumber: unitSerial, equipmentType: unitEquipmentType } : null,
     lineItems,
     logoUrl,
+    laborOnlyNote: billing.laborOnlyNote,
+    showCardSurchargeDisclosure: !!billing.surchargeLine,
   })
 
   // Best-effort record for the admin's own bookkeeping (see /invoices) -
@@ -104,6 +138,10 @@ export async function POST(request: NextRequest) {
         amount: invoiceTotal,
         description: `Invoice ${invoiceNumber}`,
         status: 'sent',
+        sales_tax_rate: taxRatePercent,
+        sales_tax_amount: billing.taxAmount,
+        card_surcharge_amount: billing.surchargeAmount,
+        labor_type: laborType,
       })
       .select('id')
       .single()

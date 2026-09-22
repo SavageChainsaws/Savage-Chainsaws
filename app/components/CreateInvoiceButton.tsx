@@ -16,7 +16,13 @@ type CustomerOption = {
 // doesn't have to leave the invoices list to reach it. router.refresh() on
 // completion re-runs this server-rendered page against Supabase, so the new
 // invoice shows up in the Active tab without a manual reload.
-export default function CreateInvoiceButton({ customers }: { customers: CustomerOption[] }) {
+export default function CreateInvoiceButton({
+  customers,
+  defaultTaxRatePercent,
+}: {
+  customers: CustomerOption[]
+  defaultTaxRatePercent: number
+}) {
   const [isOpen, setIsOpen] = useState(false)
   const router = useRouter()
 
@@ -57,6 +63,7 @@ export default function CreateInvoiceButton({ customers }: { customers: Customer
             </div>
             <CreateCustomInvoiceForm
               customers={customers}
+              defaultTaxRatePercent={defaultTaxRatePercent}
               onCreated={() => {
                 setIsOpen(false)
                 router.refresh()

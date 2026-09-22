@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { resolveUnitParts, type ResolvedPart } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
+import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
 
 // Admin types a free-text Parts line item (e.g. "Replacement chain") with
 // no dropdown tying it to a specific catalog part, so there's no exact key
@@ -44,6 +45,9 @@ export async function POST(request: NextRequest) {
   const laborDescriptions = formData.getAll('labor_description') as string[]
   const laborPrices = formData.getAll('labor_price') as string[]
   const priorityFeeRaw = formData.get('priority_fee') as string
+  const laborTypeRaw = formData.get('labor_type') as string
+  const taxRatePercentRaw = formData.get('tax_rate_percent') as string
+  const includeCardSurcharge = formData.get('include_card_surcharge') === 'true'
   if (!unitId) {
     return NextResponse.json({ error: 'Missing unit_id' }, { status: 400 })
   }
@@ -51,14 +55,25 @@ export async function POST(request: NextRequest) {
   const rawPartsLineItems = partsDescriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
-  const laborLineItems = laborDescriptions
+  const rawLaborLineItems = laborDescriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
   const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
 
-  if (rawPartsLineItems.length === 0 && laborLineItems.length === 0 && !priorityFee) {
+  if (rawPartsLineItems.length === 0 && rawLaborLineItems.length === 0 && !priorityFee) {
     return NextResponse.json({ error: 'Add at least one line item with a description.' }, { status: 400 })
   }
+
+  // Any Parts line item at all makes the whole invoice taxable (Fla. Admin.
+  // Code 12A-1.006) and selects the labor line's STLA type - Jesse's
+  // labor_type override (if any) still wins over this auto-detection.
+  const hasParts = rawPartsLineItems.length > 0
+  const laborType: LaborType = laborTypeRaw === 'STLA' || laborTypeRaw === 'NTSTLA' ? laborTypeRaw : hasParts ? 'STLA' : 'NTSTLA'
+  // Shown plainly on the invoice line itself, not just tracked internally.
+  const laborLineItems = rawLaborLineItems.map(li => ({ ...li, description: `${li.description} (${laborType})` }))
+  const taxRatePercent = taxRatePercentRaw && Number.isFinite(Number(taxRatePercentRaw))
+    ? Number(taxRatePercentRaw)
+    : await getDefaultTaxRatePercent(supabase)
 
   const { data: unit } = await supabase
     .from('units')
@@ -108,11 +123,21 @@ export async function POST(request: NextRequest) {
   const partsAndLaborSubtotal = [...partsLineItems, ...laborLineItems].reduce((sum, li) => sum + li.amount, 0)
   const referralDiscountAmount = applyReferralDiscount ? Math.round(partsAndLaborSubtotal * 0.10 * 100) / 100 : 0
 
+  const billing = computeInvoiceBilling({
+    taxableSubtotal: partsAndLaborSubtotal,
+    otherCharges: priorityFee - referralDiscountAmount,
+    hasParts,
+    taxRatePercent,
+    includeCardSurcharge,
+  })
+
   const lineItems = [
     ...partsLineItems,
     ...laborLineItems,
     ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
+    ...(billing.taxLine ? [billing.taxLine] : []),
+    ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
   const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 
@@ -135,6 +160,8 @@ export async function POST(request: NextRequest) {
     },
     lineItems,
     logoUrl,
+    laborOnlyNote: billing.laborOnlyNote,
+    showCardSurchargeDisclosure: !!billing.surchargeLine,
   })
 
   // Best-effort: save this as the unit's current invoice/quote so it shows
@@ -161,6 +188,10 @@ export async function POST(request: NextRequest) {
         amount: invoiceTotal,
         description: `Invoice ${invoiceNumber}`,
         status: 'sent',
+        sales_tax_rate: taxRatePercent,
+        sales_tax_amount: billing.taxAmount,
+        card_surcharge_amount: billing.surchargeAmount,
+        labor_type: laborType,
       })
       .select('id')
       .single()

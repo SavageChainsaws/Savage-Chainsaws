@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { sendEmail } from '@/lib/email'
 import { createSquarePaymentLink, getSquareOrderPaidStatus } from '@/lib/square'
+import { CARD_SURCHARGE_DISCLOSURE, getDefaultTaxRatePercent } from '@/lib/billing'
 import SendInvoiceButton from '../components/SendInvoiceButton'
 import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
@@ -238,7 +239,8 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
   // tappable button in the email body, not just something inside the PDF
   // attachment.
   const payNowButton = invoice.square_payment_link_url && !invoice.paid_at
-    ? `<p style="margin: 20px 0;"><a href="${invoice.square_payment_link_url}" style="background-color:#ea580c;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Pay Now - $${total.toFixed(2)}</a></p>`
+    ? `<p style="margin: 20px 0;"><a href="${invoice.square_payment_link_url}" style="background-color:#ea580c;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Pay Now - $${total.toFixed(2)}</a></p>
+       <p style="margin: 0 0 20px; font-size: 12px; color: #666666;">${CARD_SURCHARGE_DISCLOSURE}</p>`
     : ''
 
   const html = `
@@ -292,6 +294,7 @@ export default async function InvoicesPage({
   // CreateCustomInvoiceForm) - same shape/fields as the dashboard's own
   // fetch for the same form (app/page.tsx).
   const { data: customers } = await supabase.from('customers').select('id, name, email, phone').order('name')
+  const defaultTaxRatePercent = await getDefaultTaxRatePercent(supabase)
 
   const { data: invoices } = await supabase
     .from('invoices')
@@ -373,6 +376,7 @@ export default async function InvoicesPage({
           <div className="flex items-center gap-2">
             <CreateInvoiceButton
               customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+              defaultTaxRatePercent={defaultTaxRatePercent}
             />
             <Link
               href="/"
