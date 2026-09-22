@@ -9,6 +9,7 @@ import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
 import MarkPaidToggle from '../components/MarkPaidToggle'
 import ArchiveToggle from '../components/ArchiveToggle'
+import CreateInvoiceButton from '../components/CreateInvoiceButton'
 
 type SendInvoiceState = { success: boolean; message: string } | null
 type DeleteInvoiceState = { success: boolean; message: string } | null
@@ -287,6 +288,11 @@ export default async function InvoicesPage({
   const params = await searchParams
   const view = params.view === 'archived' ? 'archived' : 'active'
 
+  // For the "+ New Invoice" modal's customer-picker (see
+  // CreateCustomInvoiceForm) - same shape/fields as the dashboard's own
+  // fetch for the same form (app/page.tsx).
+  const { data: customers } = await supabase.from('customers').select('id, name, email, phone').order('name')
+
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
@@ -364,12 +370,17 @@ export default async function InvoicesPage({
               <p className="text-sm text-gray-400">All Invoices</p>
             </div>
           </div>
-          <Link
-            href="/"
-            className="border border-zinc-700 hover:border-orange-500 text-sm px-4 py-2 rounded-lg transition"
-          >
-            ← Back to Dashboard
-          </Link>
+          <div className="flex items-center gap-2">
+            <CreateInvoiceButton
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+            />
+            <Link
+              href="/"
+              className="border border-zinc-700 hover:border-orange-500 text-sm px-4 py-2 rounded-lg transition whitespace-nowrap"
+            >
+              ← Back to Dashboard
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
