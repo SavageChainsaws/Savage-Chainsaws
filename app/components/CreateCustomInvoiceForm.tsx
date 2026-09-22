@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 
 type CustomerOption = {
   id: string
@@ -11,7 +11,18 @@ type CustomerOption = {
 
 type LineItem = { description: string; price: string }
 
-export default function CreateCustomInvoiceForm({ customers }: { customers: CustomerOption[] }) {
+export default function CreateCustomInvoiceForm({
+  customers,
+  onCreated,
+}: {
+  customers: CustomerOption[]
+  // Fires once the PDF has actually been generated and the invoice row
+  // saved server-side (not just on click) - callers that show this form in
+  // a place with its own list of invoices (see app/invoices/page.tsx) use
+  // this to close the modal and refresh, without this component needing to
+  // know anything about where it's being rendered.
+  onCreated?: () => void
+}) {
   const [selectedId, setSelectedId] = useState('')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -20,6 +31,8 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
     { description: '', price: '' },
     { description: '', price: '' },
   ])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   function handleSelectCustomer(id: string) {
     setSelectedId(id)
@@ -45,8 +58,44 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
 
   const total = items.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
 
+  // Fetch rather than a plain form POST so this can tell success from
+  // failure and know exactly when the invoice row has actually been saved
+  // (needed for onCreated) - the visible result is the same either way,
+  // the generated PDF opening in a new tab, just via a blob URL instead of
+  // a browser-native navigation.
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+    setIsSubmitting(true)
+    // Opened synchronously, still inside the click's user-activation window,
+    // so popup blockers allow it - navigating this tab's location later
+    // (once the PDF blob is ready, after an await) is always allowed once
+    // a reference to it already exists, unlike a fresh window.open() after
+    // an await, which most browsers treat as no longer user-initiated.
+    const newTab = window.open('', '_blank')
+    try {
+      const res = await fetch('/api/invoice/custom', { method: 'POST', body: new FormData(e.currentTarget) })
+      if (!res.ok) {
+        newTab?.close()
+        const body = await res.json().catch(() => ({}))
+        setError(body?.error || `Could not create the invoice (${res.status}).`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      if (newTab) newTab.location.href = url
+      else window.open(url, '_blank')
+      onCreated?.()
+    } catch {
+      newTab?.close()
+      setError('Could not reach the server. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
-    <form action="/api/invoice/custom" method="POST" target="_blank" className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3">
       <input type="hidden" name="customer_id" value={selectedId} />
       <div>
         <label className="block text-xs text-gray-500 mb-1">Link an existing customer (optional)</label>
@@ -156,8 +205,14 @@ export default function CreateCustomInvoiceForm({ customers }: { customers: Cust
         <span className="text-lg font-bold text-orange-400">${total.toFixed(2)}</span>
       </div>
 
-      <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg">
-        Generate PDF Invoice
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg"
+      >
+        {isSubmitting ? 'Generating...' : 'Generate PDF Invoice'}
       </button>
     </form>
   )
