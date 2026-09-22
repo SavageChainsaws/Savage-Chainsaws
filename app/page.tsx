@@ -19,6 +19,7 @@ import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
 import { sendEmail } from '@/lib/email'
+import { toTitleCase, normalizeEmail } from '@/lib/text'
 import { sendPushToCustomer, sendPushToReferralSource } from '@/lib/push'
 import { unitLabel } from '@/lib/units'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -347,7 +348,8 @@ async function updateCustomerEmail(formData: FormData) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
   const id = formData.get('id') as string
-  const email = ((formData.get('email') as string) || '').trim()
+  const emailRaw = ((formData.get('email') as string) || '').trim()
+  const email = emailRaw ? normalizeEmail(emailRaw) : ''
   await supabase.from('customers').update({ email: email || null }).eq('id', id)
   revalidatePath('/')
 }
@@ -374,9 +376,11 @@ async function createCustomerLogin(_prevState: CreateLoginState, formData: FormD
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
 
-  const email = ((formData.get('email') as string) || '').trim()
+  const emailRaw = ((formData.get('email') as string) || '').trim()
+  const email = emailRaw ? normalizeEmail(emailRaw) : ''
   const customerId = (formData.get('customer_id') as string) || ''
-  const newCustomerName = ((formData.get('new_customer_name') as string) || '').trim()
+  const newCustomerNameRaw = ((formData.get('new_customer_name') as string) || '').trim()
+  const newCustomerName = newCustomerNameRaw ? toTitleCase(newCustomerNameRaw) : ''
   const passwordInput = ((formData.get('password') as string) || '').trim()
 
   if (!email) return { success: false, message: 'Email is required.' }
@@ -527,8 +531,10 @@ async function createReferralSourceLogin(_prevState: CreateReferralState, formDa
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
 
-  const name = ((formData.get('name') as string) || '').trim()
-  const email = ((formData.get('email') as string) || '').trim()
+  const nameRaw = ((formData.get('name') as string) || '').trim()
+  const name = nameRaw ? toTitleCase(nameRaw) : ''
+  const emailRaw = ((formData.get('email') as string) || '').trim()
+  const email = emailRaw ? normalizeEmail(emailRaw) : ''
   const phone = ((formData.get('phone') as string) || '').trim() || null
   const codeRaw = ((formData.get('referral_code') as string) || '').trim()
   const passwordInput = ((formData.get('password') as string) || '').trim()

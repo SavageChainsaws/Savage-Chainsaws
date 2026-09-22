@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import SiteFooter from '../components/SiteFooter'
+import { toTitleCase } from '@/lib/text'
 
 // useSearchParams() requires a Suspense boundary to opt this one small
 // piece out of static prerendering (same pattern as
@@ -71,7 +72,7 @@ export default function SignupPage() {
     setLoading(true)
 
     const cleanEmail = email.trim().toLowerCase()
-    const cleanName = companyName.trim()
+    const cleanName = toTitleCase(companyName.trim())
     const cleanPhone = phone.trim() || null
     const trimmedReferralCode = referralCode.trim()
 
