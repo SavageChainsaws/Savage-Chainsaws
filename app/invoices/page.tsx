@@ -443,11 +443,18 @@ export default async function InvoicesPage({
                 : 'Unpaid and awaiting payment, most recent first.'}
             </p>
           </div>
-          {/* The scroll here works fine on its own, but most trackpad setups (macOS
-              default included) hide the native scrollbar until you're actively
-              scrolling, so there's no hint this table has more columns off to the
-              right - a persistent, styled scrollbar makes that discoverable. */}
-          <div className="overflow-x-auto [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.700)_theme(colors.zinc.900)] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-zinc-900 [&::-webkit-scrollbar-thumb]:bg-zinc-700 [&::-webkit-scrollbar-thumb]:rounded-full">
+          {/* Table + horizontal scroll below sm: no amount of compacting keeps an
+              8-column row with this many action buttons under a phone's width,
+              and worse, the scrollbar-visibility fix a few rows down doesn't
+              actually work on iOS Safari - it ignores ::-webkit-scrollbar
+              styling for touch-scrolled elements, and doesn't support
+              scrollbar-width at all, so there's no way to see or discover
+              there's more to scroll to on an iPhone. Below sm:, a stacked
+              card per invoice (see the sm:hidden block after this one) avoids
+              horizontal scrolling entirely - the exact same action components,
+              just with a full phone width to flex-wrap into instead of
+              competing for space in one table row. */}
+          <div className="hidden sm:block overflow-x-auto [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.700)_theme(colors.zinc.900)] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-zinc-900 [&::-webkit-scrollbar-thumb]:bg-zinc-700 [&::-webkit-scrollbar-thumb]:rounded-full">
             <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
@@ -551,6 +558,92 @@ export default async function InvoicesPage({
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile: one card per invoice, full width to wrap into - see the
+              comment above the table for why this exists as its own layout
+              rather than just another breakpoint tweak on the table. */}
+          <div className="sm:hidden divide-y divide-zinc-800">
+            {visibleRows.map(r => (
+              <div key={r.id} className="p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{r.invoiceNumber}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(r.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}
+                    </p>
+                  </div>
+                  <p className="text-lg font-bold text-orange-400 whitespace-nowrap">${r.amount.toFixed(2)}</p>
+                </div>
+
+                <p className="font-medium text-sm truncate" title={r.customerName}>{r.customerName}</p>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="text-gray-400 capitalize">{r.status}</span>
+                  {r.sentAt ? (
+                    <span className="text-green-400" title={`Sent to ${r.sentTo}`}>
+                      Sent {new Date(r.sentAt).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}
+                    </span>
+                  ) : (
+                    <span className="text-gray-600">Not Sent</span>
+                  )}
+                  {r.paidAt ? (
+                    <span
+                      className="px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
+                      title={r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
+                    >
+                      Paid
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded-full font-medium bg-zinc-700 text-gray-300">Unpaid</span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-start gap-1.5 pt-1">
+                  {r.pdfUrl ? (
+                    <a
+                      href={r.pdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-orange-400 hover:text-orange-300 pt-1"
+                    >
+                      PDF
+                    </a>
+                  ) : (
+                    <span className="text-xs text-gray-600 pt-1">No PDF</span>
+                  )}
+                  {r.pdfUrl && (
+                    <SendInvoiceButton
+                      invoiceId={r.id}
+                      defaultEmail={r.defaultEmail}
+                      alreadySent={!!r.sentAt}
+                      action={sendInvoiceEmail}
+                    />
+                  )}
+                  <InvoicePaymentActions
+                    invoiceId={r.id}
+                    paymentLinkUrl={r.paymentLinkUrl}
+                    isPaid={!!r.paidAt}
+                    generateAction={generatePaymentLink}
+                    checkStatusAction={checkPaymentStatus}
+                  />
+                  <MarkPaidToggle invoiceId={r.id} isPaid={!!r.paidAt} action={toggleManualPaid} />
+                  {!r.paidAt && (
+                    <ArchiveToggle invoiceId={r.id} isArchived={!!r.archivedAt} action={toggleArchived} />
+                  )}
+                  <DeleteInvoiceButton
+                    invoiceId={r.id}
+                    invoiceNumber={r.invoiceNumber}
+                    action={deleteInvoice}
+                  />
+                </div>
+              </div>
+            ))}
+            {visibleRows.length === 0 && (
+              <p className="px-6 py-8 text-gray-500 text-center text-sm">
+                {view === 'archived' ? 'No archived invoices yet.' : 'No active invoices - all caught up.'}
+              </p>
+            )}
           </div>
         </div>
       </div>
