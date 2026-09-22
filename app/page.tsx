@@ -29,6 +29,7 @@ import CreateReferralSourceLoginForm from './components/CreateReferralSourceLogi
 import DeleteReferralSourceLoginForm from './components/DeleteReferralSourceLoginForm'
 import CopyReferralLink from './components/CopyReferralLink'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
+import ShopSettingsForm from './components/ShopSettingsForm'
 import EditCustomerButton from './components/EditCustomerButton'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
@@ -36,6 +37,7 @@ import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBo
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 import PushToggle from './components/PushToggle'
+import { getDefaultTaxRatePercent } from '@/lib/billing'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -76,6 +78,35 @@ async function resolveReferralCode(
     .eq('referral_code', raw.toUpperCase())
     .maybeSingle()
   return data?.id ?? null
+}
+
+type UpdateShopSettingState = { success: boolean; message: string } | null
+
+// Backs the "Shop Settings" panel - currently just the FL sales tax rate
+// (see lib/billing.ts's getDefaultTaxRatePercent), stored in shop_settings
+// as a key/value row rather than hardcoded, so Jesse can change it himself
+// for jobs outside Seminole County without a code deploy. Every invoice
+// form still lets him override the rate per-invoice on top of whatever
+// this default is.
+async function updateShopSetting(_prevState: UpdateShopSettingState, formData: FormData): Promise<UpdateShopSettingState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const taxRateRaw = (formData.get('fl_sales_tax_rate_percent') as string) || ''
+  const taxRate = Number(taxRateRaw)
+  if (!Number.isFinite(taxRate) || taxRate < 0) {
+    return { success: false, message: 'Enter a valid, non-negative tax rate.' }
+  }
+
+  const { error } = await supabase
+    .from('shop_settings')
+    .upsert({ key: 'fl_sales_tax_rate_percent', value: String(taxRate), updated_at: new Date().toISOString() })
+  if (error) return { success: false, message: `Could not save: ${error.message}` }
+
+  revalidatePath('/')
+  revalidatePath('/invoices')
+  return { success: true, message: `FL Sales Tax Rate updated to ${taxRate}%.` }
 }
 
 async function addUnit(formData: FormData) {
@@ -1202,6 +1233,7 @@ export default async function Home({
   const openUnitId = params.open || null
 
   const { data: customers } = await supabase.from('customers').select('*').order('name')
+  const defaultTaxRatePercent = await getDefaultTaxRatePercent(supabase)
   const { data: referralSources } = await supabase.from('referral_sources').select('*').order('name')
   const { data: allUnits } = await supabase.from('units').select('*').order('created_at', { ascending: false })
   const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
@@ -1639,6 +1671,7 @@ export default async function Home({
             unitId={unit.id}
             defaultLaborPrice={latestCost}
             defaultPriorityFee={unit.is_priority ? PRIORITY_FEE : ''}
+            defaultTaxRatePercent={defaultTaxRatePercent}
           />
           <p className="text-xs text-gray-600 mt-1.5">
             {parts.length > 0
@@ -2544,7 +2577,18 @@ export default async function Home({
             </p>
             <CreateCustomInvoiceForm
               customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+              defaultTaxRatePercent={defaultTaxRatePercent}
             />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Shop Settings</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6">
+            <ShopSettingsForm defaultTaxRatePercent={defaultTaxRatePercent} action={updateShopSetting} />
           </div>
         </details>
 

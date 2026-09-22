@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
+import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
+import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 
 type CustomerOption = {
   id: string
@@ -9,13 +11,13 @@ type CustomerOption = {
   phone: string | null
 }
 
-type LineItem = { description: string; price: string }
-
 export default function CreateCustomInvoiceForm({
   customers,
+  defaultTaxRatePercent,
   onCreated,
 }: {
   customers: CustomerOption[]
+  defaultTaxRatePercent: number
   // Fires once the PDF has actually been generated and the invoice row
   // saved server-side (not just on click) - callers that show this form in
   // a place with its own list of invoices (see app/invoices/page.tsx) use
@@ -27,10 +29,8 @@ export default function CreateCustomInvoiceForm({
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [items, setItems] = useState<LineItem[]>([
-    { description: '', price: '' },
-    { description: '', price: '' },
-  ])
+  const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '' }])
+  const [laborItems, setLaborItems] = useState<LineItem[]>([{ description: '', price: '' }])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,19 +44,28 @@ export default function CreateCustomInvoiceForm({
     }
   }
 
-  function updateItem(index: number, field: keyof LineItem, value: string) {
-    setItems(prev => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)))
+  function updateItem(
+    setter: React.Dispatch<React.SetStateAction<LineItem[]>>,
+    index: number,
+    field: keyof LineItem,
+    value: string
+  ) {
+    setter(prev => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)))
   }
 
-  function addItem() {
-    setItems(prev => [...prev, { description: '', price: '' }])
+  function addItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>) {
+    setter(prev => [...prev, { description: '', price: '' }])
   }
 
-  function removeItem(index: number) {
-    setItems(prev => prev.filter((_, i) => i !== index))
+  function removeItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>, index: number) {
+    setter(prev => prev.filter((_, i) => i !== index))
   }
 
-  const total = items.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  // Any Parts line with a description is enough to make the whole invoice
+  // taxable, regardless of its price - see CreateUnitInvoiceForm.
+  const hasParts = partsItems.some(it => it.description.trim().length > 0)
+  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  const laborTotal = laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
 
   // Fetch rather than a plain form POST so this can tell success from
   // failure and know exactly when the invoice row has actually been saved
@@ -157,53 +166,33 @@ export default function CreateCustomInvoiceForm({
         </div>
       </details>
 
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Line Items</label>
-        <div className="space-y-2">
-          {items.map((item, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2">
-              <input
-                name="description"
-                value={item.description}
-                onChange={e => updateItem(i, 'description', e.target.value)}
-                placeholder="Description (e.g. Labor, Blade, Air Filter...)"
-                className="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-              />
-              <input
-                name="price"
-                type="number"
-                step="0.01"
-                min="0"
-                value={item.price}
-                onChange={e => updateItem(i, 'price', e.target.value)}
-                placeholder="0.00"
-                className="w-28 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-              />
-              {items.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeItem(i)}
-                  className="text-xs text-red-400 hover:text-red-300"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={addItem}
-          className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg"
-        >
-          + Add Line
-        </button>
-      </div>
+      <InvoiceItemGroup
+        title="Parts"
+        items={partsItems}
+        descriptionField="parts_description"
+        priceField="parts_price"
+        placeholder="Description (e.g. Handle bracket)"
+        onUpdate={(i, field, value) => updateItem(setPartsItems, i, field, value)}
+        onAdd={() => addItem(setPartsItems)}
+        onRemove={i => removeItem(setPartsItems, i)}
+      />
 
-      <div className="flex items-center justify-between border-t border-zinc-800 pt-3">
-        <span className="text-sm text-gray-400">Grand Total</span>
-        <span className="text-lg font-bold text-orange-400">${total.toFixed(2)}</span>
-      </div>
+      <InvoiceItemGroup
+        title="Labor"
+        items={laborItems}
+        descriptionField="labor_description"
+        priceField="labor_price"
+        placeholder="Description (e.g. Tune-up)"
+        onUpdate={(i, field, value) => updateItem(setLaborItems, i, field, value)}
+        onAdd={() => addItem(setLaborItems)}
+        onRemove={i => removeItem(setLaborItems, i)}
+      />
+
+      <TaxAndSurchargeFields
+        hasParts={hasParts}
+        taxableSubtotal={partsTotal + laborTotal}
+        defaultTaxRatePercent={defaultTaxRatePercent}
+      />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

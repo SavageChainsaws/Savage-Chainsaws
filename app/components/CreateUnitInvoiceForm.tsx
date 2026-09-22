@@ -1,69 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-
-type LineItem = { description: string; price: string }
-
-function ItemGroup({
-  title,
-  items,
-  descriptionField,
-  priceField,
-  placeholder,
-  onUpdate,
-  onAdd,
-  onRemove,
-}: {
-  title: string
-  items: LineItem[]
-  descriptionField: string
-  priceField: string
-  placeholder: string
-  onUpdate: (index: number, field: keyof LineItem, value: string) => void
-  onAdd: () => void
-  onRemove: (index: number) => void
-}) {
-  return (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">{title}</label>
-      <div className="space-y-2">
-        {items.map((item, i) => (
-          <div key={i} className="flex flex-wrap items-center gap-2">
-            <input
-              name={descriptionField}
-              value={item.description}
-              onChange={e => onUpdate(i, 'description', e.target.value)}
-              placeholder={placeholder}
-              className="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            <input
-              name={priceField}
-              type="number"
-              step="0.01"
-              min="0"
-              value={item.price}
-              onChange={e => onUpdate(i, 'price', e.target.value)}
-              placeholder="0.00"
-              className="w-28 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            {items.length > 1 && (
-              <button type="button" onClick={() => onRemove(i)} className="text-xs text-red-400 hover:text-red-300">
-                Remove
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={onAdd}
-        className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg"
-      >
-        + Add {title.split(' ')[0]} Line
-      </button>
-    </div>
-  )
-}
+import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
+import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 
 // Itemized counterpart to the per-unit "Create Invoice" tool's old flat
 // "Labor / Service Fee $" + "Parts Total $" fields - mirrors the itemized
@@ -75,10 +14,12 @@ export default function CreateUnitInvoiceForm({
   unitId,
   defaultLaborPrice,
   defaultPriorityFee,
+  defaultTaxRatePercent,
 }: {
   unitId: string
   defaultLaborPrice: number | string
   defaultPriorityFee: number | string
+  defaultTaxRatePercent: number
 }) {
   const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '' }])
   const [laborItems, setLaborItems] = useState<LineItem[]>([
@@ -103,16 +44,19 @@ export default function CreateUnitInvoiceForm({
     setter(prev => prev.filter((_, i) => i !== index))
   }
 
-  const total =
-    partsItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0) +
-    laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0) +
-    (Number(priorityFee) || 0)
+  // Any Parts line with a description is enough to make the whole invoice
+  // taxable, regardless of its price - the moment tangible parts/materials
+  // are transferred, Fla. Admin. Code 12A-1.006 taxes the full invoice.
+  const hasParts = partsItems.some(it => it.description.trim().length > 0)
+  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  const laborTotal = laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  const priorityFeeAmount = Number(priorityFee) || 0
 
   return (
     <form action="/api/invoice" method="POST" target="_blank" className="space-y-3">
       <input type="hidden" name="unit_id" value={unitId} />
 
-      <ItemGroup
+      <InvoiceItemGroup
         title="Parts"
         items={partsItems}
         descriptionField="parts_description"
@@ -123,7 +67,7 @@ export default function CreateUnitInvoiceForm({
         onRemove={i => removeItem(setPartsItems, i)}
       />
 
-      <ItemGroup
+      <InvoiceItemGroup
         title="Labor"
         items={laborItems}
         descriptionField="labor_description"
@@ -149,10 +93,12 @@ export default function CreateUnitInvoiceForm({
         />
       </div>
 
-      <div className="flex items-center justify-between border-t border-zinc-800 pt-3">
-        <span className="text-sm text-gray-400">Grand Total</span>
-        <span className="text-lg font-bold text-orange-400">${total.toFixed(2)}</span>
-      </div>
+      <TaxAndSurchargeFields
+        hasParts={hasParts}
+        taxableSubtotal={partsTotal + laborTotal}
+        otherCharges={priorityFeeAmount}
+        defaultTaxRatePercent={defaultTaxRatePercent}
+      />
 
       <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
         Create Invoice

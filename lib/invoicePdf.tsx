@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image as PdfImage, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
+import { CARD_SURCHARGE_DISCLOSURE, LABOR_ONLY_NOTE } from './billing'
 
 const BUSINESS = {
   name: 'Savage Chainsaws',
@@ -129,6 +130,13 @@ const styles = StyleSheet.create({
   descriptionText: { fontSize: 10 },
   skuLine: { fontSize: 7.5, color: BRAND.muted, marginTop: 1 },
 
+  // Audit-trail note for a labor-only invoice (Fla. Admin. Code
+  // 12A-1.006 exemption) and the card-surcharge disclosure - both plain,
+  // one-line notes printed above the totals block rather than inside it,
+  // so neither reads as part of the itemized math.
+  noteLine: { fontSize: 8.5, color: BRAND.muted, marginTop: 4, textAlign: 'right' },
+  laborOnlyNote: { fontSize: 9, fontWeight: 700, color: BRAND.orange, marginTop: 4, textAlign: 'right' },
+
   totalsRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 },
   totalsBlock: {
     width: 220,
@@ -193,9 +201,26 @@ export type InvoicePdfInput = {
   // Savage Chainsaws' own logo - kept as an input (rather than hardcoded)
   // so the API routes control the absolute URL, same as before.
   logoUrl?: string | null
+  // Set whenever the invoice has no parts/materials line items at all - the
+  // audit-trail note the FL sales-tax exemption (Fla. Admin. Code
+  // 12A-1.006) relies on for a labor-only invoice. See lib/billing.ts.
+  laborOnlyNote?: boolean
+  // Set whenever a card-processing-fee line was added - the disclosure the
+  // surcharge requires, printed near the totals since this PDF has no
+  // payment button of its own (that only lives in the invoice email).
+  showCardSurchargeDisclosure?: boolean
 }
 
-function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems, logoUrl }: InvoicePdfInput) {
+function InvoiceDocument({
+  invoiceNumber,
+  invoiceDate,
+  customer,
+  unit,
+  lineItems,
+  logoUrl,
+  laborOnlyNote,
+  showCardSurchargeDisclosure,
+}: InvoicePdfInput) {
   const grandTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
   const hasUnit = !!unit && (unit.model || unit.serialNumber || unit.equipmentType || unit.nickname || unit.thumbnailUrl)
   const customerAccent = customer.brandColor || DEFAULT_ACCENT
@@ -293,6 +318,9 @@ function InvoiceDocument({ invoiceNumber, invoiceDate, customer, unit, lineItems
               </View>
             ))}
           </View>
+
+          {laborOnlyNote && <Text style={styles.laborOnlyNote}>{LABOR_ONLY_NOTE}</Text>}
+          {showCardSurchargeDisclosure && <Text style={styles.noteLine}>{CARD_SURCHARGE_DISCLOSURE}</Text>}
 
           <View style={styles.totalsRow}>
             <View style={styles.totalsBlock}>
