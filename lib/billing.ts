@@ -96,6 +96,48 @@ export function computeInvoiceBilling({
   }
 }
 
+// Reconstructs an editable Parts/Labor breakdown from a previously-saved
+// invoice's flat line_items array (see app/api/invoice/route.ts) so an
+// existing invoice can be re-opened for editing without a schema change to
+// tag each stored line's category. The array has no explicit "kind" field,
+// so this leans on the exact conventions that route always writes: labor
+// descriptions are suffixed " (STLA)"/" (NTSTLA)", and the tax/surcharge/
+// priority-fee/referral-discount lines each have a fixed, recognizable
+// description. Anything left over is treated as a Parts line - the only
+// category with no distinguishing marker of its own.
+export function parseInvoiceLineItemsForEdit(lineItems: BillingLine[] | null | undefined) {
+  const partsItems: { description: string; price: string }[] = []
+  const laborItems: { description: string; price: string }[] = []
+  let priorityFee = 0
+  let referralDiscountAmount = 0
+
+  for (const li of lineItems || []) {
+    if (/^FL Sales Tax \(/.test(li.description)) continue
+    if (li.description === 'Card Processing Fee (3%)') continue
+    if (/^Referral Discount \(/.test(li.description)) {
+      referralDiscountAmount = Math.abs(li.amount)
+      continue
+    }
+    if (li.description === 'Priority Fee') {
+      priorityFee = li.amount
+      continue
+    }
+    const laborMatch = li.description.match(/^(.*) \((?:STLA|NTSTLA)\)$/)
+    if (laborMatch) {
+      laborItems.push({ description: laborMatch[1], price: String(li.amount) })
+    } else {
+      partsItems.push({ description: li.description, price: String(li.amount) })
+    }
+  }
+
+  return {
+    partsItems: partsItems.length > 0 ? partsItems : [{ description: '', price: '' }],
+    laborItems: laborItems.length > 0 ? laborItems : [{ description: '', price: '' }],
+    priorityFee,
+    referralDiscountAmount,
+  }
+}
+
 export const CARD_SURCHARGE_DISCLOSURE =
   'A 3% card processing fee applies to credit card payments. No fee for Zelle, Cash App, or debit.'
 

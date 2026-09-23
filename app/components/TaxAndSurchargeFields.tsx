@@ -15,6 +15,8 @@ export default function TaxAndSurchargeFields({
   taxableSubtotal,
   otherCharges = 0,
   defaultTaxRatePercent,
+  defaultIncludeSurcharge = true,
+  defaultLaborType,
 }: {
   hasParts: boolean
   // Parts + labor only - the tax base (Fla. Admin. Code 12A-1.006).
@@ -25,10 +27,21 @@ export default function TaxAndSurchargeFields({
   // on invoices that qualify for one - the server always recomputes.
   otherCharges?: number
   defaultTaxRatePercent: number
+  // Lets the edit-invoice flow start the checkbox matching whatever the
+  // invoice's last save actually had (no surcharge line saved = the admin
+  // had it unchecked), instead of always defaulting to on like a brand new
+  // invoice does.
+  defaultIncludeSurcharge?: boolean
+  // Same idea for Labor Type - if the invoice being edited was manually
+  // overridden away from what hasParts alone would auto-derive, the edit
+  // form should show that override rather than silently reverting to Auto.
+  defaultLaborType?: 'STLA' | 'NTSTLA'
 }) {
   const [taxRatePercent, setTaxRatePercent] = useState(defaultTaxRatePercent)
-  const [laborTypeOverride, setLaborTypeOverride] = useState<'STLA' | 'NTSTLA' | ''>('')
-  const [includeSurcharge, setIncludeSurcharge] = useState(true)
+  const [laborTypeOverride, setLaborTypeOverride] = useState<'STLA' | 'NTSTLA' | ''>(
+    defaultLaborType && defaultLaborType !== (hasParts ? 'STLA' : 'NTSTLA') ? defaultLaborType : ''
+  )
+  const [includeSurcharge, setIncludeSurcharge] = useState(defaultIncludeSurcharge)
 
   const laborType = laborTypeOverride || (hasParts ? 'STLA' : 'NTSTLA')
   const subtotal = taxableSubtotal + otherCharges

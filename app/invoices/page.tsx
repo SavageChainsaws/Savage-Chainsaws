@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { sendEmail } from '@/lib/email'
 import { createSquarePaymentLink, getSquareOrderPaidStatus } from '@/lib/square'
 import { CARD_SURCHARGE_DISCLOSURE, getDefaultTaxRatePercent } from '@/lib/billing'
+import { unitLabel } from '@/lib/units'
 import SendInvoiceButton from '../components/SendInvoiceButton'
 import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
@@ -299,12 +300,21 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, units(invoice_url, customers(name, email)), customers(name, email)'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, unit_id, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email)'
     )
     .order('created_at', { ascending: false })
 
   const rows = (invoices || []).map(inv => {
-    const unitCustomer = (inv.units as unknown as { customers?: { name?: string; email?: string } | null } | null)?.customers
+    const unit = inv.units as unknown as {
+      invoice_url?: string | null
+      status?: string | null
+      model?: string | null
+      equipment_type?: string | null
+      serial_number?: string | null
+      nickname?: string | null
+      customers?: { name?: string; email?: string } | null
+    } | null
+    const unitCustomer = unit?.customers
     const directCustomer = inv.customers as unknown as { name?: string; email?: string } | null
     const displayName = inv.customer_name || directCustomer?.name || unitCustomer?.name || 'Unknown Customer'
     // Prefers what was actually on the PDF at send time (customer_email,
@@ -313,7 +323,7 @@ export default async function InvoicesPage({
     // customer was billed as, falling back to the record for older
     // invoices generated before customer_email existed.
     const defaultEmail = inv.customer_email || directCustomer?.email || unitCustomer?.email || ''
-    const pdfUrl = inv.pdf_url || (inv.units as unknown as { invoice_url?: string } | null)?.invoice_url || null
+    const pdfUrl = inv.pdf_url || unit?.invoice_url || null
     const paidAt = inv.paid_at as string | null
     const archivedAt = inv.archived_at as string | null
     return {
@@ -321,6 +331,7 @@ export default async function InvoicesPage({
       date: inv.created_at as string,
       invoiceNumber: (inv.invoice_number as string) || (inv.description as string) || '—',
       customerName: displayName,
+      customerId: inv.customer_id as string | null,
       defaultEmail,
       amount: Number(inv.amount) || 0,
       status: (inv.status as string) || 'sent',
@@ -331,6 +342,13 @@ export default async function InvoicesPage({
       paidAt,
       paidVia: inv.paid_via as string | null,
       archivedAt,
+      unitId: inv.unit_id as string | null,
+      // A unit's status flips to 'Fleet' once picked up - the dashboard's
+      // "All Units - Repair Flow" accordion (what the deep-link below
+      // opens) excludes Fleet units entirely, so linking to one would land
+      // on a page whose target panel never renders. Null unitLabel means
+      // "not linkable", same as no unit_id at all.
+      unitLabel: unit && unit.status !== 'Fleet' ? unitLabel(unit) : null,
       // Paid invoices archive automatically the moment paid_at is set - no
       // separate "move to archive" step needed, the view filter below is
       // the whole mechanism. archived_at lets the admin also archive an
@@ -465,6 +483,7 @@ export default async function InvoicesPage({
                   <th className="px-3 sm:px-4 py-2">Date</th>
                   <th className="px-2 py-2">Invoice #</th>
                   <th className="px-2 py-2">Customer</th>
+                  <th className="px-2 py-2">Unit</th>
                   <th className="px-2 py-2 text-right">Total</th>
                   <th className="px-2 py-2">Status</th>
                   <th className="px-2 py-2">Sent</th>
@@ -481,6 +500,19 @@ export default async function InvoicesPage({
                     <td className="px-2 py-2 text-gray-300 whitespace-nowrap">{r.invoiceNumber}</td>
                     <td className="px-2 py-2 font-medium max-w-[140px] truncate" title={r.customerName}>
                       {r.customerName}
+                    </td>
+                    <td className="px-2 py-2 max-w-[140px] truncate">
+                      {r.unitId && r.unitLabel ? (
+                        <Link
+                          href={`/?customer=${r.customerId}&open=${r.unitId}`}
+                          className="text-orange-400 hover:text-orange-300 underline"
+                          title={`Open ${r.unitLabel} in the repair queue`}
+                        >
+                          {r.unitLabel}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-600">—</span>
+                      )}
                     </td>
                     <td className="px-2 py-2 text-right font-bold text-orange-400 whitespace-nowrap">${r.amount.toFixed(2)}</td>
                     <td className="px-2 py-2 text-gray-400 capitalize">{r.status}</td>
@@ -555,7 +587,7 @@ export default async function InvoicesPage({
                 ))}
                 {visibleRows.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-gray-500 text-center">
+                    <td colSpan={9} className="px-6 py-8 text-gray-500 text-center">
                       {view === 'archived' ? 'No archived invoices yet.' : 'No active invoices - all caught up.'}
                     </td>
                   </tr>
@@ -581,6 +613,16 @@ export default async function InvoicesPage({
                 </div>
 
                 <p className="font-medium text-sm truncate" title={r.customerName}>{r.customerName}</p>
+
+                {r.unitId && r.unitLabel && (
+                  <Link
+                    href={`/?customer=${r.customerId}&open=${r.unitId}`}
+                    className="text-xs text-orange-400 hover:text-orange-300 underline inline-block"
+                    title={`Open ${r.unitLabel} in the repair queue`}
+                  >
+                    {r.unitLabel}
+                  </Link>
+                )}
 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                   <span className="text-gray-400 capitalize">{r.status}</span>

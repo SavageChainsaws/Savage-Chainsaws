@@ -32,12 +32,13 @@ import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import ShopSettingsForm from './components/ShopSettingsForm'
 import EditCustomerButton from './components/EditCustomerButton'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
+import EditInvoiceForm from './components/EditInvoiceForm'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 import PushToggle from './components/PushToggle'
-import { getDefaultTaxRatePercent } from '@/lib/billing'
+import { getDefaultTaxRatePercent, parseInvoiceLineItemsForEdit } from '@/lib/billing'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -1252,6 +1253,20 @@ export default async function Home({
     .select('*')
     .not('unit_id', 'is', null)
     .order('created_at', { ascending: true })
+  // For the "Edit Invoice" tool in each unit's panel - only unit-linked
+  // invoices are relevant here (a standalone/custom invoice has no unit_id
+  // and isn't editable from this page). Ordered newest-first so the map
+  // below keeps only the most recent invoice per unit - the one the "View
+  // current invoice/quote" link and units.invoice_url already point at.
+  const { data: unitInvoicesAll } = await supabase
+    .from('invoices')
+    .select('id, unit_id, invoice_number, line_items, amount, sales_tax_rate, card_surcharge_amount, labor_type, paid_at, square_payment_link_url')
+    .not('unit_id', 'is', null)
+    .order('created_at', { ascending: false })
+  const latestInvoiceByUnit = new Map<string, NonNullable<typeof unitInvoicesAll>[number]>()
+  for (const inv of unitInvoicesAll || []) {
+    if (inv.unit_id && !latestInvoiceByUnit.has(inv.unit_id)) latestInvoiceByUnit.set(inv.unit_id, inv)
+  }
 
   let units = allUnits
   if (selectedCustomerId && !statusFilter) {
@@ -1683,6 +1698,56 @@ export default async function Home({
     )
   }
 
+  // Lets Jesse handle a mid-service change request (customer calls asking
+  // for a chain added, a part removed, a price corrected) against the
+  // unit's most recent invoice without creating a whole new one - reopens
+  // that invoice's Parts/Labor lines, recalculates tax + surcharge off the
+  // edited subtotal on save, and regenerates the same invoice/PDF in
+  // place. Only rendered when a real invoices row exists for this unit
+  // (see latestInvoiceByUnit above) - a unit whose only "invoice" is a
+  // manually uploaded photo/PDF (see updateStatus's invoice-upload field)
+  // has no row to edit here.
+  function EditInvoiceSection({ unit }: { unit: any }) {
+    const invoice = latestInvoiceByUnit.get(unit.id)
+    if (!invoice) return null
+    const parsed = parseInvoiceLineItemsForEdit(invoice.line_items)
+    const hasParts = parsed.partsItems.some((it: { description: string }) => it.description.trim().length > 0)
+    return (
+      <details className="group/edit-invoice">
+        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg whitespace-nowrap">
+          Edit Invoice {invoice.invoice_number}
+          <span className="text-xs group-open/edit-invoice:rotate-180 transition">v</span>
+        </summary>
+        <div className="w-full mt-2 space-y-2">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-500">Current total:</span>
+            <span className="font-bold text-orange-400">${Number(invoice.amount).toFixed(2)}</span>
+            {invoice.paid_at ? (
+              <span className="px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400">
+                Already Paid - editing still allowed, but double-check with the customer first
+              </span>
+            ) : invoice.square_payment_link_url ? (
+              <span className="px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/20 text-yellow-400">
+                Has a Payment Link - saving will clear it so a fresh one matches the new total
+              </span>
+            ) : null}
+          </div>
+          <EditInvoiceForm
+            invoiceId={invoice.id}
+            unitId={unit.id}
+            initialPartsItems={parsed.partsItems}
+            initialLaborItems={parsed.laborItems}
+            initialPriorityFee={parsed.priorityFee}
+            initialReferralDiscountAmount={parsed.referralDiscountAmount}
+            taxRatePercent={invoice.sales_tax_rate ?? defaultTaxRatePercent}
+            includeCardSurcharge={Number(invoice.card_surcharge_amount) > 0}
+            laborType={(invoice.labor_type as 'STLA' | 'NTSTLA') || (hasParts ? 'STLA' : 'NTSTLA')}
+          />
+        </div>
+      </details>
+    )
+  }
+
   // The messages thread for this unit (customer questions and admin
   // replies, distinguished by is_admin) plus a small form to send a new
   // admin reply - previously read-only from the admin side.
@@ -1909,6 +1974,7 @@ export default async function Home({
                   {unit.invoice_url && (
                     <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
                   )}
+                  <EditInvoiceSection unit={unit} />
                   <DiagnosisFindingsSection unit={unit} />
                   <BeforeAfterCompareSection unit={unit} />
                   <UnitPartsSection unit={unit} />
