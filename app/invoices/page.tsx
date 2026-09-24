@@ -12,6 +12,7 @@ import InvoicePaymentActions from '../components/InvoicePaymentActions'
 import MarkPaidToggle from '../components/MarkPaidToggle'
 import ArchiveToggle from '../components/ArchiveToggle'
 import CreateInvoiceButton from '../components/CreateInvoiceButton'
+import EditInvoiceButton from '../components/EditInvoiceButton'
 
 type SendInvoiceState = { success: boolean; message: string } | null
 type DeleteInvoiceState = { success: boolean; message: string } | null
@@ -300,7 +301,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, unit_id, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email)'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email)'
     )
     .order('created_at', { ascending: false })
 
@@ -349,6 +350,10 @@ export default async function InvoicesPage({
       // on a page whose target panel never renders. Null unitLabel means
       // "not linkable", same as no unit_id at all.
       unitLabel: unit && unit.status !== 'Fleet' ? unitLabel(unit) : null,
+      lineItems: inv.line_items as { description: string; amount: number }[] | null,
+      taxRatePercent: Number(inv.sales_tax_rate) || 0,
+      cardSurchargeAmount: Number(inv.card_surcharge_amount) || 0,
+      laborType: (inv.labor_type as 'STLA' | 'NTSTLA' | null) || null,
       // Paid invoices archive automatically the moment paid_at is set - no
       // separate "move to archive" step needed, the view filter below is
       // the whole mechanism. archived_at lets the admin also archive an
@@ -553,6 +558,17 @@ export default async function InvoicesPage({
                         ) : (
                           <span className="text-xs text-gray-600 pt-1">No PDF</span>
                         )}
+                        <EditInvoiceButton
+                          invoiceId={r.id}
+                          invoiceNumber={r.invoiceNumber}
+                          amount={r.amount}
+                          lineItems={r.lineItems}
+                          taxRatePercent={r.taxRatePercent}
+                          includeCardSurcharge={r.cardSurchargeAmount > 0}
+                          laborType={r.laborType}
+                          isPaid={!!r.paidAt}
+                          hasPaymentLink={!!r.paymentLinkUrl}
+                        />
                         {r.pdfUrl && (
                           <SendInvoiceButton
                             invoiceId={r.id}
@@ -658,6 +674,17 @@ export default async function InvoicesPage({
                   ) : (
                     <span className="text-xs text-gray-600 pt-1">No PDF</span>
                   )}
+                  <EditInvoiceButton
+                    invoiceId={r.id}
+                    invoiceNumber={r.invoiceNumber}
+                    amount={r.amount}
+                    lineItems={r.lineItems}
+                    taxRatePercent={r.taxRatePercent}
+                    includeCardSurcharge={r.cardSurchargeAmount > 0}
+                    laborType={r.laborType}
+                    isPaid={!!r.paidAt}
+                    hasPaymentLink={!!r.paymentLinkUrl}
+                  />
                   {r.pdfUrl && (
                     <SendInvoiceButton
                       invoiceId={r.id}

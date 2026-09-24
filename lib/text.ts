@@ -46,6 +46,25 @@ export function toTitleCase(input: string): string {
     .join(' ')
 }
 
+// Live, per-keystroke counterpart to toTitleCase for controlled inputs (see
+// TitleCaseInput) - deliberately does NOT trim or collapse whitespace like
+// toTitleCase does, since doing that on every keystroke would delete the
+// trailing space the instant someone types it, making it impossible to ever
+// start a second word. Recapitalizes each word in place via a direct regex
+// replace instead of split/rejoin, so whitespace (including a trailing
+// space mid-typing) passes through completely untouched. Finalizing
+// (trimming, collapsing runs of whitespace) still happens server-side via
+// toTitleCase when the value is actually saved.
+export function liveTitleCase(input: string): string {
+  return input.replace(/\p{L}[\p{L}'-]*/gu, word => {
+    if (BUSINESS_SUFFIXES.has(word.toUpperCase())) return word.toUpperCase()
+    const hasLower = /\p{Ll}/u.test(word)
+    const hasInteriorUpper = /\p{Lu}/u.test(word.slice(1))
+    if (hasLower && hasInteriorUpper) return word
+    return recapitalize(word)
+  })
+}
+
 export function normalizeEmail(input: string): string {
   return input.trim().toLowerCase()
 }

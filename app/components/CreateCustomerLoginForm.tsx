@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import TitleCaseInput from './TitleCaseInput'
 
 type State = { success: boolean; message: string; password?: string } | null
 
@@ -52,7 +53,7 @@ export default function CreateCustomerLoginForm({
             ))}
           </select>
         ) : (
-          <input
+          <TitleCaseInput
             name="new_customer_name"
             required
             placeholder="Customer / company name"

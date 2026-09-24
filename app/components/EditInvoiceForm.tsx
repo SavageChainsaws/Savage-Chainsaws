@@ -13,7 +13,6 @@ import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 // numbers here are never trusted as final.
 export default function EditInvoiceForm({
   invoiceId,
-  unitId,
   initialPartsItems,
   initialLaborItems,
   initialPriorityFee,
@@ -21,9 +20,9 @@ export default function EditInvoiceForm({
   taxRatePercent,
   includeCardSurcharge,
   laborType,
+  onSubmit,
 }: {
   invoiceId: string
-  unitId: string
   initialPartsItems: LineItem[]
   initialLaborItems: LineItem[]
   initialPriorityFee: number
@@ -31,6 +30,11 @@ export default function EditInvoiceForm({
   taxRatePercent: number
   includeCardSurcharge: boolean
   laborType: 'STLA' | 'NTSTLA'
+  // Fired on submit (the native POST/target=_blank still proceeds - this
+  // never calls preventDefault) so a caller showing this form inside a
+  // modal (see EditInvoiceButton) can close itself right away instead of
+  // leaving the admin looking at a form behind their newly-opened PDF tab.
+  onSubmit?: () => void
 }) {
   const [partsItems, setPartsItems] = useState<LineItem[]>(initialPartsItems)
   const [laborItems, setLaborItems] = useState<LineItem[]>(initialLaborItems)
@@ -59,9 +63,8 @@ export default function EditInvoiceForm({
   const priorityFeeAmount = Number(priorityFee) || 0
 
   return (
-    <form action="/api/invoice/edit" method="POST" target="_blank" className="space-y-3">
+    <form action="/api/invoice/edit" method="POST" target="_blank" onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="invoice_id" value={invoiceId} />
-      <input type="hidden" name="unit_id" value={unitId} />
       <input type="hidden" name="referral_discount_amount" value={initialReferralDiscountAmount} />
 
       <InvoiceItemGroup

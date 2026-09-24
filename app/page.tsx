@@ -33,6 +33,7 @@ import ShopSettingsForm from './components/ShopSettingsForm'
 import EditCustomerButton from './components/EditCustomerButton'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
 import EditInvoiceForm from './components/EditInvoiceForm'
+import TitleCaseInput from './components/TitleCaseInput'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
@@ -1643,7 +1644,7 @@ export default async function Home({
               defaultValue={new Date().toISOString().split('T')[0]}
               className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
-            <input
+            <TitleCaseInput
               name="description"
               placeholder="Work performed"
               className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
@@ -1734,7 +1735,6 @@ export default async function Home({
           </div>
           <EditInvoiceForm
             invoiceId={invoice.id}
-            unitId={unit.id}
             initialPartsItems={parsed.partsItems}
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}
@@ -1908,7 +1908,7 @@ export default async function Home({
                       <div className="w-full mt-2">
                         <form action={markPickedUp} className="flex flex-wrap gap-2">
                           <input type="hidden" name="id" value={unit.id} />
-                          <input
+                          <TitleCaseInput
                             name="picked_up_by"
                             required
                             placeholder="Name of person picking up"
@@ -2436,7 +2436,7 @@ export default async function Home({
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
-                      <input name="nickname" placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                      <TitleCaseInput name="nickname" placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Equipment Type</label>
@@ -2545,7 +2545,7 @@ export default async function Home({
                                 <div className="grid sm:grid-cols-2 gap-3">
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Nickname</label>
-                                    <input name="nickname" defaultValue={unit.nickname || ''} placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                    <TitleCaseInput name="nickname" defaultValue={unit.nickname || ''} placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                                   </div>
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Serial Number</label>
