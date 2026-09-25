@@ -51,6 +51,14 @@ export async function POST(request: NextRequest) {
           .update({ paid_at: new Date().toISOString(), paid_via: 'square' })
           .eq('square_order_id', payment.order_id)
           .is('paid_at', null)
+        // Rentals reuse the same square_order_id/paid_at shape as invoices
+        // (see app/rentals/page.tsx) for whichever charge cycle is
+        // currently outstanding - pickup charge or post-return balance.
+        await admin
+          .from('rentals')
+          .update({ paid_at: new Date().toISOString(), paid_via: 'square' })
+          .eq('square_order_id', payment.order_id)
+          .is('paid_at', null)
       }
     }
   }

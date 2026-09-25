@@ -1343,6 +1343,17 @@ export default async function Home({
     return (a.serial_number || '').localeCompare(b.serial_number || '')
   })
 
+  // Equipment this customer has rented from Savage Chainsaws' own fleet -
+  // distinct from the units above (which they own and bring in for
+  // repair). See app/rentals/page.tsx for the full rental management flow.
+  const { data: customerRentals } = selectedCustomerId
+    ? await supabase
+        .from('rentals')
+        .select('id, rental_type, start_date, end_date, status, amount_due, paid_at, agreement_pdf_url, rental_units(model, equipment_type)')
+        .eq('customer_id', selectedCustomerId)
+        .order('created_at', { ascending: false })
+    : { data: [] }
+
   const repairUnits = sortStaleFirst(units?.filter(u => u.status !== 'Fleet') || [])
 
   function formatDate(dateString: string | null) {
@@ -2158,6 +2169,12 @@ export default async function Home({
             >
               Invoices
             </Link>
+            <Link
+              href="/rentals"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Rentals
+            </Link>
             <ContactLinksBar />
             <PushToggle label="Push" />
             <AdminLogout />
@@ -2627,6 +2644,49 @@ export default async function Home({
                     })}
                   </div>
                 )}
+              </div>
+            </details>
+
+            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+                <h2 className="font-semibold text-orange-300">Rentals ({(customerRentals || []).length})</h2>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+              </summary>
+              <div className="border-t border-zinc-800 p-4 sm:p-6 space-y-2">
+                {(customerRentals || []).length === 0 ? (
+                  <p className="text-gray-500 text-sm">No equipment rented from the shop&apos;s own fleet yet.</p>
+                ) : (
+                  (customerRentals || []).map(r => {
+                    const unit = r.rental_units as unknown as { model: string; equipment_type: string } | null
+                    return (
+                      <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">{unit ? `${unit.model} - ${unit.equipment_type}` : 'Unknown Unit'}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(r.start_date).toLocaleDateString()} → {new Date(r.end_date).toLocaleDateString()}
+                            {Number(r.amount_due) > 0 ? ` · $${Number(r.amount_due).toFixed(2)} due` : r.paid_at ? ' · Paid' : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                            r.status === 'Active' ? 'bg-orange-500/20 text-orange-400' : 'bg-zinc-700 text-gray-300'
+                          }`}>{r.status}</span>
+                          {r.agreement_pdf_url && (
+                            <a href={r.agreement_pdf_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">
+                              Agreement
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <Link
+                  href={`/rentals?customer=${selectedCustomerId}`}
+                  className="inline-block text-xs text-orange-400 hover:text-orange-300 underline pt-1"
+                >
+                  Manage Rentals →
+                </Link>
               </div>
             </details>
           </>
