@@ -9,11 +9,12 @@ import { UnitPhoto } from '../components/UnitPhoto'
 import { UnitPhotoGallery } from '../components/UnitPhotoGallery'
 import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
 import PushToggle from '../components/PushToggle'
+import RentalSignCard from '../components/RentalSignCard'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
-import { normalizeEmail } from '@/lib/text'
+import { normalizeEmail, liveTitleCase } from '@/lib/text'
 
 const supabase = createClient()
 
@@ -173,9 +174,9 @@ const STIHL_PREFIX_MAP: Record<string, string> = {
   HT: 'Pole Saw',
   TS: 'Cut Quik Saw',
   KM: 'Kombi Unit',
-  HS: 'Handheld Hedge Trimmer',
+  HS: 'Hedge Trimmer',
   BR: 'Backpack Blower',
-  BG: 'Handheld Blower',
+  BG: 'Hand Blower',
   RB: 'Pressure Washer',
   RZ: 'Riding Lawn Mower',
   SR: 'Backpack Sprayer',
@@ -191,7 +192,7 @@ const EQUIPMENT_CATEGORIES = [
   'Cut Quik Saw',
   'Kombi Unit',
   'Backpack Blower',
-  'Handheld Blower',
+  'Hand Blower',
   'Pressure Washer',
   'Riding Lawn Mower',
   'Backpack Sprayer',
@@ -1468,6 +1469,8 @@ export default function CustomerPortal() {
           </div>
         )}
 
+        {customer && <RentalSignCard customerId={customer.id} />}
+
         <div className="flex flex-wrap justify-end gap-2">
           <button
             onClick={() => {
@@ -1750,7 +1753,7 @@ export default function CustomerPortal() {
                 <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
                 <input
                   value={fleetNickname}
-                  onChange={e => setFleetNickname(e.target.value)}
+                  onChange={e => setFleetNickname(liveTitleCase(e.target.value))}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                   placeholder="e.g. Shop mower #2"
                 />
@@ -2103,7 +2106,7 @@ export default function CustomerPortal() {
                     <label className="block text-xs text-gray-500 mb-1">Nickname</label>
                     <input
                       value={editNickname}
-                      onChange={e => setEditNickname(e.target.value)}
+                      onChange={e => setEditNickname(liveTitleCase(e.target.value))}
                       placeholder="e.g. Shop mower #2"
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
                     />

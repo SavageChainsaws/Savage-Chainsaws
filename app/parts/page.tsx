@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 import UppercaseInput from '../components/UppercaseInput'
+import TitleCaseInput from '../components/TitleCaseInput'
 
 async function upsertModelPart(formData: FormData) {
   'use server'
@@ -117,7 +118,7 @@ export default async function PartsPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Part Name *</label>
-              <input
+              <TitleCaseInput
                 name="part_name"
                 required
                 placeholder="e.g. Blade, Belt, Tune-Up Kit"
@@ -180,7 +181,7 @@ export default async function PartsPage() {
                       >
                         <input type="hidden" name="id" value={p.id} />
                         <input type="hidden" name="model" value={group.model} />
-                        <input
+                        <TitleCaseInput
                           name="part_name"
                           defaultValue={p.part_name}
                           className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"

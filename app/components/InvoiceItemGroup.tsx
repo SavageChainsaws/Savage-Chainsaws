@@ -1,5 +1,7 @@
 'use client'
 
+import { liveTitleCase } from '@/lib/text'
+
 export type LineItem = { description: string; price: string }
 
 // Shared between CreateUnitInvoiceForm and CreateCustomInvoiceForm so
@@ -36,7 +38,7 @@ export default function InvoiceItemGroup({
             <input
               name={descriptionField}
               value={item.description}
-              onChange={e => onUpdate(i, 'description', e.target.value)}
+              onChange={e => onUpdate(i, 'description', liveTitleCase(e.target.value))}
               placeholder={placeholder}
               className="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />

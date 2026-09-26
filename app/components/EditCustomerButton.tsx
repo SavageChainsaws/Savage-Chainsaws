@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useState } from 'react'
+import TitleCaseInput from './TitleCaseInput'
 
 type State = { success: boolean; message: string } | null
 
@@ -70,7 +71,7 @@ export default function EditCustomerButton({
 
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Name</label>
-                <input
+                <TitleCaseInput
                   name="name"
                   defaultValue={customer.name}
                   required

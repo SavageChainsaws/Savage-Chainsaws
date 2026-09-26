@@ -32,12 +32,14 @@ import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import ShopSettingsForm from './components/ShopSettingsForm'
 import EditCustomerButton from './components/EditCustomerButton'
 import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
+import EditInvoiceForm from './components/EditInvoiceForm'
+import TitleCaseInput from './components/TitleCaseInput'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
 import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 import PushToggle from './components/PushToggle'
-import { getDefaultTaxRatePercent } from '@/lib/billing'
+import { getDefaultTaxRatePercent, parseInvoiceLineItemsForEdit } from '@/lib/billing'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -1252,6 +1254,20 @@ export default async function Home({
     .select('*')
     .not('unit_id', 'is', null)
     .order('created_at', { ascending: true })
+  // For the "Edit Invoice" tool in each unit's panel - only unit-linked
+  // invoices are relevant here (a standalone/custom invoice has no unit_id
+  // and isn't editable from this page). Ordered newest-first so the map
+  // below keeps only the most recent invoice per unit - the one the "View
+  // current invoice/quote" link and units.invoice_url already point at.
+  const { data: unitInvoicesAll } = await supabase
+    .from('invoices')
+    .select('id, unit_id, invoice_number, line_items, amount, sales_tax_rate, card_surcharge_amount, labor_type, paid_at, square_payment_link_url')
+    .not('unit_id', 'is', null)
+    .order('created_at', { ascending: false })
+  const latestInvoiceByUnit = new Map<string, NonNullable<typeof unitInvoicesAll>[number]>()
+  for (const inv of unitInvoicesAll || []) {
+    if (inv.unit_id && !latestInvoiceByUnit.has(inv.unit_id)) latestInvoiceByUnit.set(inv.unit_id, inv)
+  }
 
   let units = allUnits
   if (selectedCustomerId && !statusFilter) {
@@ -1326,6 +1342,17 @@ export default async function Home({
     if (ga !== gb) return ga - gb
     return (a.serial_number || '').localeCompare(b.serial_number || '')
   })
+
+  // Equipment this customer has rented from Savage Chainsaws' own fleet -
+  // distinct from the units above (which they own and bring in for
+  // repair). See app/rentals/page.tsx for the full rental management flow.
+  const { data: customerRentals } = selectedCustomerId
+    ? await supabase
+        .from('rentals')
+        .select('id, rental_type, start_date, end_date, status, total_owed, paid_at, agreement_pdf_url, rental_units(model, equipment_type)')
+        .eq('customer_id', selectedCustomerId)
+        .order('created_at', { ascending: false })
+    : { data: [] }
 
   const repairUnits = sortStaleFirst(units?.filter(u => u.status !== 'Fleet') || [])
 
@@ -1628,7 +1655,7 @@ export default async function Home({
               defaultValue={new Date().toISOString().split('T')[0]}
               className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
-            <input
+            <TitleCaseInput
               name="description"
               placeholder="Work performed"
               className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
@@ -1678,6 +1705,55 @@ export default async function Home({
               ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file will be listed on the invoice.`
               : 'No parts on file for this unit - the invoice will still generate.'}
           </p>
+        </div>
+      </details>
+    )
+  }
+
+  // Lets Jesse handle a mid-service change request (customer calls asking
+  // for a chain added, a part removed, a price corrected) against the
+  // unit's most recent invoice without creating a whole new one - reopens
+  // that invoice's Parts/Labor lines, recalculates tax + surcharge off the
+  // edited subtotal on save, and regenerates the same invoice/PDF in
+  // place. Only rendered when a real invoices row exists for this unit
+  // (see latestInvoiceByUnit above) - a unit whose only "invoice" is a
+  // manually uploaded photo/PDF (see updateStatus's invoice-upload field)
+  // has no row to edit here.
+  function EditInvoiceSection({ unit }: { unit: any }) {
+    const invoice = latestInvoiceByUnit.get(unit.id)
+    if (!invoice) return null
+    const parsed = parseInvoiceLineItemsForEdit(invoice.line_items)
+    const hasParts = parsed.partsItems.some((it: { description: string }) => it.description.trim().length > 0)
+    return (
+      <details className="group/edit-invoice">
+        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg whitespace-nowrap">
+          Edit Invoice {invoice.invoice_number}
+          <span className="text-xs group-open/edit-invoice:rotate-180 transition">v</span>
+        </summary>
+        <div className="w-full mt-2 space-y-2">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-500">Current total:</span>
+            <span className="font-bold text-orange-400">${Number(invoice.amount).toFixed(2)}</span>
+            {invoice.paid_at ? (
+              <span className="px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400">
+                Already Paid - editing still allowed, but double-check with the customer first
+              </span>
+            ) : invoice.square_payment_link_url ? (
+              <span className="px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/20 text-yellow-400">
+                Has a Payment Link - saving will clear it so a fresh one matches the new total
+              </span>
+            ) : null}
+          </div>
+          <EditInvoiceForm
+            invoiceId={invoice.id}
+            initialPartsItems={parsed.partsItems}
+            initialLaborItems={parsed.laborItems}
+            initialPriorityFee={parsed.priorityFee}
+            initialReferralDiscountAmount={parsed.referralDiscountAmount}
+            taxRatePercent={invoice.sales_tax_rate ?? defaultTaxRatePercent}
+            includeCardSurcharge={Number(invoice.card_surcharge_amount) > 0}
+            laborType={(invoice.labor_type as 'STLA' | 'NTSTLA') || (hasParts ? 'STLA' : 'NTSTLA')}
+          />
         </div>
       </details>
     )
@@ -1843,7 +1919,7 @@ export default async function Home({
                       <div className="w-full mt-2">
                         <form action={markPickedUp} className="flex flex-wrap gap-2">
                           <input type="hidden" name="id" value={unit.id} />
-                          <input
+                          <TitleCaseInput
                             name="picked_up_by"
                             required
                             placeholder="Name of person picking up"
@@ -1909,6 +1985,7 @@ export default async function Home({
                   {unit.invoice_url && (
                     <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
                   )}
+                  <EditInvoiceSection unit={unit} />
                   <DiagnosisFindingsSection unit={unit} />
                   <BeforeAfterCompareSection unit={unit} />
                   <UnitPartsSection unit={unit} />
@@ -2091,6 +2168,12 @@ export default async function Home({
               className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
             >
               Invoices
+            </Link>
+            <Link
+              href="/rentals"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Rentals
             </Link>
             <ContactLinksBar />
             <PushToggle label="Push" />
@@ -2370,7 +2453,7 @@ export default async function Home({
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Nickname (optional)</label>
-                      <input name="nickname" placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                      <TitleCaseInput name="nickname" placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Equipment Type</label>
@@ -2479,7 +2562,7 @@ export default async function Home({
                                 <div className="grid sm:grid-cols-2 gap-3">
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Nickname</label>
-                                    <input name="nickname" defaultValue={unit.nickname || ''} placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                    <TitleCaseInput name="nickname" defaultValue={unit.nickname || ''} placeholder="e.g. T1" className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                                   </div>
                                   <div>
                                     <label className="block text-xs text-gray-500 mb-1">Serial Number</label>
@@ -2561,6 +2644,49 @@ export default async function Home({
                     })}
                   </div>
                 )}
+              </div>
+            </details>
+
+            <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+              <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+                <h2 className="font-semibold text-orange-300">Rentals ({(customerRentals || []).length})</h2>
+                <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+              </summary>
+              <div className="border-t border-zinc-800 p-4 sm:p-6 space-y-2">
+                {(customerRentals || []).length === 0 ? (
+                  <p className="text-gray-500 text-sm">No equipment rented from the shop&apos;s own fleet yet.</p>
+                ) : (
+                  (customerRentals || []).map(r => {
+                    const unit = r.rental_units as unknown as { model: string; equipment_type: string } | null
+                    return (
+                      <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2">
+                        <div>
+                          <p className="text-sm font-medium">{unit ? `${unit.model} - ${unit.equipment_type}` : 'Unknown Unit'}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(r.start_date).toLocaleDateString()} → {new Date(r.end_date).toLocaleDateString()}
+                            {Number(r.total_owed) > 0 ? ` · $${Number(r.total_owed).toFixed(2)} due` : r.paid_at ? ' · Paid' : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                            r.status === 'Active' ? 'bg-orange-500/20 text-orange-400' : 'bg-zinc-700 text-gray-300'
+                          }`}>{r.status}</span>
+                          {r.agreement_pdf_url && (
+                            <a href={r.agreement_pdf_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">
+                              Agreement
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <Link
+                  href={`/rentals?customer=${selectedCustomerId}`}
+                  className="inline-block text-xs text-orange-400 hover:text-orange-300 underline pt-1"
+                >
+                  Manage Rentals →
+                </Link>
               </div>
             </details>
           </>

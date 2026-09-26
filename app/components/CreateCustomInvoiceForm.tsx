@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
 import TaxAndSurchargeFields from './TaxAndSurchargeFields'
+import { liveTitleCase } from '@/lib/text'
 
 type CustomerOption = {
   id: string
@@ -129,7 +130,7 @@ export default function CreateCustomInvoiceForm({
           <input
             name="customer_name"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={e => setName(liveTitleCase(e.target.value))}
             required
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
           />

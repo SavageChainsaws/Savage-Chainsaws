@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import TitleCaseInput from './TitleCaseInput'
 
 type State = { success: boolean; message: string; password?: string } | null
 
@@ -14,7 +15,7 @@ export default function CreateReferralSourceLoginForm({
   return (
     <form action={formAction} className="space-y-3">
       <div className="grid sm:grid-cols-2 gap-3">
-        <input
+        <TitleCaseInput
           name="name"
           required
           placeholder="Partner name (e.g. Elvis)"
