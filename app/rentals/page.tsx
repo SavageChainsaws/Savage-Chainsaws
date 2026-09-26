@@ -40,6 +40,42 @@ async function addRentalUnit(formData: FormData) {
   revalidatePath('/rentals')
 }
 
+// Full edit of a rental_unit's own details - lets Jesse add a unit to the
+// fleet before he has its serial number in hand (add it blank, fill it in
+// later once he's back at the shop), and gives him a free-text spot for
+// anything else worth noting per-saw (bar size, accessories, quirks) that
+// doesn't warrant its own column. condition_notes already existed on this
+// table with no UI anywhere - reused here rather than adding a new one.
+async function updateRentalUnit(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const id = (formData.get('id') as string) || ''
+  const model = ((formData.get('model') as string) || '').trim().toUpperCase()
+  if (!id || !model) return
+
+  const equipmentType = ((formData.get('equipment_type') as string) || '').trim() || 'Chainsaw'
+  const serialNumber = ((formData.get('serial_number') as string) || '').trim().toUpperCase() || null
+  const conditionNotes = ((formData.get('condition_notes') as string) || '').trim() || null
+  const dailyRate = Number(formData.get('daily_rate')) || DEFAULT_DAILY_RATE
+  const weeklyRate = Number(formData.get('weekly_rate')) || DEFAULT_WEEKLY_RATE
+  const securityDeposit = Number(formData.get('security_deposit')) || DEFAULT_SECURITY_DEPOSIT
+  const damageCap = Number(formData.get('damage_cap')) || DEFAULT_DAMAGE_CAP
+
+  await supabase.from('rental_units').update({
+    model,
+    equipment_type: equipmentType,
+    serial_number: serialNumber,
+    condition_notes: conditionNotes,
+    daily_rate: dailyRate,
+    weekly_rate: weeklyRate,
+    security_deposit: securityDeposit,
+    damage_cap: damageCap,
+  }).eq('id', id)
+  revalidatePath('/rentals')
+}
+
 // Manual override for a rental_unit's status - the normal lifecycle
 // (Available -> Rented -> Available/Maintenance) is driven automatically
 // by creating/returning a rental, but Jesse needs a way to pull a unit out
@@ -270,37 +306,81 @@ export default async function RentalsPage({
             <div className="border-t border-zinc-800 p-4 sm:p-6 space-y-4">
               <div className="grid gap-2">
                 {(rentalUnits || []).map(u => (
-                  <div key={u.id} className="flex flex-wrap items-center justify-between gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2">
-                    <div>
-                      <p className="font-medium text-sm">{u.model} - {u.equipment_type}</p>
-                      <p className="text-xs text-gray-500">
-                        {u.serial_number ? `Serial: ${u.serial_number} - ` : ''}
-                        ${Number(u.daily_rate).toFixed(2)}/day · ${Number(u.weekly_rate).toFixed(2)}/week · ${Number(u.security_deposit).toFixed(2)} deposit · ${Number(u.damage_cap).toFixed(2)} cap
-                      </p>
+                  <div key={u.id} className="bg-zinc-800/40 border border-zinc-800 rounded-lg overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                      <div>
+                        <p className="font-medium text-sm">{u.model} - {u.equipment_type}</p>
+                        <p className="text-xs text-gray-500">
+                          {u.serial_number ? `Serial: ${u.serial_number} - ` : 'Serial: not on file - '}
+                          ${Number(u.daily_rate).toFixed(2)}/day · ${Number(u.weekly_rate).toFixed(2)}/week · ${Number(u.security_deposit).toFixed(2)} deposit · ${Number(u.damage_cap).toFixed(2)} cap
+                        </p>
+                        {u.condition_notes && <p className="text-xs text-gray-500 italic mt-0.5">{u.condition_notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                          u.status === 'Available' ? 'bg-green-500/20 text-green-400'
+                            : u.status === 'Rented' ? 'bg-orange-500/20 text-orange-400'
+                            : u.status === 'Maintenance' ? 'bg-yellow-500/20 text-yellow-400'
+                            : 'bg-zinc-700 text-gray-300'
+                        }`}>{u.status}</span>
+                        {u.status !== 'Rented' && (
+                          <form action={setRentalUnitStatus} className="flex items-center gap-1">
+                            <input type="hidden" name="id" value={u.id} />
+                            <select
+                              name="status"
+                              defaultValue={u.status}
+                              className="text-xs bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1"
+                            >
+                              <option value="Available">Available</option>
+                              <option value="Maintenance">Maintenance</option>
+                              <option value="Retired">Retired</option>
+                            </select>
+                            <button type="submit" className="text-xs border border-zinc-700 hover:bg-zinc-800 text-gray-300 px-2 py-1 rounded-lg">Set</button>
+                          </form>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        u.status === 'Available' ? 'bg-green-500/20 text-green-400'
-                          : u.status === 'Rented' ? 'bg-orange-500/20 text-orange-400'
-                          : u.status === 'Maintenance' ? 'bg-yellow-500/20 text-yellow-400'
-                          : 'bg-zinc-700 text-gray-300'
-                      }`}>{u.status}</span>
-                      {u.status !== 'Rented' && (
-                        <form action={setRentalUnitStatus} className="flex items-center gap-1">
-                          <input type="hidden" name="id" value={u.id} />
-                          <select
-                            name="status"
-                            defaultValue={u.status}
-                            className="text-xs bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1"
-                          >
-                            <option value="Available">Available</option>
-                            <option value="Maintenance">Maintenance</option>
-                            <option value="Retired">Retired</option>
-                          </select>
-                          <button type="submit" className="text-xs border border-zinc-700 hover:bg-zinc-800 text-gray-300 px-2 py-1 rounded-lg">Set</button>
-                        </form>
-                      )}
-                    </div>
+                    <details className="border-t border-zinc-800">
+                      <summary className="px-3 py-1.5 text-xs text-orange-400 cursor-pointer list-none hover:bg-zinc-800/60">Edit Details</summary>
+                      <form action={updateRentalUnit} className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
+                        <input type="hidden" name="id" value={u.id} />
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Model *</label>
+                          <UppercaseInput name="model" required defaultValue={u.model} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Equipment Type</label>
+                          <input name="equipment_type" defaultValue={u.equipment_type} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Serial Number</label>
+                          <UppercaseInput name="serial_number" defaultValue={u.serial_number || ''} placeholder="Fill in once known" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Daily Rate $</label>
+                          <input name="daily_rate" type="number" step="0.01" min="0" defaultValue={Number(u.daily_rate)} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Weekly Rate $</label>
+                          <input name="weekly_rate" type="number" step="0.01" min="0" defaultValue={Number(u.weekly_rate)} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Security Deposit $</label>
+                          <input name="security_deposit" type="number" step="0.01" min="0" defaultValue={Number(u.security_deposit)} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Damage Cap $</label>
+                          <input name="damage_cap" type="number" step="0.01" min="0" defaultValue={Number(u.damage_cap)} className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <label className="block text-xs text-gray-500 mb-1">Notes (bar size, accessories, condition, etc. - admin only)</label>
+                          <textarea name="condition_notes" defaultValue={u.condition_notes || ''} rows={2} placeholder="e.g. 18&quot; bar, comes with extra chain" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-3">
+                          <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg">Save Changes</button>
+                        </div>
+                      </form>
+                    </details>
                   </div>
                 ))}
                 {(rentalUnits || []).length === 0 && (
