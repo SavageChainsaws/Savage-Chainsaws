@@ -11,12 +11,25 @@ export const LATE_FEE_PER_DAY = 10
 // Section 4: due back by 5 PM on the end date.
 export const RETURN_DUE_HOUR = 17
 
-// Flat per-rental rate (whichever of daily_rate/weekly_rate matches
-// rentalType) - not prorated by how many days/weeks the rental actually
-// spans. start_date/end_date are still recorded (for the agreement and
-// for computeLateFee below), just not used to scale the charge itself.
-export function computeRentalCharge(rentalType: RentalType, dailyRate: number, weeklyRate: number): number {
-  return rentalType === 'weekly' ? weeklyRate : dailyRate
+// Inclusive day count between start and end (Monday to Friday is 5 days,
+// not 4) - the basis for both the daily rate and the weekly-rate week
+// count below.
+export function computeRentalDays(startDate: string, endDate: string): number {
+  const start = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
+  const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  return Math.max(1, days)
+}
+
+// Prorates the rate by how long the rental actually spans: daily_rate ×
+// day count, or weekly_rate × week count (partial weeks round up - a
+// 10-day rental is 2 weeks, not 1.43).
+export function computeRentalCharge(rentalType: RentalType, dailyRate: number, weeklyRate: number, days: number): number {
+  if (rentalType === 'weekly') {
+    const weeks = Math.ceil(days / 7)
+    return Math.round(weeklyRate * weeks * 100) / 100
+  }
+  return Math.round(dailyRate * days * 100) / 100
 }
 
 // Section 4: "$10/day after due date" - due date is 5 PM on end_date, per

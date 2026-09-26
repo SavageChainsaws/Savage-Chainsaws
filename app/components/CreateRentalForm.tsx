@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import RentalPhotoUpload from './RentalPhotoUpload'
 import { liveTitleCase } from '@/lib/text'
-import type { RentalType } from '@/lib/rentals'
+import { computeRentalDays, computeRentalCharge, type RentalType } from '@/lib/rentals'
 
 type RentalUnitOption = {
   id: string
@@ -24,9 +24,11 @@ type CustomerOption = { id: string; name: string; email: string | null; phone: s
 // fetch (not a form POST) since /api/rental takes a JSON body - condition
 // photos are still uploaded client-side beforehand (RentalPhotoUpload),
 // their URLs just travel as a plain array in that JSON rather than as
-// repeated hidden form fields. The rate is a flat per-rental daily/weekly
-// fee (see lib/rentals.ts computeRentalCharge) - it does not scale with
-// how many days/weeks the rental actually spans.
+// repeated hidden form fields. The charge is the daily/weekly rate
+// prorated by how long the rental spans (see lib/rentals.ts
+// computeRentalCharge) - this live estimate mirrors the server's own
+// calculation exactly by importing the same function, never recomputing
+// it separately.
 export default function CreateRentalForm({
   rentalUnits,
   customers,
@@ -56,7 +58,8 @@ export default function CreateRentalForm({
   const [error, setError] = useState<string | null>(null)
 
   const selectedUnit = rentalUnits.find(u => u.id === unitId)
-  const rentalCharge = selectedUnit ? (rentalType === 'weekly' ? selectedUnit.weeklyRate : selectedUnit.dailyRate) : 0
+  const days = computeRentalDays(startDate, endDate)
+  const rentalCharge = selectedUnit ? computeRentalCharge(rentalType, selectedUnit.dailyRate, selectedUnit.weeklyRate, days) : 0
   const estimatedDueAtPickup = rentalCharge + (selectedUnit?.securityDeposit || 0)
 
   function handleSelectCustomer(id: string) {
@@ -215,8 +218,8 @@ export default function CreateRentalForm({
             onChange={e => setRentalType(e.target.value as RentalType)}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
           >
-            <option value="daily">Daily {selectedUnit ? `- $${selectedUnit.dailyRate.toFixed(2)} flat` : ''}</option>
-            <option value="weekly">Weekly {selectedUnit ? `- $${selectedUnit.weeklyRate.toFixed(2)} flat` : ''}</option>
+            <option value="daily">Daily {selectedUnit ? `- $${selectedUnit.dailyRate.toFixed(2)}/day` : ''}</option>
+            <option value="weekly">Weekly {selectedUnit ? `- $${selectedUnit.weeklyRate.toFixed(2)}/week` : ''}</option>
           </select>
         </div>
         <div />
@@ -258,7 +261,7 @@ export default function CreateRentalForm({
       {selectedUnit && (
         <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3 text-sm space-y-1">
           <div className="flex justify-between text-gray-400">
-            <span>Rental Charge (flat {rentalType} rate)</span>
+            <span>Rental Charge ({days} day{days === 1 ? '' : 's'})</span>
             <span>${rentalCharge.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-gray-400">

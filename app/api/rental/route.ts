@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { renderRentalAgreementPdf } from '@/lib/rentalAgreementPdf'
-import { computeRentalCharge, type RentalType } from '@/lib/rentals'
+import { computeRentalDays, computeRentalCharge, type RentalType } from '@/lib/rentals'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
 
 // Admin-only. Creates a rental against a tracked rental_units row (never a
@@ -57,9 +57,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `This unit isn't available (status: ${rentalUnit.status}).` }, { status: 409 })
   }
 
-  // Flat per-rental rate - not prorated by how many days/weeks the rental
-  // actually spans (see lib/rentals.ts computeRentalCharge).
-  const rentalCharge = computeRentalCharge(rentalType, Number(rentalUnit.daily_rate), Number(rentalUnit.weekly_rate))
+  // Daily rate × day count, or weekly rate × week count (partial weeks
+  // round up) - see lib/rentals.ts computeRentalCharge. Day count is
+  // inclusive of both start and end dates (Monday to Friday is 5 days).
+  const days = computeRentalDays(startDate, endDate)
+  const rentalCharge = computeRentalCharge(rentalType, Number(rentalUnit.daily_rate), Number(rentalUnit.weekly_rate), days)
   const securityDeposit = Number(rentalUnit.security_deposit)
   const damageCapAmount = Number(rentalUnit.damage_cap)
   const totalOwed = Math.round((rentalCharge + securityDeposit) * 100) / 100
