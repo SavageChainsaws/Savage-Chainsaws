@@ -28,7 +28,8 @@ type CustomerOption = { id: string; name: string; email: string | null; phone: s
 // prorated by how long the rental spans (see lib/rentals.ts
 // computeRentalCharge) - this live estimate mirrors the server's own
 // calculation exactly by importing the same function, never recomputing
-// it separately.
+// it separately. Deliberately one column throughout (no sm:grid-cols-2
+// splits) so the field order reads the same on a phone as on desktop.
 export default function CreateRentalForm({
   rentalUnits,
   customers,
@@ -56,6 +57,7 @@ export default function CreateRentalForm({
   const [prePhotoUrls, setPrePhotoUrls] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [createdRentalId, setCreatedRentalId] = useState<string | null>(null)
 
   const selectedUnit = rentalUnits.find(u => u.id === unitId)
   const days = computeRentalDays(startDate, endDate)
@@ -83,6 +85,7 @@ export default function CreateRentalForm({
       return
     }
     setError(null)
+    setCreatedRentalId(null)
     setIsSubmitting(true)
     // Opened synchronously, still inside the click's user-activation window,
     // so popup blockers allow it - see CreateCustomInvoiceForm for the same
@@ -118,6 +121,7 @@ export default function CreateRentalForm({
       } else {
         newTab?.close()
       }
+      setCreatedRentalId(data?.rental?.id || null)
       router.refresh()
     } catch {
       newTab?.close()
@@ -128,7 +132,7 @@ export default function CreateRentalForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3 max-w-md">
       <div>
         <label className="block text-xs text-gray-500 mb-1">Rental Unit</label>
         <select
@@ -154,7 +158,7 @@ export default function CreateRentalForm({
         <select
           value={customerId}
           onChange={e => handleSelectCustomer(e.target.value)}
-          className="w-full sm:w-80 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
         >
           <option value="">Walk-in - no customer selected</option>
           {customers.map(c => (
@@ -163,86 +167,101 @@ export default function CreateRentalForm({
         </select>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Renter Name</label>
-          <input
-            value={renterName}
-            onChange={e => setRenterName(liveTitleCase(e.target.value))}
-            required
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Company (optional)</label>
-          <input
-            value={renterCompany}
-            onChange={e => setRenterCompany(liveTitleCase(e.target.value))}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Phone</label>
-          <input
-            value={renterPhone}
-            onChange={e => setRenterPhone(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Email (optional)</label>
-          <input
-            type="email"
-            value={renterEmail}
-            onChange={e => setRenterEmail(e.target.value)}
-            placeholder="For the Square payment receipt"
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Driver&apos;s License #</label>
-          <input
-            value={driverLicense}
-            onChange={e => setDriverLicense(e.target.value.toUpperCase())}
-            required
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Renter Name</label>
+        <input
+          value={renterName}
+          onChange={e => setRenterName(liveTitleCase(e.target.value))}
+          required
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Company (optional)</label>
+        <input
+          value={renterCompany}
+          onChange={e => setRenterCompany(liveTitleCase(e.target.value))}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Phone</label>
+        <input
+          value={renterPhone}
+          onChange={e => setRenterPhone(e.target.value)}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Email (optional)</label>
+        <input
+          type="email"
+          value={renterEmail}
+          onChange={e => setRenterEmail(e.target.value)}
+          placeholder="For the Square payment receipt"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Driver&apos;s License #</label>
+        <input
+          value={driverLicense}
+          onChange={e => setDriverLicense(e.target.value.toUpperCase())}
+          required
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-2">Rental Type</label>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="rentalType"
+              checked={rentalType === 'daily'}
+              onChange={() => setRentalType('daily')}
+              className="text-orange-500"
+            />
+            Daily{selectedUnit ? ` - $${selectedUnit.dailyRate.toFixed(2)}/day` : ''}
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="rentalType"
+              checked={rentalType === 'weekly'}
+              onChange={() => setRentalType('weekly')}
+              className="text-orange-500"
+            />
+            Weekly{selectedUnit ? ` - $${selectedUnit.weeklyRate.toFixed(2)}/week` : ''}
+          </label>
         </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Rental Type</label>
-          <select
-            value={rentalType}
-            onChange={e => setRentalType(e.target.value as RentalType)}
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="daily">Daily {selectedUnit ? `- $${selectedUnit.dailyRate.toFixed(2)}/day` : ''}</option>
-            <option value="weekly">Weekly {selectedUnit ? `- $${selectedUnit.weeklyRate.toFixed(2)}/week` : ''}</option>
-          </select>
-        </div>
-        <div />
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Rental Start Date</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={e => setStartDate(e.target.value)}
-            required
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Rental End Date</label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={e => setEndDate(e.target.value)}
-            required
-            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-        </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Rental Start Date</label>
+        <input
+          type="date"
+          value={startDate}
+          onChange={e => setStartDate(e.target.value)}
+          required
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Rental End Date</label>
+        <input
+          type="date"
+          value={endDate}
+          onChange={e => setEndDate(e.target.value)}
+          required
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
       </div>
 
       <div>
@@ -277,11 +296,16 @@ export default function CreateRentalForm({
       )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {createdRentalId && (
+        <p className="text-sm text-green-400">
+          Rental created (ID: {createdRentalId.slice(0, 8).toUpperCase()}) - the agreement PDF opened in a new tab.
+        </p>
+      )}
 
       <button
         type="submit"
         disabled={isSubmitting || rentalUnits.length === 0}
-        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg"
+        className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2.5 rounded-lg"
       >
         {isSubmitting ? 'Generating...' : 'Create Rental & Generate Agreement'}
       </button>
