@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image as PdfImage, StyleSheet, renderToBuffer } from '@react-pdf/renderer'
+import { rentalAgreementTerms } from './rentals'
 
 const BUSINESS = {
   legalName: 'Savage Chainsaws LLC',
@@ -115,6 +116,8 @@ export type RentalAgreementPdfInput = {
   returned: boolean
   actualReturnDate: string | null
   logoUrl?: string | null
+  agreementSignedName?: string | null
+  agreementSignedAt?: string | null
 }
 
 function RentalAgreementDocument(input: RentalAgreementPdfInput) {
@@ -123,7 +126,9 @@ function RentalAgreementDocument(input: RentalAgreementPdfInput) {
     securityDeposit, damageCap, preExistingDamageNotes, prePhotoUrls, postPhotoUrls,
     returnConditionNotes, fuelTankEmptyAtReturn, lateFeeAmount, damageChargeAmount, fuelChargeAmount,
     rentalChargeTotal, amountDue, returned, actualReturnDate, logoUrl,
+    agreementSignedName, agreementSignedAt,
   } = input
+  const terms = rentalAgreementTerms(damageCap, securityDeposit)
   const rateLabel = rentalType === 'daily' ? `${money(rateAmount)}/day` : `${money(rateAmount)}/week`
   const hasExtraCharges = lateFeeAmount > 0 || damageChargeAmount > 0 || fuelChargeAmount > 0
 
@@ -215,30 +220,13 @@ function RentalAgreementDocument(input: RentalAgreementPdfInput) {
             <View style={styles.sectionRule} />
           </View>
 
-          <View style={styles.termBlock}>
-            <Text style={styles.termTitle}>1. Operator Responsibility</Text>
-            <Text style={styles.termLine}>Renter is responsible for proper operation per the STIHL manual. Fuel mixture: ONLY premium unleaded (91+ octane) with 2-stroke oil (50:1 ratio) - NO STRAIGHT FUEL. Renter assumes all liability for operator error and improper use.</Text>
-          </View>
-          <View style={styles.termBlock}>
-            <Text style={styles.termTitle}>2. Liability &amp; Damage Cap</Text>
-            <Text style={styles.termLine}>Renter is responsible for all damage except normal wear. Liability is capped at {money(damageCap)} maximum per rental. Renter&apos;s liability does NOT cover theft by third parties or acts of God. Security deposit of {money(securityDeposit)} is refundable and applied to the final bill if damage occurs.</Text>
-          </View>
-          <View style={styles.termBlock}>
-            <Text style={styles.termTitle}>3. Maintenance During Rental</Text>
-            <Text style={styles.termLine}>Renter must maintain proper chain lubrication and return the unit with fuel tank empty, or will be charged for refueling. Any part failure from improper maintenance is the renter&apos;s responsibility.</Text>
-          </View>
-          <View style={styles.termBlock}>
-            <Text style={styles.termTitle}>4. Return Conditions</Text>
-            <Text style={styles.termLine}>Unit must be returned by 5 PM on the rental end date, clean and in working condition. Late return: $10/day after the due date. If not returned within 7 days, the unit will be reported to police as theft.</Text>
-          </View>
-          <View style={styles.termBlock}>
-            <Text style={styles.termTitle}>5. Cancellation &amp; Modifications</Text>
-            <Text style={styles.termLine}>Cancellations 24+ hours before rental: full refund. Cancellations under 24 hours: 50% charge. Renter may extend the rental if equipment is available, at the continuing daily rate.</Text>
-          </View>
-          <View style={styles.termBlock}>
-            <Text style={styles.termTitle}>6. Inspection &amp; Acceptance</Text>
-            <Text style={styles.termLine}>Unit has been inspected and is in good working condition. Renter accepts the unit &quot;as-is&quot; and has tested it before taking possession. Pre-existing damage noted: {preExistingDamageNotes || 'None noted'}</Text>
-          </View>
+          {terms.map(term => (
+            <View style={styles.termBlock} key={term.title}>
+              <Text style={styles.termTitle}>{term.title}</Text>
+              <Text style={styles.termLine}>{term.body}</Text>
+            </View>
+          ))}
+          <Text style={styles.termLine}>Pre-existing damage noted: {preExistingDamageNotes || 'None noted'}</Text>
 
           <View style={styles.warnBox}>
             <Text style={styles.warnTitle}>⚠ OPERATOR MUST READ</Text>
@@ -316,9 +304,20 @@ function RentalAgreementDocument(input: RentalAgreementPdfInput) {
 
           <View style={styles.signatureRow} wrap={false}>
             <View style={styles.signatureBlock}>
-              <View style={styles.signatureLine}>
-                <Text style={styles.signatureLabel}>Renter Signature / Date</Text>
-              </View>
+              {agreementSignedName ? (
+                <>
+                  <Text style={styles.fieldValue}>{agreementSignedName}</Text>
+                  <View style={styles.signatureLine}>
+                    <Text style={styles.signatureLabel}>
+                      Signed electronically in the Savage Chainsaws app{agreementSignedAt ? ` on ${formatDate(agreementSignedAt.slice(0, 10))}` : ''}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.signatureLine}>
+                  <Text style={styles.signatureLabel}>Renter Signature / Date</Text>
+                </View>
+              )}
             </View>
             <View style={styles.signatureBlock}>
               <View style={styles.signatureLine}>

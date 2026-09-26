@@ -58,6 +58,7 @@ export default function CreateRentalForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [createdRentalId, setCreatedRentalId] = useState<string | null>(null)
+  const [pendingSignature, setPendingSignature] = useState(false)
 
   const selectedUnit = rentalUnits.find(u => u.id === unitId)
   const days = computeRentalDays(startDate, endDate)
@@ -122,6 +123,7 @@ export default function CreateRentalForm({
         newTab?.close()
       }
       setCreatedRentalId(data?.rental?.id || null)
+      setPendingSignature(data?.rental?.status === 'Pending Signature')
       router.refresh()
     } catch {
       newTab?.close()
@@ -165,6 +167,7 @@ export default function CreateRentalForm({
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
+        <p className="text-xs text-gray-600 mt-1">If this customer has app access, they&apos;ll sign the agreement themselves before it&apos;s finalized.</p>
       </div>
 
       <div>
@@ -298,7 +301,9 @@ export default function CreateRentalForm({
       {error && <p className="text-sm text-red-400">{error}</p>}
       {createdRentalId && (
         <p className="text-sm text-green-400">
-          Rental created (ID: {createdRentalId.slice(0, 8).toUpperCase()}) - the agreement PDF opened in a new tab.
+          {pendingSignature
+            ? `Rental created (ID: ${createdRentalId.slice(0, 8).toUpperCase()}) - sent to the customer to review and sign in the app. You'll be notified once they sign so you can send the payment link.`
+            : `Rental created (ID: ${createdRentalId.slice(0, 8).toUpperCase()}) - the agreement PDF opened in a new tab.`}
         </p>
       )}
 

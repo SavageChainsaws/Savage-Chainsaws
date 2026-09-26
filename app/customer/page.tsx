@@ -9,6 +9,7 @@ import { UnitPhoto } from '../components/UnitPhoto'
 import { UnitPhotoGallery } from '../components/UnitPhotoGallery'
 import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
 import PushToggle from '../components/PushToggle'
+import RentalSignCard from '../components/RentalSignCard'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
@@ -1467,6 +1468,8 @@ export default function CustomerPortal() {
             {message}
           </div>
         )}
+
+        {customer && <RentalSignCard customerId={customer.id} />}
 
         <div className="flex flex-wrap justify-end gap-2">
           <button

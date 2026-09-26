@@ -49,3 +49,37 @@ export function computeLateFee(endDate: string, actualReturnDate: Date): number 
 export function capDamageCharge(rawAmount: number, damageCapAmount: number): number {
   return Math.max(0, Math.min(rawAmount, damageCapAmount))
 }
+
+// The same 6 numbered terms rendered in the agreement PDF (see
+// lib/rentalAgreementPdf.tsx), shared so the in-app "sign before you pay"
+// card a portal customer reads is never out of sync with what actually
+// prints. {damageCap}/{securityDeposit} are filled in by the caller since
+// those vary per rental.
+export function rentalAgreementTerms(damageCap: number, securityDeposit: number): { title: string; body: string }[] {
+  return [
+    {
+      title: '1. Operator Responsibility',
+      body: 'Renter is responsible for proper operation per the STIHL manual. Fuel mixture: ONLY premium unleaded (91+ octane) with 2-stroke oil (50:1 ratio) - NO STRAIGHT FUEL. Renter assumes all liability for operator error and improper use.',
+    },
+    {
+      title: '2. Liability & Damage Cap',
+      body: `Renter is responsible for all damage except normal wear. Liability is capped at $${damageCap.toFixed(2)} maximum per rental. Renter's liability does NOT cover theft by third parties or acts of God. Security deposit of $${securityDeposit.toFixed(2)} is refundable and applied to the final bill if damage occurs.`,
+    },
+    {
+      title: '3. Maintenance During Rental',
+      body: 'Renter must maintain proper chain lubrication and return the unit with fuel tank empty, or will be charged for refueling. Any part failure from improper maintenance is the renter\'s responsibility.',
+    },
+    {
+      title: '4. Return Conditions',
+      body: 'Unit must be returned by 5 PM on the rental end date, clean and in working condition. Late return: $10/day after the due date. If not returned within 7 days, the unit will be reported to police as theft.',
+    },
+    {
+      title: '5. Cancellation & Modifications',
+      body: 'Cancellations 24+ hours before rental: full refund. Cancellations under 24 hours: 50% charge. Renter may extend the rental if equipment is available, at the continuing daily rate.',
+    },
+    {
+      title: '6. Inspection & Acceptance',
+      body: 'Unit has been inspected and is in good working condition. Renter accepts the unit "as-is" and has tested it before taking possession.',
+    },
+  ]
+}

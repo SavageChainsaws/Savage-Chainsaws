@@ -187,7 +187,7 @@ export default async function RentalsPage({
       rentalType: r.rental_type as 'daily' | 'weekly',
       startDate: r.start_date as string,
       endDate: r.end_date as string,
-      status: r.status as 'Active' | 'Returned' | 'Cancelled',
+      status: r.status as 'Pending Signature' | 'Active' | 'Returned' | 'Cancelled',
       amountDue: Number(r.total_owed) || 0,
       paymentLinkUrl: r.square_payment_link_url as string | null,
       paidAt: r.paid_at as string | null,
@@ -198,8 +198,9 @@ export default async function RentalsPage({
     }
   })
 
+  const pendingSignatureRentals = rentals.filter(r => r.status === 'Pending Signature')
   const activeRentals = rentals.filter(r => r.status === 'Active')
-  const historyRentals = rentals.filter(r => r.status !== 'Active')
+  const historyRentals = rentals.filter(r => r.status === 'Returned' || r.status === 'Cancelled')
   const availableUnits = (rentalUnits || []).filter(u => u.status === 'Available')
   const filteredCustomerName = customerFilter ? customers?.find(c => c.id === customerFilter)?.name : null
 
@@ -361,6 +362,30 @@ export default async function RentalsPage({
             />
           </div>
         </div>
+
+        {/* Pending signature */}
+        {pendingSignatureRentals.length > 0 && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 border-b border-zinc-800">
+              <h2 className="text-lg font-semibold text-yellow-400">Awaiting Customer Signature ({pendingSignatureRentals.length})</h2>
+              <p className="text-xs text-gray-500 mt-1">Sent to the customer to review and sign in the app - the payment link goes out once they sign.</p>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {pendingSignatureRentals.map(r => (
+                <div key={r.id} className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{r.unitLabel}</p>
+                    <p className="text-sm text-gray-400">{r.renterName}{r.customerName ? ` (${r.customerName})` : ''}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(r.startDate).toLocaleDateString()} → {new Date(r.endDate).toLocaleDateString()} · {r.rentalType} · Total: ${r.amountDue.toFixed(2)}
+                    </p>
+                  </div>
+                  <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-yellow-500/20 text-yellow-400 self-start">Pending Signature</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Active rentals */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">

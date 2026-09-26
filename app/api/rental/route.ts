@@ -4,6 +4,8 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { renderRentalAgreementPdf } from '@/lib/rentalAgreementPdf'
 import { computeRentalDays, computeRentalCharge, type RentalType } from '@/lib/rentals'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
+import { sendPushToCustomer } from '@/lib/push'
+import { unitLabel } from '@/lib/units'
 
 // Admin-only. Creates a rental against a tracked rental_units row (never a
 // free-typed unit - see CreateRentalForm) so two rentals can never point at
@@ -57,6 +59,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `This unit isn't available (status: ${rentalUnit.status}).` }, { status: 409 })
   }
 
+  // A customer with a portal login signs the agreement themselves in the
+  // app before it's finalized - a walk-in (no customer linked, or a
+  // customer who's never had portal access set up) has no app to sign in,
+  // so they keep the original flow: Active immediately with a
+  // blank-signature-line PDF for a physical/on-the-spot signature.
+  let hasPortalAccount = false
+  if (customerId) {
+    const { data: linkedCustomer } = await supabase.from('customers').select('auth_user_id').eq('id', customerId).maybeSingle()
+    hasPortalAccount = !!linkedCustomer?.auth_user_id
+  }
+
   // Daily rate × day count, or weekly rate × week count (partial weeks
   // round up) - see lib/rentals.ts computeRentalCharge. Day count is
   // inclusive of both start and end dates (Monday to Friday is 5 days).
@@ -83,7 +96,7 @@ export async function POST(request: NextRequest) {
       damage_cap_amount: damageCapAmount,
       start_date: startDate,
       end_date: endDate,
-      status: 'Active',
+      status: hasPortalAccount ? 'Pending Signature' : 'Active',
       pre_existing_damage_notes: preExistingDamageNotes,
       pre_rental_photo_urls: prePhotoUrls,
       rental_charge: rentalCharge,
@@ -95,7 +108,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError?.message || 'Could not create the rental. Please try again.' }, { status: 500 })
   }
 
+  // Reserved the moment it's assigned either way, so two rentals can never
+  // point at the same physical saw while a signature is pending.
   await supabase.from('rental_units').update({ status: 'Rented' }).eq('id', unitId)
+
+  if (hasPortalAccount) {
+    await sendPushToCustomer(customerId!, {
+      title: 'Rental agreement ready to sign',
+      body: `${unitLabel(rentalUnit)} - review and sign in the app to continue.`,
+      url: '/customer',
+      tag: `rental-${rentalRow.id}`,
+    })
+    revalidatePath('/rentals')
+    revalidatePath('/')
+    return NextResponse.json({ rental: { ...rentalRow, agreement_pdf_url: null } })
+  }
 
   const logoUrl = new URL('/images/logo.png', request.url).toString()
   const pdfBuffer = await renderRentalAgreementPdf({
