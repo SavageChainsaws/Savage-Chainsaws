@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resizeImage } from '@/lib/resizeImage'
 
@@ -10,24 +10,35 @@ const supabase = createClient()
 const MAX_FILE_BYTES = 100 * 1024 * 1024
 
 // Condition-photo picker for the rental agreement PDF (before-pickup and
-// after-return sets both use this, distinguished only by fieldName/
-// filePrefix) - uploads client-side straight to the 'rentals' bucket, then
-// exposes each URL as a hidden input under fieldName so the surrounding
-// <form> picks them up on submit via formData.getAll(fieldName), the same
-// array-of-hidden-inputs convention the invoice forms already use for
-// repeated line items.
+// after-return sets both use this, distinguished only by filePrefix) -
+// uploads client-side straight to the 'rentals' bucket, then exposes the
+// URLs one of two ways depending on how the surrounding form submits:
+// - fieldName: a hidden input per URL, for a native FormData submit (see
+//   ReturnRentalForm) - the same array-of-hidden-inputs convention the
+//   invoice forms already use for repeated line items.
+// - onChange: the full URL array handed back directly, for a form that
+//   submits via a JSON fetch instead (see CreateRentalForm).
 export default function RentalPhotoUpload({
   fieldName,
   label,
   filePrefix,
+  onChange,
 }: {
-  fieldName: string
+  fieldName?: string
   label: string
   filePrefix: string
+  onChange?: (urls: string[]) => void
 }) {
   const [uploading, setUploading] = useState(false)
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    onChange?.(photoUrls)
+    // onChange is a fresh function each render in typical usage (an inline
+    // setState reference) - only photoUrls itself should re-trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoUrls])
 
   async function handlePhotosChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || [])
@@ -85,7 +96,7 @@ export default function RentalPhotoUpload({
           {photoUrls.map(url => (
             <div key={url} className="relative">
               <img src={url} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-zinc-700" />
-              <input type="hidden" name={fieldName} value={url} />
+              {fieldName && <input type="hidden" name={fieldName} value={url} />}
               <button
                 type="button"
                 onClick={() => removePhoto(url)}

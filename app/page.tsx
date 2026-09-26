@@ -1349,7 +1349,7 @@ export default async function Home({
   const { data: customerRentals } = selectedCustomerId
     ? await supabase
         .from('rentals')
-        .select('id, rental_type, start_date, end_date, status, amount_due, paid_at, agreement_pdf_url, rental_units(model, equipment_type)')
+        .select('id, rental_type, start_date, end_date, status, total_owed, paid_at, agreement_pdf_url, rental_units(model, equipment_type)')
         .eq('customer_id', selectedCustomerId)
         .order('created_at', { ascending: false })
     : { data: [] }
@@ -2664,7 +2664,7 @@ export default async function Home({
                           <p className="text-sm font-medium">{unit ? `${unit.model} - ${unit.equipment_type}` : 'Unknown Unit'}</p>
                           <p className="text-xs text-gray-500">
                             {new Date(r.start_date).toLocaleDateString()} → {new Date(r.end_date).toLocaleDateString()}
-                            {Number(r.amount_due) > 0 ? ` · $${Number(r.amount_due).toFixed(2)} due` : r.paid_at ? ' · Paid' : ''}
+                            {Number(r.total_owed) > 0 ? ` · $${Number(r.total_owed).toFixed(2)} due` : r.paid_at ? ' · Paid' : ''}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">

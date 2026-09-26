@@ -63,7 +63,7 @@ async function setRentalUnitStatus(formData: FormData) {
 // checkPaymentStatus/toggleManualPaid exactly (same shared components,
 // InvoicePaymentActions and MarkPaidToggle, read/write an "invoice_id"
 // hidden field regardless of what it actually identifies) so a rental's
-// current amount_due - whether that's the pickup charge or a post-return
+// current total_owed - whether that's the pickup charge or a post-return
 // balance - gets the identical on-demand Square Payment Link flow invoices
 // already have, rather than a second parallel implementation.
 async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData: FormData): Promise<GenerateLinkState> {
@@ -76,7 +76,7 @@ async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData
 
   const { data: rental } = await supabase
     .from('rentals')
-    .select('id, amount_due, customer_id, renter_name, square_payment_link_url')
+    .select('id, total_owed, customer_id, renter_name, renter_email, square_payment_link_url')
     .eq('id', rentalId)
     .maybeSingle()
   if (!rental) return { success: false, message: 'Rental not found.' }
@@ -84,13 +84,13 @@ async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData
     return { success: true, message: 'Payment link already exists.', url: rental.square_payment_link_url }
   }
 
-  const amountCents = Math.round((Number(rental.amount_due) || 0) * 100)
+  const amountCents = Math.round((Number(rental.total_owed) || 0) * 100)
   if (amountCents <= 0) {
     return { success: false, message: 'Nothing currently due for this rental.' }
   }
 
-  let buyerEmail: string | null = null
-  if (rental.customer_id) {
+  let buyerEmail: string | null = rental.renter_email
+  if (!buyerEmail && rental.customer_id) {
     const { data: customer } = await supabase.from('customers').select('email').eq('id', rental.customer_id).maybeSingle()
     buyerEmail = customer?.email ?? null
   }
@@ -188,7 +188,7 @@ export default async function RentalsPage({
       startDate: r.start_date as string,
       endDate: r.end_date as string,
       status: r.status as 'Active' | 'Returned' | 'Cancelled',
-      amountDue: Number(r.amount_due) || 0,
+      amountDue: Number(r.total_owed) || 0,
       paymentLinkUrl: r.square_payment_link_url as string | null,
       paidAt: r.paid_at as string | null,
       paidVia: r.paid_via as string | null,

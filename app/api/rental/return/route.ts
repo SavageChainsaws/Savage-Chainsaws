@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   const { data: rentalUnit } = await supabase
     .from('rental_units')
     .select('*')
-    .eq('id', rental.rental_unit_id)
+    .eq('id', rental.unit_id)
     .single()
   if (!rentalUnit) {
     return NextResponse.json({ error: 'Rental unit not found' }, { status: 404 })
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   const fuelChargeAmount = fuelTankEmpty ? 0 : Math.max(0, fuelChargeRaw)
   const damageChargeAmount = capDamageCharge(damageChargeRaw, Number(rental.damage_cap_amount))
   const extraCharges = Math.round((lateFeeAmount + fuelChargeAmount + damageChargeAmount) * 100) / 100
-  const securityDeposit = Number(rental.security_deposit_amount)
+  const securityDeposit = Number(rental.security_deposit)
   const balanceDue = Math.max(0, Math.round((extraCharges - securityDeposit) * 100) / 100)
   const depositRefundDue = Math.max(0, Math.round((securityDeposit - extraCharges) * 100) / 100)
 
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   // balance-due cycle (if any) - record what happened to it first so that
   // history isn't silently lost, since paid_at/square_* only ever track
   // "the current charge cycle", not a full payment history.
-  const pickupSummary = `Pickup charge $${Number(rental.amount_due).toFixed(2)} - ${
+  const pickupSummary = `Pickup charge $${Number(rental.total_owed).toFixed(2)} - ${
     rental.paid_at ? `paid (${rental.paid_via || 'unknown'}) ${new Date(rental.paid_at).toLocaleDateString()}` : 'UNPAID'
   } as of return on ${now.toLocaleDateString()}.`
   const refundNote = depositRefundDue > 0 ? ` Deposit refund owed to renter: $${depositRefundDue.toFixed(2)}.` : ''
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       late_fee_amount: lateFeeAmount,
       damage_charge_amount: damageChargeAmount,
       fuel_charge_amount: fuelChargeAmount,
-      amount_due: balanceDue,
+      total_owed: balanceDue,
       notes,
       ...(balanceDue > 0
         ? { square_payment_link_id: null, square_order_id: null, square_payment_link_url: null, paid_at: null, paid_via: null }
@@ -87,14 +87,14 @@ export async function POST(request: NextRequest) {
     })
     .eq('id', rentalId)
 
-  await supabase.from('rental_units').update({ status: rentalUnitStatus }).eq('id', rental.rental_unit_id)
+  await supabase.from('rental_units').update({ status: rentalUnitStatus }).eq('id', rental.unit_id)
 
   const logoUrl = new URL('/images/logo.png', request.url).toString()
   const pdfBuffer = await renderRentalAgreementPdf({
     rentalReference: rental.id.slice(0, 8).toUpperCase(),
     agreementDate: rental.created_at.slice(0, 10),
     unit: { model: rentalUnit.model, equipmentType: rentalUnit.equipment_type, serialNumber: rentalUnit.serial_number },
-    renter: { name: rental.renter_name, company: rental.renter_company, phone: rental.renter_phone, license: rental.renter_license },
+    renter: { name: rental.renter_name, company: rental.renter_company, phone: rental.renter_phone, license: rental.driver_license },
     rentalType: rental.rental_type,
     rateAmount: Number(rental.rate_amount),
     startDate: rental.start_date,
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     lateFeeAmount,
     damageChargeAmount,
     fuelChargeAmount,
-    rentalChargeTotal: Number(rental.rental_charge_total),
+    rentalChargeTotal: Number(rental.rental_charge),
     amountDue: balanceDue,
     returned: true,
     actualReturnDate: now.toISOString().slice(0, 10),

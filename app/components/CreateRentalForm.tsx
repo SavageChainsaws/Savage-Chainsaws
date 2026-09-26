@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import RentalPhotoUpload from './RentalPhotoUpload'
 import { liveTitleCase } from '@/lib/text'
 import type { RentalType } from '@/lib/rentals'
@@ -19,9 +20,13 @@ type CustomerOption = { id: string; name: string; email: string | null; phone: s
 
 // Creates a rental agreement against an available rental_units row - picks
 // from the tracked inventory (never free-typed equipment) so two rentals
-// can't accidentally point at the same physical saw. Submits as a plain
-// POST + target="_blank" (like CreateUnitInvoiceForm) so the generated
-// agreement PDF opens immediately for printing/signing.
+// can't accidentally point at the same physical saw. Submits as a JSON
+// fetch (not a form POST) since /api/rental takes a JSON body - condition
+// photos are still uploaded client-side beforehand (RentalPhotoUpload),
+// their URLs just travel as a plain array in that JSON rather than as
+// repeated hidden form fields. The rate is a flat per-rental daily/weekly
+// fee (see lib/rentals.ts computeRentalCharge) - it does not scale with
+// how many days/weeks the rental actually spans.
 export default function CreateRentalForm({
   rentalUnits,
   customers,
@@ -33,29 +38,26 @@ export default function CreateRentalForm({
   defaultRentalUnitId?: string
   defaultCustomerId?: string
 }) {
-  const [rentalUnitId, setRentalUnitId] = useState(defaultRentalUnitId || rentalUnits[0]?.id || '')
+  const router = useRouter()
+  const [unitId, setUnitId] = useState(defaultRentalUnitId || rentalUnits[0]?.id || '')
   const [customerId, setCustomerId] = useState(defaultCustomerId || '')
   const [renterName, setRenterName] = useState('')
   const [renterCompany, setRenterCompany] = useState('')
   const [renterPhone, setRenterPhone] = useState('')
-  const [renterLicense, setRenterLicense] = useState('')
+  const [renterEmail, setRenterEmail] = useState('')
+  const [driverLicense, setDriverLicense] = useState('')
   const [rentalType, setRentalType] = useState<RentalType>('daily')
   const today = new Date().toISOString().slice(0, 10)
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(today)
   const [preExistingDamageNotes, setPreExistingDamageNotes] = useState('')
+  const [prePhotoUrls, setPrePhotoUrls] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const selectedUnit = rentalUnits.find(u => u.id === rentalUnitId)
-  const rate = selectedUnit ? (rentalType === 'daily' ? selectedUnit.dailyRate : selectedUnit.weeklyRate) : 0
-  const days = Math.max(1, Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000))
-  const estimatedCharge = selectedUnit
-    ? rentalType === 'weekly'
-      ? rate * Math.ceil(days / 7)
-      : rate * days
-    : 0
-  const estimatedDueAtPickup = estimatedCharge + (selectedUnit?.securityDeposit || 0)
+  const selectedUnit = rentalUnits.find(u => u.id === unitId)
+  const rentalCharge = selectedUnit ? (rentalType === 'weekly' ? selectedUnit.weeklyRate : selectedUnit.dailyRate) : 0
+  const estimatedDueAtPickup = rentalCharge + (selectedUnit?.securityDeposit || 0)
 
   function handleSelectCustomer(id: string) {
     setCustomerId(id)
@@ -63,38 +65,72 @@ export default function CreateRentalForm({
     if (c) {
       setRenterName(c.name || '')
       setRenterPhone(c.phone || '')
+      setRenterEmail(c.email || '')
     }
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
     if (!selectedUnit) {
-      e.preventDefault()
       setError('Select a rental unit.')
       return
     }
     if (new Date(endDate) < new Date(startDate)) {
-      e.preventDefault()
       setError('End date must be on or after the start date.')
       return
     }
     setError(null)
     setIsSubmitting(true)
-    // Let the native POST (target="_blank") proceed - isSubmitting only
-    // guards the button's own disabled state, since this navigates a new
-    // tab rather than awaiting a fetch response.
-    window.setTimeout(() => setIsSubmitting(false), 3000)
+    // Opened synchronously, still inside the click's user-activation window,
+    // so popup blockers allow it - see CreateCustomInvoiceForm for the same
+    // pattern (a JSON fetch can't itself trigger a browser navigation).
+    const newTab = window.open('', '_blank')
+    try {
+      const res = await fetch('/api/rental', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unitId,
+          customerId,
+          renterName,
+          renterCompany,
+          renterPhone,
+          renterEmail,
+          driverLicense,
+          rentalType,
+          startDate,
+          endDate,
+          preExistingDamageNotes,
+          prePhotoUrls,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        newTab?.close()
+        setError(data?.error || `Could not create the rental (${res.status}).`)
+        return
+      }
+      if (newTab && data?.rental?.agreement_pdf_url) {
+        newTab.location.href = data.rental.agreement_pdf_url
+      } else {
+        newTab?.close()
+      }
+      router.refresh()
+    } catch {
+      newTab?.close()
+      setError('Could not reach the server. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
-    <form action="/api/rental" method="POST" target="_blank" onSubmit={handleSubmit} className="space-y-3">
-      <input type="hidden" name="customer_id" value={customerId} />
-
+    <form onSubmit={handleSubmit} className="space-y-3">
       <div>
         <label className="block text-xs text-gray-500 mb-1">Rental Unit</label>
         <select
-          name="rental_unit_id"
-          value={rentalUnitId}
-          onChange={e => setRentalUnitId(e.target.value)}
+          value={unitId}
+          onChange={e => setUnitId(e.target.value)}
           required
           className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
         >
@@ -128,7 +164,6 @@ export default function CreateRentalForm({
         <div>
           <label className="block text-xs text-gray-500 mb-1">Renter Name</label>
           <input
-            name="renter_name"
             value={renterName}
             onChange={e => setRenterName(liveTitleCase(e.target.value))}
             required
@@ -138,7 +173,6 @@ export default function CreateRentalForm({
         <div>
           <label className="block text-xs text-gray-500 mb-1">Company (optional)</label>
           <input
-            name="renter_company"
             value={renterCompany}
             onChange={e => setRenterCompany(liveTitleCase(e.target.value))}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
@@ -147,18 +181,26 @@ export default function CreateRentalForm({
         <div>
           <label className="block text-xs text-gray-500 mb-1">Phone</label>
           <input
-            name="renter_phone"
             value={renterPhone}
             onChange={e => setRenterPhone(e.target.value)}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
           />
         </div>
         <div>
+          <label className="block text-xs text-gray-500 mb-1">Email (optional)</label>
+          <input
+            type="email"
+            value={renterEmail}
+            onChange={e => setRenterEmail(e.target.value)}
+            placeholder="For the Square payment receipt"
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
           <label className="block text-xs text-gray-500 mb-1">Driver&apos;s License #</label>
           <input
-            name="renter_license"
-            value={renterLicense}
-            onChange={e => setRenterLicense(e.target.value.toUpperCase())}
+            value={driverLicense}
+            onChange={e => setDriverLicense(e.target.value.toUpperCase())}
             required
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
           />
@@ -169,13 +211,12 @@ export default function CreateRentalForm({
         <div>
           <label className="block text-xs text-gray-500 mb-1">Rental Type</label>
           <select
-            name="rental_type"
             value={rentalType}
             onChange={e => setRentalType(e.target.value as RentalType)}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
           >
-            <option value="daily">Daily {selectedUnit ? `- $${selectedUnit.dailyRate.toFixed(2)}/day` : ''}</option>
-            <option value="weekly">Weekly {selectedUnit ? `- $${selectedUnit.weeklyRate.toFixed(2)}/week` : ''}</option>
+            <option value="daily">Daily {selectedUnit ? `- $${selectedUnit.dailyRate.toFixed(2)} flat` : ''}</option>
+            <option value="weekly">Weekly {selectedUnit ? `- $${selectedUnit.weeklyRate.toFixed(2)} flat` : ''}</option>
           </select>
         </div>
         <div />
@@ -183,7 +224,6 @@ export default function CreateRentalForm({
           <label className="block text-xs text-gray-500 mb-1">Rental Start Date</label>
           <input
             type="date"
-            name="start_date"
             value={startDate}
             onChange={e => setStartDate(e.target.value)}
             required
@@ -194,7 +234,6 @@ export default function CreateRentalForm({
           <label className="block text-xs text-gray-500 mb-1">Rental End Date</label>
           <input
             type="date"
-            name="end_date"
             value={endDate}
             onChange={e => setEndDate(e.target.value)}
             required
@@ -206,7 +245,6 @@ export default function CreateRentalForm({
       <div>
         <label className="block text-xs text-gray-500 mb-1">Pre-Existing Damage (noted before renter takes possession)</label>
         <textarea
-          name="pre_existing_damage_notes"
           value={preExistingDamageNotes}
           onChange={e => setPreExistingDamageNotes(e.target.value)}
           rows={2}
@@ -215,13 +253,13 @@ export default function CreateRentalForm({
         />
       </div>
 
-      <RentalPhotoUpload fieldName="pre_photo_url" label="Condition Photos - Before Pickup" filePrefix="rental-pre" />
+      <RentalPhotoUpload label="Condition Photos - Before Pickup" filePrefix="rental-pre" onChange={setPrePhotoUrls} />
 
       {selectedUnit && (
         <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-3 text-sm space-y-1">
           <div className="flex justify-between text-gray-400">
-            <span>Rental Charge ({days} day{days === 1 ? '' : 's'})</span>
-            <span>${estimatedCharge.toFixed(2)}</span>
+            <span>Rental Charge (flat {rentalType} rate)</span>
+            <span>${rentalCharge.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-gray-400">
             <span>Security Deposit (refundable)</span>
