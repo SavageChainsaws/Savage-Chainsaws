@@ -807,6 +807,11 @@ export default async function InvoicesPage({
                           isPaid={!!r.paidAt}
                           hasPaymentLink={!!r.paymentLinkUrl}
                           unitLabel={r.unitLabel}
+                          unitId={r.unitId}
+                          customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+                          customerId={r.customerId}
+                          customerName={r.customerName}
+                          customerEmail={r.defaultEmail}
                         />
                         {r.pdfUrl && (
                           <SendInvoiceButton
@@ -945,6 +950,11 @@ export default async function InvoicesPage({
                     isPaid={!!r.paidAt}
                     hasPaymentLink={!!r.paymentLinkUrl}
                     unitLabel={r.unitLabel}
+                    unitId={r.unitId}
+                    customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+                    customerId={r.customerId}
+                    customerName={r.customerName}
+                    customerEmail={r.defaultEmail}
                   />
                   {r.pdfUrl && (
                     <SendInvoiceButton

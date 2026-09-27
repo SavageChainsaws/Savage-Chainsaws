@@ -1780,6 +1780,11 @@ export default async function Home({
           </div>
           <EditInvoiceForm
             invoiceId={invoice.id}
+            hasUnitId
+            customers={[]}
+            initialCustomerId={null}
+            initialCustomerName={currentCustomer?.name || ''}
+            initialCustomerEmail={currentCustomer?.email || ''}
             initialPartsItems={parsed.partsItems}
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}

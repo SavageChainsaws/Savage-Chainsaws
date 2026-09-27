@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
 import TaxAndSurchargeFields from './TaxAndSurchargeFields'
+import { liveTitleCase } from '@/lib/text'
+
+type CustomerOption = { id: string; name: string; email: string | null; phone: string | null }
 
 // Edit counterpart to CreateUnitInvoiceForm - reopens an already-generated
 // invoice's Parts/Labor lines for a mid-service change (customer calls
@@ -13,6 +16,11 @@ import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 // numbers here are never trusted as final.
 export default function EditInvoiceForm({
   invoiceId,
+  hasUnitId,
+  customers,
+  initialCustomerId,
+  initialCustomerName,
+  initialCustomerEmail,
   initialPartsItems,
   initialLaborItems,
   initialPriorityFee,
@@ -23,6 +31,16 @@ export default function EditInvoiceForm({
   onSubmit,
 }: {
   invoiceId: string
+  // Only a standalone invoice's (no unit_id) customer_name/customer_email
+  // are this invoice's own editable fields - a unit-linked one's customer
+  // is always derived live from the real unit/customer records instead
+  // (edit those via the unit's own Edit Customer), so this form has
+  // nothing of its own to offer there.
+  hasUnitId: boolean
+  customers: CustomerOption[]
+  initialCustomerId: string | null
+  initialCustomerName: string
+  initialCustomerEmail: string
   initialPartsItems: LineItem[]
   initialLaborItems: LineItem[]
   initialPriorityFee: number
@@ -36,9 +54,21 @@ export default function EditInvoiceForm({
   // leaving the admin looking at a form behind their newly-opened PDF tab.
   onSubmit?: () => void
 }) {
+  const [customerId, setCustomerId] = useState(initialCustomerId || '')
+  const [customerName, setCustomerName] = useState(initialCustomerName)
+  const [customerEmail, setCustomerEmail] = useState(initialCustomerEmail)
   const [partsItems, setPartsItems] = useState<LineItem[]>(initialPartsItems)
   const [laborItems, setLaborItems] = useState<LineItem[]>(initialLaborItems)
   const [priorityFee, setPriorityFee] = useState(initialPriorityFee ? String(initialPriorityFee) : '')
+
+  function handleSelectCustomer(id: string) {
+    setCustomerId(id)
+    const c = customers.find(c => c.id === id)
+    if (c) {
+      setCustomerName(c.name || '')
+      setCustomerEmail(c.email || '')
+    }
+  }
 
   function updateItem(
     setter: React.Dispatch<React.SetStateAction<LineItem[]>>,
@@ -66,6 +96,52 @@ export default function EditInvoiceForm({
     <form action="/api/invoice/edit" method="POST" target="_blank" onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="invoice_id" value={invoiceId} />
       <input type="hidden" name="referral_discount_amount" value={initialReferralDiscountAmount} />
+
+      {hasUnitId ? (
+        <p className="text-xs text-gray-500">
+          Customer: <span className="text-gray-300">{initialCustomerName}</span> - linked to a tracked unit, so
+          it&apos;s edited via that unit&apos;s Edit Customer instead of here.
+        </p>
+      ) : (
+        <div className="space-y-3 border-b border-zinc-800 pb-3">
+          <input type="hidden" name="customer_id" value={customerId} />
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Link an Existing Customer (Optional)</label>
+            <select
+              value={customerId}
+              onChange={e => handleSelectCustomer(e.target.value)}
+              className="w-full sm:w-80 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">Free-form - no customer selected</option>
+              {customers.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Customer Name</label>
+              <input
+                name="customer_name"
+                value={customerName}
+                onChange={e => setCustomerName(liveTitleCase(e.target.value))}
+                required
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Email</label>
+              <input
+                name="customer_email"
+                type="email"
+                value={customerEmail}
+                onChange={e => setCustomerEmail(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <InvoiceItemGroup
         title="Parts"

@@ -10,6 +10,8 @@ import { parseInvoiceLineItemsForEdit, type BillingLine } from '@/lib/billing'
 // expand a whole line-item editor inline, so this opens the shared
 // EditInvoiceForm in a modal instead; both paths hit the same
 // /api/invoice/edit route.
+type CustomerOption = { id: string; name: string; email: string | null; phone: string | null }
+
 export default function EditInvoiceButton({
   invoiceId,
   invoiceNumber,
@@ -21,6 +23,11 @@ export default function EditInvoiceButton({
   isPaid,
   hasPaymentLink,
   unitLabel,
+  unitId,
+  customers,
+  customerId,
+  customerName,
+  customerEmail,
 }: {
   invoiceId: string
   invoiceNumber: string
@@ -32,6 +39,11 @@ export default function EditInvoiceButton({
   isPaid: boolean
   hasPaymentLink: boolean
   unitLabel?: string | null
+  unitId: string | null
+  customers: CustomerOption[]
+  customerId: string | null
+  customerName: string
+  customerEmail: string
 }) {
   const [open, setOpen] = useState(false)
 
@@ -94,6 +106,11 @@ export default function EditInvoiceButton({
           </div>
           <EditInvoiceForm
             invoiceId={invoiceId}
+            hasUnitId={!!unitId}
+            customers={customers}
+            initialCustomerId={customerId}
+            initialCustomerName={customerName}
+            initialCustomerEmail={customerEmail}
             initialPartsItems={parsed.partsItems}
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}
