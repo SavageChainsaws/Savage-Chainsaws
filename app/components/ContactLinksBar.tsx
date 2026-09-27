@@ -7,22 +7,40 @@ import { CONTACT_LINKS } from '@/lib/contactLinks'
 export default function ContactLinksBar({ variant = 'compact' }: { variant?: 'compact' | 'full' }) {
   return (
     <div className={variant === 'compact' ? 'flex items-center gap-2.5 flex-wrap' : 'flex flex-wrap gap-x-5 gap-y-2'}>
-      {CONTACT_LINKS.map(link => (
-        <a
-          key={link.key}
-          href={link.href}
-          {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-          title={link.label}
-          className={
-            variant === 'compact'
-              ? 'h-10 w-10 flex items-center justify-center rounded-lg border border-zinc-700 text-gray-400 hover:text-orange-400 hover:border-orange-500 transition shrink-0'
-              : 'flex items-center gap-2 text-xs text-gray-400 hover:text-orange-400 transition'
-          }
-        >
-          <span className={variant === 'compact' ? 'h-5 w-5' : 'h-4 w-4 shrink-0'}>{link.icon}</span>
-          {variant === 'full' && <span>{link.label}</span>}
-        </a>
-      ))}
+      {CONTACT_LINKS.map(link => {
+        const iconAndLabel = (
+          <>
+            <span className={variant === 'compact' ? 'h-5 w-5' : 'h-4 w-4 shrink-0'}>{link.icon}</span>
+            {variant === 'full' && <span>{link.label}</span>}
+          </>
+        )
+        const className =
+          variant === 'compact'
+            ? 'h-10 w-10 flex items-center justify-center rounded-lg border border-zinc-700 text-gray-400 hover:text-orange-400 hover:border-orange-500 transition shrink-0'
+            : 'flex items-center gap-2 text-xs text-gray-400 hover:text-orange-400 transition'
+
+        // No href (e.g. "we're mobile" - nothing to link to) - render as
+        // plain, non-interactive text instead of an <a>.
+        if (!link.href) {
+          return (
+            <span key={link.key} title={link.label} className={className}>
+              {iconAndLabel}
+            </span>
+          )
+        }
+
+        return (
+          <a
+            key={link.key}
+            href={link.href}
+            {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+            title={link.label}
+            className={className}
+          >
+            {iconAndLabel}
+          </a>
+        )
+      })}
     </div>
   )
 }

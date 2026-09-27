@@ -5,8 +5,7 @@ const BUSINESS = {
   legalName: 'Savage Chainsaws LLC',
   email: 'service@savagechainsaws.com',
   phone: '(407) 375-8199',
-  address: '260 Roosevelt Square',
-  addressLine2: 'Oviedo, FL 32765',
+  address: 'Mobile Service - We Come to You',
 }
 
 const BRAND = {
@@ -145,7 +144,7 @@ function RentalAgreementDocument(input: RentalAgreementPdfInput) {
               </Text>
               <Text style={styles.docTitle}>Chainsaw Rental Agreement</Text>
               <Text style={styles.fromLine}>{BUSINESS.legalName}</Text>
-              <Text style={styles.fromLine}>{BUSINESS.address}, {BUSINESS.addressLine2}</Text>
+              <Text style={styles.fromLine}>{BUSINESS.address}</Text>
               <Text style={styles.fromLine}>{BUSINESS.phone} · {BUSINESS.email}</Text>
             </View>
           </View>

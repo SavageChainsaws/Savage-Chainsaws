@@ -3,7 +3,10 @@ import type { ReactNode } from 'react'
 export type ContactLink = {
   key: string
   label: string
-  href: string
+  // Omitted for an informational entry with nothing to link to (e.g. "we're
+  // mobile, no fixed shop address") - ContactLinksBar renders it as plain
+  // text instead of an <a>.
+  href?: string
   // true for links that leave the app (social/maps/website); false for
   // mailto:/tel: links, where a new tab doesn't make sense.
   external: boolean
@@ -43,11 +46,14 @@ function PhoneIcon() {
   )
 }
 
-function MapPinIcon() {
+function MobileServiceIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-full w-full">
-      <path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-      <path d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+      <path d="M2.25 6.75h9v9h-9v-9z" />
+      <path d="M11.25 10.5h3.634a1.5 1.5 0 011.28.72l1.866 3.05v2.48h-2" />
+      <path d="M11.25 15.75h-9" />
+      <circle cx="6.75" cy="16.5" r="1.5" />
+      <circle cx="15" cy="16.5" r="1.5" />
     </svg>
   )
 }
@@ -86,9 +92,8 @@ export const CONTACT_LINKS: ContactLink[] = [
   },
   {
     key: 'address',
-    label: '1607 South Orlando Ave, Maitland, FL 32751',
-    href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('1607 South Orlando Ave, Maitland, FL 32751'),
-    external: true,
-    icon: <MapPinIcon />,
+    label: 'Mobile Service - We Come to You',
+    external: false,
+    icon: <MobileServiceIcon />,
   },
 ]
