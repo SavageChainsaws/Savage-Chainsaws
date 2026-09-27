@@ -20,6 +20,7 @@ export default function EditInvoiceButton({
   laborType,
   isPaid,
   hasPaymentLink,
+  unitLabel,
 }: {
   invoiceId: string
   invoiceNumber: string
@@ -30,6 +31,7 @@ export default function EditInvoiceButton({
   laborType: 'STLA' | 'NTSTLA' | null
   isPaid: boolean
   hasPaymentLink: boolean
+  unitLabel?: string | null
 }) {
   const [open, setOpen] = useState(false)
 
@@ -76,6 +78,7 @@ export default function EditInvoiceButton({
               &times;
             </button>
           </div>
+          {unitLabel && <p className="text-xs text-gray-500 mb-2">For: {unitLabel}</p>}
           <div className="flex flex-wrap items-center gap-2 text-xs mb-3">
             <span className="text-gray-500">Current total:</span>
             <span className="font-bold text-orange-400">${amount.toFixed(2)}</span>
