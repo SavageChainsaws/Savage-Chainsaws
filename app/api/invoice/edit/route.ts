@@ -4,6 +4,7 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { resolveUnitParts, type ResolvedPart } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
+import { toTitleCase, normalizeEmail } from '@/lib/text'
 
 function matchPartSku(description: string, parts: ResolvedPart[]): string | undefined {
   const descWords = new Set((description.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length >= 4))
@@ -95,14 +96,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unit not found' }, { status: 404 })
   }
 
-  const customerIdForLookup = unit?.customer_id || existingInvoice.customer_id
-  const { data: customer } = customerIdForLookup
-    ? await supabase
-        .from('customers')
-        .select('name, email, phone, logo_url, brand_color')
-        .eq('id', customerIdForLookup)
-        .single()
-    : { data: null }
+  // Unit-linked invoice: customer identity is always derived live from the
+  // real linked unit/customer records (never editable here - see Edit
+  // Customer for that). Standalone invoice (no unit_id): customer_name/
+  // customer_email are this invoice's own stored fields, exactly like
+  // creation (see app/api/invoice/custom/route.ts) - fully editable here,
+  // "as if recreating" it, including re-linking customer_id.
+  let pdfCustomerName: string
+  let pdfCustomerEmail: string | null
+  let pdfCustomerPhone: string | null
+  let pdfLogoUrl: string | null
+  let pdfBrandColor: string | null
+  let customerIdToSave = existingInvoice.customer_id
+  let customerNameToSave = existingInvoice.customer_name
+  let customerEmailToSave = existingInvoice.customer_email
+
+  if (unitId) {
+    const customerIdForLookup = unit?.customer_id || existingInvoice.customer_id
+    const { data: customer } = customerIdForLookup
+      ? await supabase
+          .from('customers')
+          .select('name, email, phone, logo_url, brand_color')
+          .eq('id', customerIdForLookup)
+          .single()
+      : { data: null }
+    pdfCustomerName = customer?.name || existingInvoice.customer_name || 'Customer'
+    pdfCustomerEmail = customer?.email ?? existingInvoice.customer_email ?? null
+    pdfCustomerPhone = customer?.phone ?? null
+    pdfLogoUrl = customer?.logo_url ?? null
+    pdfBrandColor = customer?.brand_color ?? null
+  } else {
+    const submittedCustomerId = ((formData.get('customer_id') as string) || '').trim() || null
+    const submittedName = ((formData.get('customer_name') as string) || '').trim()
+    const submittedEmailRaw = ((formData.get('customer_email') as string) || '').trim()
+    const { data: linkedCustomer } = submittedCustomerId
+      ? await supabase.from('customers').select('logo_url, brand_color').eq('id', submittedCustomerId).maybeSingle()
+      : { data: null }
+    pdfCustomerName = submittedName ? toTitleCase(submittedName) : existingInvoice.customer_name || 'Customer'
+    pdfCustomerEmail = submittedEmailRaw ? normalizeEmail(submittedEmailRaw) : null
+    pdfCustomerPhone = null
+    pdfLogoUrl = linkedCustomer?.logo_url ?? null
+    pdfBrandColor = linkedCustomer?.brand_color ?? null
+    customerIdToSave = submittedCustomerId
+    customerNameToSave = pdfCustomerName
+    customerEmailToSave = pdfCustomerEmail
+  }
 
   let resolvedParts: ResolvedPart[] = []
   if (unit) {
@@ -145,11 +183,11 @@ export async function POST(request: NextRequest) {
     invoiceNumber: existingInvoice.invoice_number,
     invoiceDate: now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
     customer: {
-      name: customer?.name || existingInvoice.customer_name || 'Customer',
-      email: customer?.email ?? existingInvoice.customer_email ?? null,
-      phone: customer?.phone ?? null,
-      logoUrl: customer?.logo_url ?? null,
-      brandColor: customer?.brand_color ?? null,
+      name: pdfCustomerName,
+      email: pdfCustomerEmail,
+      phone: pdfCustomerPhone,
+      logoUrl: pdfLogoUrl,
+      brandColor: pdfBrandColor,
     },
     unit: unit
       ? {
@@ -181,6 +219,11 @@ export async function POST(request: NextRequest) {
       sales_tax_amount: billing.taxAmount,
       card_surcharge_amount: billing.surchargeAmount,
       labor_type: laborType,
+      // Only ever touched for a standalone invoice - a unit-linked one's
+      // customer identity is never stored on the invoice row itself.
+      ...(!unitId
+        ? { customer_id: customerIdToSave, customer_name: customerNameToSave, customer_email: customerEmailToSave }
+        : {}),
       ...(clearStalePaymentLink
         ? { square_payment_link_id: null, square_order_id: null, square_payment_link_url: null }
         : {}),
