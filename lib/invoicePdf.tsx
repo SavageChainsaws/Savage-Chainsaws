@@ -8,8 +8,7 @@ const BUSINESS = {
   website: 'savagechainsaws.com',
   email: 'service@savagechainsaws.com',
   phone: '(407) 375-8199',
-  address: '260 Roosevelt Square',
-  addressLine2: 'Oviedo, FL 32765',
+  address: 'Mobile Service - We Come to You',
 }
 
 // Matches the app's Tailwind brand palette (orange-600 accent on a dark
@@ -247,9 +246,7 @@ function InvoiceDocument({
                 <View style={styles.fromAccentBar} />
                 <Text style={styles.boxTitle}>From</Text>
                 <Text style={styles.fromCompactName}>{BUSINESS.legalName}</Text>
-                <Text style={styles.fromCompactLine}>
-                  {BUSINESS.address}, {BUSINESS.addressLine2}
-                </Text>
+                <Text style={styles.fromCompactLine}>{BUSINESS.address}</Text>
                 <Text style={styles.fromCompactLine}>EIN {BUSINESS.ein}</Text>
                 <Text style={styles.fromCompactLine}>
                   {BUSINESS.phone}  ·  {BUSINESS.email}  ·  {BUSINESS.website}
