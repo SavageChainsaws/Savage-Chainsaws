@@ -11,6 +11,7 @@ type Customer = {
   email: string | null
   secondary_email: string | null
   phone: string | null
+  payment_plans_enabled: boolean
 }
 
 // Full contact-details edit for the currently-selected customer (see
@@ -112,6 +113,19 @@ export default function EditCustomerButton({
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
                 />
               </div>
+
+              <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="payment_plans_enabled"
+                  defaultChecked={customer.payment_plans_enabled}
+                  className="mt-0.5 accent-orange-500"
+                />
+                <span className="text-sm text-gray-300">
+                  Allow payment plans (installments) for this customer
+                  <span className="block text-xs text-gray-600">Trusted/regular customers only - lets you split an invoice into scheduled payments.</span>
+                </span>
+              </label>
 
               {state && !state.success && <p className="text-sm text-red-400">{state.message}</p>}
 

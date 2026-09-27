@@ -59,6 +59,33 @@ export async function POST(request: NextRequest) {
           .update({ paid_at: new Date().toISOString(), paid_via: 'square' })
           .eq('square_order_id', payment.order_id)
           .is('paid_at', null)
+
+        // A payment plan installment (see app/invoices/page.tsx) - once
+        // every installment on the plan clears, the parent invoice itself
+        // is marked Paid too, same as maybeCompletePlan does for the
+        // admin's own manual/Check Status paths.
+        const { data: paidInstallment } = await admin
+          .from('invoice_installments')
+          .update({ paid_at: new Date().toISOString(), paid_via: 'square' })
+          .eq('square_order_id', payment.order_id)
+          .is('paid_at', null)
+          .select('plan_id, invoice_id')
+          .maybeSingle()
+        if (paidInstallment) {
+          const { data: remaining } = await admin
+            .from('invoice_installments')
+            .select('id')
+            .eq('plan_id', paidInstallment.plan_id)
+            .is('paid_at', null)
+          if (remaining && remaining.length === 0) {
+            await admin.from('invoice_payment_plans').update({ status: 'Completed' }).eq('id', paidInstallment.plan_id)
+            await admin
+              .from('invoices')
+              .update({ paid_at: new Date().toISOString(), paid_via: 'square' })
+              .eq('id', paidInstallment.invoice_id)
+              .is('paid_at', null)
+          }
+        }
       }
     }
   }
