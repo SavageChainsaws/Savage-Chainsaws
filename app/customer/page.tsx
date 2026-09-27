@@ -2139,38 +2139,37 @@ export default function CustomerPortal() {
               </div>
             )}
 
-            {canEditDetails && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
-                <div className="flex flex-col gap-3">
-                  {thumbPreview && (
-                    <img
-                      src={thumbPreview}
-                      alt="New thumbnail preview"
-                      className="h-24 w-24 object-cover rounded-lg border border-orange-500/50"
-                    />
-                  )}
-                  <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-full sm:w-auto">
-                    {thumbFile ? 'Choose Different Photo' : 'Choose Photo'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => onThumbPick(e.target.files?.[0] || null)}
-                    />
-                  </label>
-                  {thumbFile && (
-                    <button
-                      onClick={saveThumbnail}
-                      disabled={detailBusy}
-                      className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg w-full sm:w-auto"
-                    >
-                      {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
-                    </button>
-                  )}
-                </div>
+            <div className="border-t border-zinc-800 pt-3">
+              <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
+              <p className="text-xs text-gray-600 mb-2">Update this any time - e.g. after you&apos;ve cleaned it up.</p>
+              <div className="flex flex-col gap-3">
+                {thumbPreview && (
+                  <img
+                    src={thumbPreview}
+                    alt="New thumbnail preview"
+                    className="h-24 w-24 object-cover rounded-lg border border-orange-500/50"
+                  />
+                )}
+                <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-full sm:w-auto">
+                  {thumbFile ? 'Choose Different Photo' : 'Choose Photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={e => onThumbPick(e.target.files?.[0] || null)}
+                  />
+                </label>
+                {thumbFile && (
+                  <button
+                    onClick={saveThumbnail}
+                    disabled={detailBusy}
+                    className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg w-full sm:w-auto"
+                  >
+                    {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
+                  </button>
+                )}
               </div>
-            )}
+            </div>
 
             {canEditDetails && (
               <div className="border-t border-zinc-800 pt-3">
