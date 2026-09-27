@@ -554,12 +554,15 @@ export default async function InvoicesPage({
       paidVia: inv.paid_via as string | null,
       archivedAt,
       unitId: inv.unit_id as string | null,
-      // A unit's status flips to 'Fleet' once picked up - the dashboard's
-      // "All Units - Repair Flow" accordion (what the deep-link below
-      // opens) excludes Fleet units entirely, so linking to one would land
-      // on a page whose target panel never renders. Null unitLabel means
-      // "not linkable", same as no unit_id at all.
-      unitLabel: unit && unit.status !== 'Fleet' ? unitLabel(unit) : null,
+      // Always kept, even once the unit's been picked up - Jesse still
+      // needs to see which saw an unpaid balance belongs to. Only whether
+      // it's clickable depends on status: a unit flips to 'Fleet' once
+      // picked up, and the dashboard's "All Units - Repair Flow" accordion
+      // (what the deep-link below opens) excludes Fleet units entirely, so
+      // linking to one there would land on a page whose target panel never
+      // renders - unitLinkable false just drops the link, never the label.
+      unitLabel: unit ? unitLabel(unit) : null,
+      unitLinkable: !!(unit && unit.status !== 'Fleet'),
       lineItems: inv.line_items as { description: string; amount: number }[] | null,
       taxRatePercent: Number(inv.sales_tax_rate) || 0,
       cardSurchargeAmount: Number(inv.card_surcharge_amount) || 0,
@@ -739,13 +742,17 @@ export default async function InvoicesPage({
                     </td>
                     <td className="px-2 py-2 max-w-[140px] truncate">
                       {r.unitId && r.unitLabel ? (
-                        <Link
-                          href={`/?customer=${r.customerId}&open=${r.unitId}`}
-                          className="text-orange-400 hover:text-orange-300 underline"
-                          title={`Open ${r.unitLabel} in the repair queue`}
-                        >
-                          {r.unitLabel}
-                        </Link>
+                        r.unitLinkable ? (
+                          <Link
+                            href={`/?customer=${r.customerId}&open=${r.unitId}`}
+                            className="text-orange-400 hover:text-orange-300 underline"
+                            title={`Open ${r.unitLabel} in the repair queue`}
+                          >
+                            {r.unitLabel}
+                          </Link>
+                        ) : (
+                          <span className="text-gray-400" title="Already picked up">{r.unitLabel}</span>
+                        )
                       ) : (
                         <span className="text-gray-600">—</span>
                       )}
@@ -799,6 +806,7 @@ export default async function InvoicesPage({
                           laborType={r.laborType}
                           isPaid={!!r.paidAt}
                           hasPaymentLink={!!r.paymentLinkUrl}
+                          unitLabel={r.unitLabel}
                         />
                         {r.pdfUrl && (
                           <SendInvoiceButton
@@ -879,13 +887,17 @@ export default async function InvoicesPage({
                 <p className="font-medium text-sm truncate" title={r.customerName}>{r.customerName}</p>
 
                 {r.unitId && r.unitLabel && (
-                  <Link
-                    href={`/?customer=${r.customerId}&open=${r.unitId}`}
-                    className="text-xs text-orange-400 hover:text-orange-300 underline inline-block"
-                    title={`Open ${r.unitLabel} in the repair queue`}
-                  >
-                    {r.unitLabel}
-                  </Link>
+                  r.unitLinkable ? (
+                    <Link
+                      href={`/?customer=${r.customerId}&open=${r.unitId}`}
+                      className="text-xs text-orange-400 hover:text-orange-300 underline inline-block"
+                      title={`Open ${r.unitLabel} in the repair queue`}
+                    >
+                      {r.unitLabel}
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-gray-400 inline-block" title="Already picked up">{r.unitLabel}</span>
+                  )
                 )}
 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -932,6 +944,7 @@ export default async function InvoicesPage({
                     laborType={r.laborType}
                     isPaid={!!r.paidAt}
                     hasPaymentLink={!!r.paymentLinkUrl}
+                    unitLabel={r.unitLabel}
                   />
                   {r.pdfUrl && (
                     <SendInvoiceButton
