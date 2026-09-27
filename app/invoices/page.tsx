@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { revalidatePath } from 'next/cache'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
@@ -5,6 +6,7 @@ import Link from 'next/link'
 import { sendEmail } from '@/lib/email'
 import { createSquarePaymentLink, getSquareOrderPaidStatus } from '@/lib/square'
 import { CARD_SURCHARGE_DISCLOSURE, getDefaultTaxRatePercent } from '@/lib/billing'
+import { computeInstallmentAmounts, computeDueDates, type PlanFrequency } from '@/lib/paymentPlans'
 import { unitLabel } from '@/lib/units'
 import SendInvoiceButton from '../components/SendInvoiceButton'
 import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
@@ -13,6 +15,7 @@ import MarkPaidToggle from '../components/MarkPaidToggle'
 import ArchiveToggle from '../components/ArchiveToggle'
 import CreateInvoiceButton from '../components/CreateInvoiceButton'
 import EditInvoiceButton from '../components/EditInvoiceButton'
+import PaymentPlanSection from '../components/PaymentPlanSection'
 
 type SendInvoiceState = { success: boolean; message: string } | null
 type DeleteInvoiceState = { success: boolean; message: string } | null
@@ -20,6 +23,198 @@ type GenerateLinkState = { success: boolean; message: string; url?: string } | n
 type CheckStatusState = { success: boolean; message: string; paid?: boolean } | null
 type MarkPaidState = { success: boolean; message: string } | null
 type ArchiveState = { success: boolean; message: string } | null
+type PlanState = { success: boolean; message: string } | null
+
+// Shared by every path that can pay off an installment (Square webhook
+// aside, which keeps its own copy - see app/api/webhooks/square/route.ts)
+// - once none remain unpaid, the plan is done and the invoice itself
+// should read Paid just like any other invoice, no separate "plan
+// completed" status for the admin to check.
+async function maybeCompletePlan(
+  supabase: Awaited<ReturnType<typeof getSessionInfo>>['supabase'],
+  planId: string,
+  invoiceId: string,
+  paidVia: 'square' | 'manual'
+) {
+  const { data: remaining } = await supabase.from('invoice_installments').select('id').eq('plan_id', planId).is('paid_at', null)
+  if (remaining && remaining.length === 0) {
+    await supabase.from('invoice_payment_plans').update({ status: 'Completed' }).eq('id', planId)
+    await supabase.from('invoices').update({ paid_at: new Date().toISOString(), paid_via: paidVia }).eq('id', invoiceId).is('paid_at', null)
+  }
+}
+
+// Payment plans are opt-in per customer (see the "Allow payment plans"
+// checkbox on Edit Customer) - trusted/regular customers only, at the
+// admin's discretion, never offered blanket on every invoice. One plan per
+// invoice; each installment gets the same on-demand Square Payment Link
+// treatment as a regular invoice (see generatePaymentLink below).
+async function startPaymentPlan(_prevState: PlanState, formData: FormData): Promise<PlanState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  const installmentCount = Number(formData.get('installment_count')) || 0
+  const frequency = (formData.get('frequency') as string) || 'weekly'
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+  if (installmentCount < 2 || installmentCount > 12) return { success: false, message: 'Pick between 2 and 12 installments.' }
+  if (!['weekly', 'biweekly', 'monthly'].includes(frequency)) return { success: false, message: 'Invalid frequency.' }
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('id, amount, paid_at, customer_id, customers(payment_plans_enabled)')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { success: false, message: 'Invoice not found.' }
+  if (invoice.paid_at) return { success: false, message: 'This invoice is already paid.' }
+  const customer = invoice.customers as unknown as { payment_plans_enabled: boolean } | null
+  if (!customer?.payment_plans_enabled) {
+    return { success: false, message: "Payment plans aren't enabled for this customer yet - turn it on via Edit Customer first." }
+  }
+
+  const { data: existingPlan } = await supabase.from('invoice_payment_plans').select('id').eq('invoice_id', invoiceId).maybeSingle()
+  if (existingPlan) return { success: false, message: 'A payment plan already exists for this invoice.' }
+
+  const total = Number(invoice.amount) || 0
+  if (total <= 0) return { success: false, message: 'This invoice has no positive total to split.' }
+  const amounts = computeInstallmentAmounts(total, installmentCount)
+  const dueDates = computeDueDates(new Date(), installmentCount, frequency as PlanFrequency)
+
+  const { data: plan, error: planError } = await supabase
+    .from('invoice_payment_plans')
+    .insert({ invoice_id: invoiceId, installment_count: installmentCount, frequency })
+    .select('id')
+    .single()
+  if (planError || !plan) return { success: false, message: planError?.message || 'Could not create payment plan.' }
+
+  const { error: installError } = await supabase.from('invoice_installments').insert(
+    amounts.map((amount, i) => ({
+      plan_id: plan.id,
+      invoice_id: invoiceId,
+      sequence: i + 1,
+      amount,
+      due_date: dueDates[i],
+    }))
+  )
+  if (installError) {
+    await supabase.from('invoice_payment_plans').delete().eq('id', plan.id)
+    return { success: false, message: installError.message }
+  }
+
+  revalidatePath('/invoices')
+  return { success: true, message: `Payment plan created - ${installmentCount} installments.` }
+}
+
+// Identical shape to generatePaymentLink below, just scoped to one
+// installment's amount instead of the invoice's full total - reuses the
+// same InvoicePaymentActions component (its hidden field is always named
+// "invoice_id" regardless of what id it actually carries, same convention
+// already established for rentals).
+async function generateInstallmentPaymentLink(_prevState: GenerateLinkState, formData: FormData): Promise<GenerateLinkState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const installmentId = (formData.get('invoice_id') as string) || ''
+  if (!installmentId) return { success: false, message: 'Missing installment id.' }
+
+  const { data: inst } = await supabase
+    .from('invoice_installments')
+    .select('id, amount, sequence, invoice_id, square_payment_link_url, invoices(invoice_number, customer_email, customer_id)')
+    .eq('id', installmentId)
+    .maybeSingle()
+  if (!inst) return { success: false, message: 'Installment not found.' }
+  if (inst.square_payment_link_url) {
+    return { success: true, message: 'Payment link already exists.', url: inst.square_payment_link_url }
+  }
+
+  const invoice = inst.invoices as unknown as { invoice_number: string | null; customer_email: string | null; customer_id: string | null } | null
+  const amountCents = Math.round((Number(inst.amount) || 0) * 100)
+  if (amountCents <= 0) return { success: false, message: 'Nothing due for this installment.' }
+
+  let buyerEmail = invoice?.customer_email || null
+  if (!buyerEmail && invoice?.customer_id) {
+    const { data: customer } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).maybeSingle()
+    buyerEmail = customer?.email ?? null
+  }
+
+  const invoiceNumber = invoice?.invoice_number || inst.invoice_id.slice(0, 8)
+  const result = await createSquarePaymentLink({
+    invoiceNumber: `${invoiceNumber}-${inst.sequence}`,
+    amountCents,
+    buyerEmail,
+    redirectUrl: 'https://app.savagechainsaws.com/invoices',
+  })
+  if (!result.ok) return { success: false, message: result.error }
+
+  await supabase
+    .from('invoice_installments')
+    .update({ square_payment_link_id: result.paymentLinkId, square_order_id: result.orderId, square_payment_link_url: result.url })
+    .eq('id', installmentId)
+  revalidatePath('/invoices')
+
+  return { success: true, message: 'Payment link generated.', url: result.url }
+}
+
+async function checkInstallmentPaymentStatus(_prevState: CheckStatusState, formData: FormData): Promise<CheckStatusState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const installmentId = (formData.get('invoice_id') as string) || ''
+  if (!installmentId) return { success: false, message: 'Missing installment id.' }
+
+  const { data: inst } = await supabase
+    .from('invoice_installments')
+    .select('id, square_order_id, paid_at, plan_id, invoice_id')
+    .eq('id', installmentId)
+    .maybeSingle()
+  if (!inst) return { success: false, message: 'Installment not found.' }
+  if (!inst.square_order_id) return { success: false, message: 'No payment link generated yet.' }
+  if (inst.paid_at) return { success: true, message: 'Already marked paid.', paid: true }
+
+  const result = await getSquareOrderPaidStatus(inst.square_order_id)
+  if (!result.ok) return { success: false, message: result.error }
+
+  if (result.paid) {
+    await supabase.from('invoice_installments').update({ paid_at: new Date().toISOString(), paid_via: 'square' }).eq('id', installmentId)
+    await maybeCompletePlan(supabase, inst.plan_id, inst.invoice_id, 'square')
+    revalidatePath('/invoices')
+    return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
+  }
+  return { success: true, message: 'Not paid yet.', paid: false }
+}
+
+async function toggleInstallmentManualPaid(_prevState: MarkPaidState, formData: FormData): Promise<MarkPaidState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const installmentId = (formData.get('invoice_id') as string) || ''
+  const nextPaid = formData.get('next_paid') === 'true'
+  if (!installmentId) return { success: false, message: 'Missing installment id.' }
+
+  const { data: inst } = await supabase.from('invoice_installments').select('plan_id, invoice_id').eq('id', installmentId).maybeSingle()
+  const { error } = await supabase
+    .from('invoice_installments')
+    .update(nextPaid ? { paid_at: new Date().toISOString(), paid_via: 'manual' } : { paid_at: null, paid_via: null })
+    .eq('id', installmentId)
+  if (error) return { success: false, message: `Could not update: ${error.message}` }
+
+  if (inst) {
+    if (nextPaid) {
+      await maybeCompletePlan(supabase, inst.plan_id, inst.invoice_id, 'manual')
+    } else {
+      // Un-marking an installment reopens the plan/invoice if that
+      // installment being paid is what had just completed them.
+      await supabase.from('invoice_payment_plans').update({ status: 'Active' }).eq('id', inst.plan_id)
+      await supabase.from('invoices').update({ paid_at: null, paid_via: null }).eq('id', inst.invoice_id)
+    }
+  }
+
+  revalidatePath('/invoices')
+  return { success: true, message: nextPaid ? 'Marked paid.' : 'Marked unpaid.' }
+}
 
 // Payment links are generated on demand only - never automatically when an
 // invoice is created - so the admin can finalize/edit the invoice first and
@@ -301,7 +496,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email)'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url))'
     )
     .order('created_at', { ascending: false })
 
@@ -316,8 +511,23 @@ export default async function InvoicesPage({
       customers?: { name?: string; email?: string } | null
     } | null
     const unitCustomer = unit?.customers
-    const directCustomer = inv.customers as unknown as { name?: string; email?: string } | null
+    const directCustomer = inv.customers as unknown as { name?: string; email?: string; payment_plans_enabled?: boolean } | null
     const displayName = inv.customer_name || directCustomer?.name || unitCustomer?.name || 'Unknown Customer'
+    const plan = (inv.invoice_payment_plans as unknown as {
+      id: string
+      installment_count: number
+      frequency: string
+      status: string
+      invoice_installments: {
+        id: string
+        sequence: number
+        amount: number
+        due_date: string | null
+        paid_at: string | null
+        paid_via: string | null
+        square_payment_link_url: string | null
+      }[]
+    }[] | null)?.[0] || null
     // Prefers what was actually on the PDF at send time (customer_email,
     // captured at generation - see app/api/invoice/*.ts) over the linked
     // customer record's current email, so the prefill matches what the
@@ -359,6 +569,26 @@ export default async function InvoicesPage({
       // the whole mechanism. archived_at lets the admin also archive an
       // invoice that isn't paid (e.g. cancelled/written off).
       isArchived: !!paidAt || !!archivedAt,
+      paymentPlansEnabledForCustomer: !!directCustomer?.payment_plans_enabled,
+      paymentPlan: plan
+        ? {
+            id: plan.id,
+            installmentCount: plan.installment_count,
+            frequency: plan.frequency,
+            status: plan.status,
+            installments: [...plan.invoice_installments]
+              .sort((a, b) => a.sequence - b.sequence)
+              .map(i => ({
+                id: i.id,
+                sequence: i.sequence,
+                amount: Number(i.amount) || 0,
+                dueDate: i.due_date,
+                paidAt: i.paid_at,
+                paidVia: i.paid_via,
+                paymentLinkUrl: i.square_payment_link_url,
+              })),
+          }
+        : null,
     }
   })
 
@@ -498,7 +728,8 @@ export default async function InvoicesPage({
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {visibleRows.map(r => (
-                  <tr key={r.id} className="hover:bg-zinc-800/40">
+                  <Fragment key={r.id}>
+                  <tr className="hover:bg-zinc-800/40">
                     <td className="px-3 sm:px-4 py-2 text-gray-300 whitespace-nowrap">
                       {new Date(r.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}
                     </td>
@@ -600,6 +831,23 @@ export default async function InvoicesPage({
                       </div>
                     </td>
                   </tr>
+                  {(r.paymentPlan || r.paymentPlansEnabledForCustomer) && (
+                    <tr className="bg-zinc-900/40">
+                      <td colSpan={9} className="px-3 sm:px-4 pb-2.5">
+                        <PaymentPlanSection
+                          invoiceId={r.id}
+                          isPaid={!!r.paidAt}
+                          paymentPlansEnabledForCustomer={r.paymentPlansEnabledForCustomer}
+                          plan={r.paymentPlan}
+                          startPlanAction={startPaymentPlan}
+                          generateLinkAction={generateInstallmentPaymentLink}
+                          checkStatusAction={checkInstallmentPaymentStatus}
+                          toggleManualPaidAction={toggleInstallmentManualPaid}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
                 {visibleRows.length === 0 && (
                   <tr>
@@ -710,6 +958,19 @@ export default async function InvoicesPage({
                     action={deleteInvoice}
                   />
                 </div>
+
+                {(r.paymentPlan || r.paymentPlansEnabledForCustomer) && (
+                  <PaymentPlanSection
+                    invoiceId={r.id}
+                    isPaid={!!r.paidAt}
+                    paymentPlansEnabledForCustomer={r.paymentPlansEnabledForCustomer}
+                    plan={r.paymentPlan}
+                    startPlanAction={startPaymentPlan}
+                    generateLinkAction={generateInstallmentPaymentLink}
+                    checkStatusAction={checkInstallmentPaymentStatus}
+                    toggleManualPaidAction={toggleInstallmentManualPaid}
+                  />
+                )}
               </div>
             ))}
             {visibleRows.length === 0 && (

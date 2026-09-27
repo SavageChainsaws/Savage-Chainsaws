@@ -403,10 +403,11 @@ async function updateCustomerDetails(_prevState: UpdateCustomerState, formData: 
   const secondaryEmail = secondaryEmailRaw ? normalizeEmail(secondaryEmailRaw) : null
 
   const phone = ((formData.get('phone') as string) || '').trim() || null
+  const paymentPlansEnabled = formData.get('payment_plans_enabled') === 'on'
 
   const { error } = await supabase
     .from('customers')
-    .update({ name, email, secondary_email: secondaryEmail, phone })
+    .update({ name, email, secondary_email: secondaryEmail, phone, payment_plans_enabled: paymentPlansEnabled })
     .eq('id', id)
   if (error) return { success: false, message: `Could not save: ${error.message}` }
 
@@ -2245,6 +2246,7 @@ export default async function Home({
                 email: currentCustomer.email,
                 secondary_email: currentCustomer.secondary_email,
                 phone: currentCustomer.phone,
+                payment_plans_enabled: currentCustomer.payment_plans_enabled,
               }}
               action={updateCustomerDetails}
             />
