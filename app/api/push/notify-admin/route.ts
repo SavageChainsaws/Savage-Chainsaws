@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
   const event = body?.event
   const unitId = body?.unitId
-  if (typeof unitId !== 'string' || (event !== 'service_request' && event !== 'decision')) {
+  if (typeof unitId !== 'string' || (event !== 'service_request' && event !== 'decision' && event !== 'message')) {
     return NextResponse.json({ ok: false, error: 'invalid request' }, { status: 400 })
   }
 
@@ -40,11 +40,30 @@ export async function POST(request: Request) {
       url: `/?customer=${unit.customer_id}&open=${unit.id}`,
       tag: `unit-${unit.id}`,
     })
-  } else {
+  } else if (event === 'decision') {
     const decision = body?.decision === 'approve' ? 'approve' : 'deny'
     await sendPushToAdmins({
       title: decision === 'approve' ? 'Repair approved' : 'Repair denied',
       body: `${customerName} ${decision === 'approve' ? 'approved' : 'denied'} the repair for ${label}`,
+      url: `/?customer=${unit.customer_id}&open=${unit.id}`,
+      tag: `unit-${unit.id}`,
+    })
+  } else {
+    // Re-fetches the message itself too (never trusts anything from the
+    // request body beyond unitId) - grabs the customer's own latest note
+    // on this unit for the push preview.
+    const { data: latestMessage } = await supabase
+      .from('messages')
+      .select('message')
+      .eq('unit_id', unit.id)
+      .eq('is_admin', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const preview = (latestMessage?.message || '').slice(0, 120)
+    await sendPushToAdmins({
+      title: 'New note from customer',
+      body: preview ? `${customerName} on ${label}: ${preview}` : `${customerName} sent a note on ${label}`,
       url: `/?customer=${unit.customer_id}&open=${unit.id}`,
       tag: `unit-${unit.id}`,
     })

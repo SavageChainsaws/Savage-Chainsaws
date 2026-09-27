@@ -151,6 +151,7 @@ async function addUnit(formData: FormData) {
     serial_number: serial,
     model: model || null,
     notes: customerNotes || null,
+    notes_updated_at: new Date().toISOString(),
     status: 'Diagnosing',
     decision_seen: true,
     equipment_type: equipmentType || null,
@@ -725,6 +726,7 @@ async function scheduleFleetService(formData: FormData) {
     decision_seen: true,
     problem_type: note.trim() || 'Service requested from fleet',
     notes: existing?.notes ? `${entry}\n${existing.notes}` : entry,
+    notes_updated_at: new Date().toISOString(),
     history: stampHistory(existing?.history, entry),
   }).eq('id', id)
 
@@ -805,7 +807,7 @@ async function updateStatus(formData: FormData) {
   const isPriority = formData.get('is_priority') === 'true'
   const { data: existing } = await supabase
     .from('units')
-    .select('status, history, is_priority, problem_type, diagnosis_notes, customer_id, model, equipment_type, nickname, serial_number')
+    .select('status, history, is_priority, problem_type, notes, diagnosis_notes, customer_id, model, equipment_type, nickname, serial_number')
     .eq('id', id)
     .single()
   const wasAlreadyDone = existing ? existing.status === 'Ready for Pickup' : false
@@ -832,11 +834,15 @@ async function updateStatus(formData: FormData) {
   }
 
   const denyNote = 'Denied by Savage Chainsaws - diagnosis fee $49.99 will apply'
+  const finalNotes = isDenyRepair ? (notes ? `${denyNote}\n${notes}` : denyNote) : (notes || null)
   const updateData: any = {
     status,
-    notes: isDenyRepair ? (notes ? `${denyNote}\n${notes}` : denyNote) : (notes || null),
+    notes: finalNotes,
     is_priority: isPriority,
     expedite_fee: isPriority ? PRIORITY_FEE : null,
+  }
+  if (finalNotes !== (existing?.notes ?? null)) {
+    updateData.notes_updated_at = new Date().toISOString()
   }
   if (diagnosisNotes && diagnosisNotes !== existing?.diagnosis_notes) {
     updateData.diagnosis_notes = diagnosisNotes
@@ -1036,7 +1042,7 @@ async function updateNotes(_prevState: { savedAt: number } | null, formData: For
   if (!isAdmin) throw new Error('Not authorized')
   const id = formData.get('id') as string
   const notes = formData.get('notes') as string
-  await supabase.from('units').update({ notes: notes || null }).eq('id', id)
+  await supabase.from('units').update({ notes: notes || null, notes_updated_at: new Date().toISOString() }).eq('id', id)
   revalidatePath('/')
   return { savedAt: Date.now() }
 }
@@ -1423,7 +1429,7 @@ export default async function Home({
         </div>
         <details className="mt-2 group/notes ml-[calc(3.5rem+0.75rem)] sm:ml-[calc(6rem+1rem)]">
           <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
-            Notes {unit.notes ? '- has notes' : ''}
+            Notes {unit.notes ? `- has notes${unit.notes_updated_at ? ` (updated ${formatShortDate(unit.notes_updated_at)})` : ''}` : ''}
           </summary>
           <NotesForm unitId={unit.id} initialNotes={unit.notes || ''} action={updateNotes} />
         </details>
@@ -1955,7 +1961,14 @@ export default async function Home({
                 )}
 
                 <div className="mt-3">
-                  <label className="block text-xs font-bold text-blue-300 mb-1">Customer Notes</label>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="block text-xs font-bold text-blue-300">Customer Notes</label>
+                    {unit.notes_updated_at && (
+                      <span className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/30 rounded-full px-2 py-0.5">
+                        Updated {new Date(unit.notes_updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-600 mb-1">What the customer reported at check-in.</p>
                   <textarea
                     form={formId}

@@ -220,7 +220,7 @@ function escapeLikePattern(value: string) {
 // unit change itself already succeeded by the time this is called, so a
 // failed/slow push here should never block or error out the customer's
 // own flow.
-function notifyAdminPush(event: 'service_request' | 'decision', unitId: string, decision?: 'approve' | 'deny') {
+function notifyAdminPush(event: 'service_request' | 'decision' | 'message', unitId: string, decision?: 'approve' | 'deny') {
   fetch('/api/push/notify-admin', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -670,6 +670,7 @@ export default function CustomerPortal() {
         hour_meter: unitType === 'Riding Lawn Mower' ? (hours.trim() || null) : null,
         problem_type: problem.trim() || null,
         notes: notes.trim() || null,
+        notes_updated_at: new Date().toISOString(),
         status: 'Repair Requested',
         status_since: createdAt,
         decision_seen: true,
@@ -941,6 +942,7 @@ export default function CustomerPortal() {
     }
     setUnitReplies(prev => [...prev, data])
     setReplyText('')
+    notifyAdminPush('message', selectedUnit.id)
   }
 
   // "Ask a Question" on the Needs Approval prompt reuses this same
@@ -1040,6 +1042,7 @@ export default function CustomerPortal() {
         status_since: new Date().toISOString(),
         problem_type: note,
         notes: existing?.notes ? `${note}\n${existing.notes}` : note,
+        notes_updated_at: new Date().toISOString(),
         decision_seen: true,
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
       })
@@ -1050,6 +1053,7 @@ export default function CustomerPortal() {
       setMessage('Could not request service.')
       return
     }
+    notifyAdminPush('service_request', selectedUnit.id)
     setMessage('Service requested. Jesse has been notified.')
     await loadData()
     closeUnit()
@@ -1141,6 +1145,7 @@ export default function CustomerPortal() {
         status,
         status_since: new Date().toISOString(),
         notes: existing?.notes ? `${note}\n${existing.notes}` : note,
+        notes_updated_at: new Date().toISOString(),
         decision_seen: false,
         history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
       })
