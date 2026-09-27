@@ -9,6 +9,7 @@ import ScrollToOpenUnit from './components/ScrollToOpenUnit'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
 import NotesForm from './components/NotesForm'
+import ThumbnailForm from './components/ThumbnailForm'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
 import { UnitPhotoGallery } from './components/UnitPhotoGallery'
@@ -1047,6 +1048,32 @@ async function updateNotes(_prevState: { savedAt: number } | null, formData: For
   return { savedAt: Date.now() }
 }
 
+// Replaces a unit's thumbnail at any time, regardless of status - previously
+// thumbnail_url could only ever be set once, during check-in (addUnit); if
+// that step was skipped (unknown model/serial at drop-off, etc.) there was
+// no way back in short of deleting and re-adding the whole unit. Same
+// 'invoices' bucket every other unit-photo upload already uses in this app.
+async function updateThumbnail(_prevState: { savedAt: number } | null, formData: FormData): Promise<{ savedAt: number } | null> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const file = formData.get('thumbnail') as File
+  if (!id || !file || typeof file !== 'object' || !('size' in file) || file.size === 0) return null
+
+  const bytes = await file.arrayBuffer()
+  const fileName = `${id}-thumb-${Date.now()}-${file.name || 'photo'}`
+  const { error: uploadError } = await supabase.storage
+    .from('invoices')
+    .upload(fileName, bytes, { contentType: file.type || 'image/jpeg', upsert: false })
+  if (uploadError) return null
+
+  const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+  await supabase.from('units').update({ thumbnail_url: publicUrl }).eq('id', id)
+  revalidatePath('/')
+  return { savedAt: Date.now() }
+}
+
 async function upsertUnitPartOverride(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -1952,6 +1979,11 @@ export default async function Home({
                   <button type="submit" form={formId} className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">Update</button>
                   <DeleteUnitButton id={unit.id} />
                   <CustomerInfoSection customer={unitCustomer} />
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-xs font-bold text-gray-400 mb-1">Unit Photo</label>
+                  <ThumbnailForm unitId={unit.id} action={updateThumbnail} />
                 </div>
 
                 {unit.problem_type && (
