@@ -30,7 +30,7 @@ CREATE POLICY "Allow admin manage" ON parts_catalog
   FOR ALL TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM users WHERE id = auth.uid() AND is_admin = true
+      SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
     )
   );
 
