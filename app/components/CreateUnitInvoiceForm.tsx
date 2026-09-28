@@ -15,13 +15,22 @@ export default function CreateUnitInvoiceForm({
   defaultLaborPrice,
   defaultPriorityFee,
   defaultTaxRatePercent,
+  defaultPartsItems,
 }: {
   unitId: string
   defaultLaborPrice: number | string
   defaultPriorityFee: number | string
   defaultTaxRatePercent: number
+  // Pre-fills Parts from this unit's Order Sheet (see UnitOrderSheetSection
+  // in app/page.tsx) - already priced at parts_catalog retail, so this is
+  // "diagnose, build the Order Sheet, buy the parts, then submit it as the
+  // invoice and just add labor" in one step instead of retyping every part
+  // by hand. Still fully editable before submitting.
+  defaultPartsItems?: LineItem[]
 }) {
-  const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '' }])
+  const [partsItems, setPartsItems] = useState<LineItem[]>(
+    defaultPartsItems && defaultPartsItems.length > 0 ? defaultPartsItems : [{ description: '', price: '' }]
+  )
   const [laborItems, setLaborItems] = useState<LineItem[]>([
     { description: '', price: defaultLaborPrice ? String(defaultLaborPrice) : '' },
   ])
