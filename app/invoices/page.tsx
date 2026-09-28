@@ -4,7 +4,8 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { sendEmail } from '@/lib/email'
-import { createSquarePaymentLink, getSquareOrderPaidStatus } from '@/lib/square'
+import { getSquareOrderPaidStatus } from '@/lib/square'
+import { createStripeCheckoutSession, getStripeSessionPaidStatus } from '@/lib/stripe'
 import { CARD_SURCHARGE_DISCLOSURE, getDefaultTaxRatePercent } from '@/lib/billing'
 import { computeInstallmentAmounts, computeDueDates, type PlanFrequency } from '@/lib/paymentPlans'
 import { unitLabel } from '@/lib/units'
@@ -25,16 +26,17 @@ type MarkPaidState = { success: boolean; message: string } | null
 type ArchiveState = { success: boolean; message: string } | null
 type PlanState = { success: boolean; message: string } | null
 
-// Shared by every path that can pay off an installment (Square webhook
-// aside, which keeps its own copy - see app/api/webhooks/square/route.ts)
-// - once none remain unpaid, the plan is done and the invoice itself
-// should read Paid just like any other invoice, no separate "plan
-// completed" status for the admin to check.
+// Shared by every path that can pay off an installment (the Stripe/Square
+// webhooks aside, which each keep their own copy - see
+// app/api/webhooks/stripe/route.ts and app/api/webhooks/square/route.ts) -
+// once none remain unpaid, the plan is done and the invoice itself should
+// read Paid just like any other invoice, no separate "plan completed"
+// status for the admin to check.
 async function maybeCompletePlan(
   supabase: Awaited<ReturnType<typeof getSessionInfo>>['supabase'],
   planId: string,
   invoiceId: string,
-  paidVia: 'square' | 'manual'
+  paidVia: 'stripe' | 'square' | 'manual'
 ) {
   const { data: remaining } = await supabase.from('invoice_installments').select('id').eq('plan_id', planId).is('paid_at', null)
   if (remaining && remaining.length === 0) {
@@ -46,7 +48,7 @@ async function maybeCompletePlan(
 // Payment plans are opt-in per customer (see the "Allow payment plans"
 // checkbox on Edit Customer) - trusted/regular customers only, at the
 // admin's discretion, never offered blanket on every invoice. One plan per
-// invoice; each installment gets the same on-demand Square Payment Link
+// invoice; each installment gets the same on-demand Stripe Checkout Session
 // treatment as a regular invoice (see generatePaymentLink below).
 async function startPaymentPlan(_prevState: PlanState, formData: FormData): Promise<PlanState> {
   'use server'
@@ -109,7 +111,10 @@ async function startPaymentPlan(_prevState: PlanState, formData: FormData): Prom
 // installment's amount instead of the invoice's full total - reuses the
 // same InvoicePaymentActions component (its hidden field is always named
 // "invoice_id" regardless of what id it actually carries, same convention
-// already established for rentals).
+// already established for rentals). Checks for an existing Square link
+// first (never generates a second, different link for the same
+// installment) purely to honor a link already sent before the Stripe
+// cutover - new links are always Stripe going forward.
 async function generateInstallmentPaymentLink(_prevState: GenerateLinkState, formData: FormData): Promise<GenerateLinkState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -120,12 +125,15 @@ async function generateInstallmentPaymentLink(_prevState: GenerateLinkState, for
 
   const { data: inst } = await supabase
     .from('invoice_installments')
-    .select('id, amount, sequence, invoice_id, square_payment_link_url, invoices(invoice_number, customer_email, customer_id)')
+    .select('id, amount, sequence, invoice_id, square_payment_link_url, stripe_payment_link_url, invoices(invoice_number, customer_email, customer_id)')
     .eq('id', installmentId)
     .maybeSingle()
   if (!inst) return { success: false, message: 'Installment not found.' }
   if (inst.square_payment_link_url) {
     return { success: true, message: 'Payment link already exists.', url: inst.square_payment_link_url }
+  }
+  if (inst.stripe_payment_link_url) {
+    return { success: true, message: 'Payment link already exists.', url: inst.stripe_payment_link_url }
   }
 
   const invoice = inst.invoices as unknown as { invoice_number: string | null; customer_email: string | null; customer_id: string | null } | null
@@ -139,7 +147,7 @@ async function generateInstallmentPaymentLink(_prevState: GenerateLinkState, for
   }
 
   const invoiceNumber = invoice?.invoice_number || inst.invoice_id.slice(0, 8)
-  const result = await createSquarePaymentLink({
+  const result = await createStripeCheckoutSession({
     invoiceNumber: `${invoiceNumber}-${inst.sequence}`,
     amountCents,
     buyerEmail,
@@ -149,13 +157,16 @@ async function generateInstallmentPaymentLink(_prevState: GenerateLinkState, for
 
   await supabase
     .from('invoice_installments')
-    .update({ square_payment_link_id: result.paymentLinkId, square_order_id: result.orderId, square_payment_link_url: result.url })
+    .update({ stripe_checkout_session_id: result.sessionId, stripe_payment_link_url: result.url })
     .eq('id', installmentId)
   revalidatePath('/invoices')
 
   return { success: true, message: 'Payment link generated.', url: result.url }
 }
 
+// Checks whichever processor this installment's link was actually created
+// through - Stripe for anything generated after the cutover, Square only
+// for a link that was already outstanding before it.
 async function checkInstallmentPaymentStatus(_prevState: CheckStatusState, formData: FormData): Promise<CheckStatusState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -166,19 +177,24 @@ async function checkInstallmentPaymentStatus(_prevState: CheckStatusState, formD
 
   const { data: inst } = await supabase
     .from('invoice_installments')
-    .select('id, square_order_id, paid_at, plan_id, invoice_id')
+    .select('id, square_order_id, stripe_checkout_session_id, paid_at, plan_id, invoice_id')
     .eq('id', installmentId)
     .maybeSingle()
   if (!inst) return { success: false, message: 'Installment not found.' }
-  if (!inst.square_order_id) return { success: false, message: 'No payment link generated yet.' }
   if (inst.paid_at) return { success: true, message: 'Already marked paid.', paid: true }
+  if (!inst.stripe_checkout_session_id && !inst.square_order_id) {
+    return { success: false, message: 'No payment link generated yet.' }
+  }
 
-  const result = await getSquareOrderPaidStatus(inst.square_order_id)
+  const result = inst.stripe_checkout_session_id
+    ? await getStripeSessionPaidStatus(inst.stripe_checkout_session_id)
+    : await getSquareOrderPaidStatus(inst.square_order_id as string)
   if (!result.ok) return { success: false, message: result.error }
 
   if (result.paid) {
-    await supabase.from('invoice_installments').update({ paid_at: new Date().toISOString(), paid_via: 'square' }).eq('id', installmentId)
-    await maybeCompletePlan(supabase, inst.plan_id, inst.invoice_id, 'square')
+    const paidVia = inst.stripe_checkout_session_id ? 'stripe' : 'square'
+    await supabase.from('invoice_installments').update({ paid_at: new Date().toISOString(), paid_via: paidVia }).eq('id', installmentId)
+    await maybeCompletePlan(supabase, inst.plan_id, inst.invoice_id, paidVia)
     revalidatePath('/invoices')
     return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
   }
@@ -218,9 +234,11 @@ async function toggleInstallmentManualPaid(_prevState: MarkPaidState, formData: 
 
 // Payment links are generated on demand only - never automatically when an
 // invoice is created - so the admin can finalize/edit the invoice first and
-// only generate one once confident the total is correct. Square's own
-// hosted checkout page (Payment Links / Checkout API) collects the card;
-// no payment data ever touches this app.
+// only generate one once confident the total is correct. Stripe's own
+// hosted checkout page (Checkout Sessions) collects the card; no payment
+// data ever touches this app. Checks for an existing Square link first
+// purely to honor one already sent before the Stripe cutover - new links
+// are always Stripe going forward.
 async function generatePaymentLink(_prevState: GenerateLinkState, formData: FormData): Promise<GenerateLinkState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -231,12 +249,15 @@ async function generatePaymentLink(_prevState: GenerateLinkState, formData: Form
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, invoice_number, amount, customer_email, customer_id, square_payment_link_url')
+    .select('id, invoice_number, amount, customer_email, customer_id, square_payment_link_url, stripe_payment_link_url')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
   if (invoice.square_payment_link_url) {
     return { success: true, message: 'Payment link already exists.', url: invoice.square_payment_link_url }
+  }
+  if (invoice.stripe_payment_link_url) {
+    return { success: true, message: 'Payment link already exists.', url: invoice.stripe_payment_link_url }
   }
 
   const invoiceNumber = invoice.invoice_number || invoiceId.slice(0, 8)
@@ -251,7 +272,7 @@ async function generatePaymentLink(_prevState: GenerateLinkState, formData: Form
     buyerEmail = customer?.email ?? null
   }
 
-  const result = await createSquarePaymentLink({
+  const result = await createStripeCheckoutSession({
     invoiceNumber,
     amountCents,
     buyerEmail,
@@ -262,9 +283,8 @@ async function generatePaymentLink(_prevState: GenerateLinkState, formData: Form
   await supabase
     .from('invoices')
     .update({
-      square_payment_link_id: result.paymentLinkId,
-      square_order_id: result.orderId,
-      square_payment_link_url: result.url,
+      stripe_checkout_session_id: result.sessionId,
+      stripe_payment_link_url: result.url,
     })
     .eq('id', invoiceId)
   revalidatePath('/invoices')
@@ -273,9 +293,9 @@ async function generatePaymentLink(_prevState: GenerateLinkState, formData: Form
 }
 
 // Manual fallback for payment-status sync, alongside the webhook (see
-// app/api/webhooks/square/route.ts) - checks Square's own Orders API
-// directly rather than assuming payment happened just because a link was
-// generated or opened.
+// app/api/webhooks/stripe/route.ts) - checks whichever processor this
+// invoice's link was actually created through, rather than assuming
+// payment happened just because a link was generated or opened.
 async function checkPaymentStatus(_prevState: CheckStatusState, formData: FormData): Promise<CheckStatusState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -286,25 +306,30 @@ async function checkPaymentStatus(_prevState: CheckStatusState, formData: FormDa
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, square_order_id, paid_at')
+    .select('id, square_order_id, stripe_checkout_session_id, paid_at')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
-  if (!invoice.square_order_id) return { success: false, message: 'No payment link generated yet.' }
   if (invoice.paid_at) return { success: true, message: 'Already marked paid.', paid: true }
+  if (!invoice.stripe_checkout_session_id && !invoice.square_order_id) {
+    return { success: false, message: 'No payment link generated yet.' }
+  }
 
-  const result = await getSquareOrderPaidStatus(invoice.square_order_id)
+  const result = invoice.stripe_checkout_session_id
+    ? await getStripeSessionPaidStatus(invoice.stripe_checkout_session_id)
+    : await getSquareOrderPaidStatus(invoice.square_order_id as string)
   if (!result.ok) return { success: false, message: result.error }
 
   if (result.paid) {
-    await supabase.from('invoices').update({ paid_at: new Date().toISOString(), paid_via: 'square' }).eq('id', invoiceId)
+    const paidVia = invoice.stripe_checkout_session_id ? 'stripe' : 'square'
+    await supabase.from('invoices').update({ paid_at: new Date().toISOString(), paid_via: paidVia }).eq('id', invoiceId)
     revalidatePath('/invoices')
     return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
   }
   return { success: true, message: 'Not paid yet.', paid: false }
 }
 
-// Online payment via Square is additive, never required - a customer who
+// Online payment via Stripe is additive, never required - a customer who
 // pays by Zelle, Cash App, or tap-to-pay in person still needs the invoice
 // to reflect that they've paid.
 async function toggleManualPaid(_prevState: MarkPaidState, formData: FormData): Promise<MarkPaidState> {
@@ -420,7 +445,7 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, invoice_number, amount, pdf_url, customer_name, square_payment_link_url, paid_at')
+    .select('id, invoice_number, amount, pdf_url, customer_name, square_payment_link_url, stripe_payment_link_url, paid_at')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
@@ -435,8 +460,9 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
   // generated here) and the invoice isn't already marked paid - a real
   // tappable button in the email body, not just something inside the PDF
   // attachment.
-  const payNowButton = invoice.square_payment_link_url && !invoice.paid_at
-    ? `<p style="margin: 20px 0;"><a href="${invoice.square_payment_link_url}" style="background-color:#ea580c;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Pay Now - $${total.toFixed(2)}</a></p>
+  const paymentLinkUrl = invoice.square_payment_link_url || invoice.stripe_payment_link_url
+  const payNowButton = paymentLinkUrl && !invoice.paid_at
+    ? `<p style="margin: 20px 0;"><a href="${paymentLinkUrl}" style="background-color:#ea580c;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Pay Now - $${total.toFixed(2)}</a></p>
        <p style="margin: 0 0 20px; font-size: 12px; color: #666666;">${CARD_SURCHARGE_DISCLOSURE}</p>`
     : ''
 
@@ -496,7 +522,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url))'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
     )
     .order('created_at', { ascending: false })
 
@@ -526,6 +552,7 @@ export default async function InvoicesPage({
         paid_at: string | null
         paid_via: string | null
         square_payment_link_url: string | null
+        stripe_payment_link_url: string | null
       }[]
     }[] | null)?.[0] || null
     // Prefers what was actually on the PDF at send time (customer_email,
@@ -549,7 +576,7 @@ export default async function InvoicesPage({
       pdfUrl,
       sentAt: inv.sent_at as string | null,
       sentTo: inv.sent_to as string | null,
-      paymentLinkUrl: inv.square_payment_link_url as string | null,
+      paymentLinkUrl: (inv.square_payment_link_url || inv.stripe_payment_link_url) as string | null,
       paidAt,
       paidVia: inv.paid_via as string | null,
       archivedAt,
@@ -588,7 +615,7 @@ export default async function InvoicesPage({
                 dueDate: i.due_date,
                 paidAt: i.paid_at,
                 paidVia: i.paid_via,
-                paymentLinkUrl: i.square_payment_link_url,
+                paymentLinkUrl: i.square_payment_link_url || i.stripe_payment_link_url,
               })),
           }
         : null,
@@ -772,7 +799,7 @@ export default async function InvoicesPage({
                       {r.paidAt ? (
                         <span
                           className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
-                          title={r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
+                          title={r.paidVia === 'stripe' ? 'Paid online via Stripe' : r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
                         >
                           Paid
                         </span>
@@ -917,7 +944,7 @@ export default async function InvoicesPage({
                   {r.paidAt ? (
                     <span
                       className="px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
-                      title={r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
+                      title={r.paidVia === 'stripe' ? 'Paid online via Stripe' : r.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
                     >
                       Paid
                     </span>

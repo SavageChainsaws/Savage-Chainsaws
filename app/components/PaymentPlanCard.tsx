@@ -12,6 +12,7 @@ type Installment = {
   due_date: string | null
   paid_at: string | null
   square_payment_link_url: string | null
+  stripe_payment_link_url: string | null
 }
 
 type PlanRow = {
@@ -34,7 +35,7 @@ export default function PaymentPlanCard({ customerId }: { customerId: string }) 
     async function load() {
       const { data } = await supabase
         .from('invoice_payment_plans')
-        .select('id, installment_count, invoices!inner(invoice_number, customer_id), invoice_installments(id, sequence, amount, due_date, paid_at, square_payment_link_url)')
+        .select('id, installment_count, invoices!inner(invoice_number, customer_id), invoice_installments(id, sequence, amount, due_date, paid_at, square_payment_link_url, stripe_payment_link_url)')
         .eq('invoices.customer_id', customerId)
         .eq('status', 'Active')
       if (!cancelled) setPlans((data as unknown as PlanRow[]) || [])
@@ -71,12 +72,12 @@ export default function PaymentPlanCard({ customerId }: { customerId: string }) 
                   </span>
                   {inst.paid_at ? (
                     <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400 shrink-0">Paid</span>
-                  ) : inst.square_payment_link_url ? (
+                  ) : (inst.stripe_payment_link_url || inst.square_payment_link_url) ? (
                     <a
-                      href={inst.square_payment_link_url}
+                      href={(inst.stripe_payment_link_url || inst.square_payment_link_url) as string}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs bg-[#006aff] hover:bg-[#0057d1] text-white font-medium px-2.5 py-1 rounded-lg shrink-0"
+                      className="text-xs bg-[#635bff] hover:bg-[#524ae0] text-white font-medium px-2.5 py-1 rounded-lg shrink-0"
                     >
                       Pay Now
                     </a>

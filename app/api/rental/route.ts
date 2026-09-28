@@ -11,7 +11,7 @@ import { unitLabel } from '@/lib/units'
 // free-typed unit - see CreateRentalForm) so two rentals can never point at
 // the same physical saw, generates the signed-ready agreement PDF (Pre-
 // Rental Condition section filled in, Post-Rental left blank), and marks
-// the unit Rented. The Square payment link for the pickup charge (rental +
+// the unit Rented. The Stripe payment link for the pickup charge (rental +
 // deposit) is generated on demand afterward from the rentals list, not
 // automatically here - same on-demand philosophy as invoices.
 //

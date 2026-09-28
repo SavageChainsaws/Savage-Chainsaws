@@ -2,7 +2,8 @@ import { revalidatePath } from 'next/cache'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createSquarePaymentLink, getSquareOrderPaidStatus } from '@/lib/square'
+import { getSquareOrderPaidStatus } from '@/lib/square'
+import { createStripeCheckoutSession, getStripeSessionPaidStatus } from '@/lib/stripe'
 import { DEFAULT_DAILY_RATE, DEFAULT_WEEKLY_RATE, DEFAULT_SECURITY_DEPOSIT, DEFAULT_DAMAGE_CAP } from '@/lib/rentals'
 import CreateRentalForm from '../components/CreateRentalForm'
 import RentalReturnButton from '../components/RentalReturnButton'
@@ -100,8 +101,11 @@ async function setRentalUnitStatus(formData: FormData) {
 // InvoicePaymentActions and MarkPaidToggle, read/write an "invoice_id"
 // hidden field regardless of what it actually identifies) so a rental's
 // current total_owed - whether that's the pickup charge or a post-return
-// balance - gets the identical on-demand Square Payment Link flow invoices
-// already have, rather than a second parallel implementation.
+// balance - gets the identical on-demand Stripe Checkout Session flow
+// invoices already have, rather than a second parallel implementation.
+// Checks for an existing Square link first purely to honor one already
+// sent before the Stripe cutover - new links are always Stripe going
+// forward.
 async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData: FormData): Promise<GenerateLinkState> {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -112,12 +116,15 @@ async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData
 
   const { data: rental } = await supabase
     .from('rentals')
-    .select('id, total_owed, customer_id, renter_name, renter_email, square_payment_link_url')
+    .select('id, total_owed, customer_id, renter_name, renter_email, square_payment_link_url, stripe_payment_link_url')
     .eq('id', rentalId)
     .maybeSingle()
   if (!rental) return { success: false, message: 'Rental not found.' }
   if (rental.square_payment_link_url) {
     return { success: true, message: 'Payment link already exists.', url: rental.square_payment_link_url }
+  }
+  if (rental.stripe_payment_link_url) {
+    return { success: true, message: 'Payment link already exists.', url: rental.stripe_payment_link_url }
   }
 
   const amountCents = Math.round((Number(rental.total_owed) || 0) * 100)
@@ -131,7 +138,7 @@ async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData
     buyerEmail = customer?.email ?? null
   }
 
-  const result = await createSquarePaymentLink({
+  const result = await createStripeCheckoutSession({
     invoiceNumber: `Rental-${rentalId.slice(0, 8)}`,
     amountCents,
     buyerEmail,
@@ -141,7 +148,7 @@ async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData
 
   await supabase
     .from('rentals')
-    .update({ square_payment_link_id: result.paymentLinkId, square_order_id: result.orderId, square_payment_link_url: result.url })
+    .update({ stripe_checkout_session_id: result.sessionId, stripe_payment_link_url: result.url })
     .eq('id', rentalId)
   revalidatePath('/rentals')
 
@@ -156,16 +163,25 @@ async function checkRentalPaymentStatus(_prevState: CheckStatusState, formData: 
   const rentalId = (formData.get('invoice_id') as string) || ''
   if (!rentalId) return { success: false, message: 'Missing rental id.' }
 
-  const { data: rental } = await supabase.from('rentals').select('id, square_order_id, paid_at').eq('id', rentalId).maybeSingle()
+  const { data: rental } = await supabase
+    .from('rentals')
+    .select('id, square_order_id, stripe_checkout_session_id, paid_at')
+    .eq('id', rentalId)
+    .maybeSingle()
   if (!rental) return { success: false, message: 'Rental not found.' }
-  if (!rental.square_order_id) return { success: false, message: 'No payment link generated yet.' }
   if (rental.paid_at) return { success: true, message: 'Already marked paid.', paid: true }
+  if (!rental.stripe_checkout_session_id && !rental.square_order_id) {
+    return { success: false, message: 'No payment link generated yet.' }
+  }
 
-  const result = await getSquareOrderPaidStatus(rental.square_order_id)
+  const result = rental.stripe_checkout_session_id
+    ? await getStripeSessionPaidStatus(rental.stripe_checkout_session_id)
+    : await getSquareOrderPaidStatus(rental.square_order_id as string)
   if (!result.ok) return { success: false, message: result.error }
 
   if (result.paid) {
-    await supabase.from('rentals').update({ paid_at: new Date().toISOString(), paid_via: 'square' }).eq('id', rentalId)
+    const paidVia = rental.stripe_checkout_session_id ? 'stripe' : 'square'
+    await supabase.from('rentals').update({ paid_at: new Date().toISOString(), paid_via: paidVia }).eq('id', rentalId)
     revalidatePath('/rentals')
     return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
   }
@@ -225,7 +241,7 @@ export default async function RentalsPage({
       endDate: r.end_date as string,
       status: r.status as 'Pending Signature' | 'Active' | 'Returned' | 'Cancelled',
       amountDue: Number(r.total_owed) || 0,
-      paymentLinkUrl: r.square_payment_link_url as string | null,
+      paymentLinkUrl: (r.square_payment_link_url || r.stripe_payment_link_url) as string | null,
       paidAt: r.paid_at as string | null,
       paidVia: r.paid_via as string | null,
       agreementPdfUrl: r.agreement_pdf_url as string | null,

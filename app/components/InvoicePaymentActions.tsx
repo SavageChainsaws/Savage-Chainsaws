@@ -5,12 +5,12 @@ import { useActionState, useState } from 'react'
 type LinkState = { success: boolean; message: string; url?: string } | null
 type StatusState = { success: boolean; message: string; paid?: boolean } | null
 
-// Square's Payment Links are generated on demand only (never automatically
-// when an invoice is created) - this renders "Generate Payment Link" until
-// one exists, then swaps to Pay Now + a manual "Check Payment Status"
-// fallback (the webhook in app/api/webhooks/square/route.ts keeps Paid
-// status in sync automatically once configured; this button covers
-// whenever that isn't set up yet or a delivery is missed).
+// Stripe Checkout Sessions are generated on demand only (never
+// automatically when an invoice is created) - this renders "Generate
+// Payment Link" until one exists, then swaps to Pay Now + a manual "Check
+// Payment Status" fallback (the webhook in app/api/webhooks/stripe/route.ts
+// keeps Paid status in sync automatically once configured; this button
+// covers whenever that isn't set up yet or a delivery is missed).
 export default function InvoicePaymentActions({
   invoiceId,
   paymentLinkUrl,
@@ -66,7 +66,7 @@ export default function InvoicePaymentActions({
               href={currentUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-xs bg-[#006aff] hover:bg-[#0057d1] text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
+              className="text-xs bg-[#635bff] hover:bg-[#524ae0] text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
             >
               Pay Now
             </a>
@@ -106,7 +106,7 @@ export default function InvoicePaymentActions({
               type="submit"
               disabled={genPending}
               title="Generate Payment Link"
-              className="text-xs bg-[#006aff] hover:bg-[#0057d1] disabled:opacity-50 text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
+              className="text-xs bg-[#635bff] hover:bg-[#524ae0] disabled:opacity-50 text-white font-medium px-2 py-1 rounded-lg transition whitespace-nowrap"
             >
               {genPending ? 'Generating...' : 'Get Link'}
             </button>

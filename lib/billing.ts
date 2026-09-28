@@ -69,7 +69,7 @@ export function computeInvoiceBilling({
   // referral discount) plus tax combined - the full amount that would
   // actually run through the card - never of the taxable subtotal alone,
   // and only ever added when Jesse leaves the surcharge toggle on (it's
-  // meant for credit-card-via-Square payments only; he unchecks it, or
+  // meant for credit-card-via-Stripe payments only; he unchecks it, or
   // re-generates the invoice with it unchecked, for Zelle/Cash App/debit
   // payers).
   const surchargeAmount = includeCardSurcharge
