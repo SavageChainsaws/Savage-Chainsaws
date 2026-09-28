@@ -2226,6 +2226,12 @@ export default async function Home({
             >
               Rentals
             </Link>
+            <Link
+              href="/settings"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Settings
+            </Link>
             <ContactLinksBar />
             <PushToggle label="Push" />
             <AdminLogout />
