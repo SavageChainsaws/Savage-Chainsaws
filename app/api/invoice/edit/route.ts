@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existingInvoice } = await supabase
     .from('invoices')
-    .select('id, unit_id, customer_id, customer_name, customer_email, invoice_number, paid_at, square_payment_link_url')
+    .select('id, unit_id, customer_id, customer_name, customer_email, invoice_number, paid_at, square_payment_link_url, stripe_payment_link_url')
     .eq('id', invoiceId)
     .single()
   if (!existingInvoice) {
@@ -208,7 +208,8 @@ export async function POST(request: NextRequest) {
   // the old amount - clear it so the invoices list falls back to showing
   // "Generate Payment Link" instead of a Pay Now button that would charge
   // the wrong total. Never touched once the invoice is actually paid.
-  const clearStalePaymentLink = !existingInvoice.paid_at && !!existingInvoice.square_payment_link_url
+  const clearStalePaymentLink =
+    !existingInvoice.paid_at && !!(existingInvoice.square_payment_link_url || existingInvoice.stripe_payment_link_url)
 
   await supabase
     .from('invoices')
@@ -225,7 +226,13 @@ export async function POST(request: NextRequest) {
         ? { customer_id: customerIdToSave, customer_name: customerNameToSave, customer_email: customerEmailToSave }
         : {}),
       ...(clearStalePaymentLink
-        ? { square_payment_link_id: null, square_order_id: null, square_payment_link_url: null }
+        ? {
+            square_payment_link_id: null,
+            square_order_id: null,
+            square_payment_link_url: null,
+            stripe_checkout_session_id: null,
+            stripe_payment_link_url: null,
+          }
         : {}),
     })
     .eq('id', invoiceId)

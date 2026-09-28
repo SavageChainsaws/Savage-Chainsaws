@@ -204,7 +204,7 @@ export default function CreateRentalForm({
           type="email"
           value={renterEmail}
           onChange={e => setRenterEmail(e.target.value)}
-          placeholder="For the Square payment receipt"
+          placeholder="For the Stripe payment receipt"
           className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
         />
       </div>

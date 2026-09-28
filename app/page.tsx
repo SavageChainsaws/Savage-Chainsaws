@@ -1,6 +1,7 @@
 ﻿import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
+import crypto from 'crypto'
 import Link from 'next/link'
 import { createClient, getSessionInfo } from '@/lib/supabase/server'
 import InactivityRedirect from './components/InactivityRedirect'
@@ -29,6 +30,7 @@ import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateReferralSourceLoginForm from './components/CreateReferralSourceLoginForm'
 import DeleteReferralSourceLoginForm from './components/DeleteReferralSourceLoginForm'
 import CopyReferralLink from './components/CopyReferralLink'
+import CopyInstantSignupLink from './components/CopyInstantSignupLink'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import ShopSettingsForm from './components/ShopSettingsForm'
 import EditCustomerButton from './components/EditCustomerButton'
@@ -110,6 +112,22 @@ async function updateShopSetting(_prevState: UpdateShopSettingState, formData: F
   revalidatePath('/')
   revalidatePath('/invoices')
   return { success: true, message: `FL Sales Tax Rate updated to ${taxRate}%.` }
+}
+
+// Rotates the secret that gates /join (see app/api/instant-signup/route.ts)
+// - anyone with the OLD link immediately loses access once this runs, since
+// the route compares against whatever's currently stored here. Use if a
+// link ever leaks somewhere it shouldn't have.
+async function regenerateInstantSignupToken() {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const token = crypto.randomBytes(20).toString('hex')
+  await supabase
+    .from('shop_settings')
+    .upsert({ key: 'instant_signup_token', value: token, updated_at: new Date().toISOString() })
+  revalidatePath('/')
 }
 
 async function addUnit(formData: FormData) {
@@ -1126,6 +1144,75 @@ async function deleteUnitPartOverride(formData: FormData) {
   revalidatePath('/')
 }
 
+// Order Sheet - a per-unit running list of STIHL part numbers built up
+// during diagnosis (copy/pasted from the dealer parts catalog) so Jesse
+// can take one printable sheet to the store instead of remembering
+// everything. Deliberately separate from Parts & SKUs above: that section
+// is the fixed default-parts-per-model system used for invoice SKU
+// matching, this is a disposable per-job shopping list sourced from the
+// real distributor parts_catalog table. Always trusts parts_catalog for
+// description/cost/retail_price when the SKU matches - never the client-
+// submitted values - so a stale/edited form field can't misprice a part.
+// Adding a SKU already on the sheet bumps its quantity (unique(unit_id,
+// sku) + upsert) instead of creating a duplicate row.
+async function addOrderSheetItem(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const unitId = formData.get('unit_id') as string
+  const skuRaw = ((formData.get('sku') as string) || '').trim()
+  const quantity = Math.max(1, parseInt((formData.get('quantity') as string) || '1', 10) || 1)
+  if (!unitId || !skuRaw) return
+
+  const { data: match } = await supabase
+    .from('parts_catalog')
+    .select('sku, description, cost, retail_price')
+    .ilike('sku', skuRaw)
+    .maybeSingle()
+
+  const { data: existing } = await supabase
+    .from('order_sheet_items')
+    .select('id, quantity')
+    .eq('unit_id', unitId)
+    .eq('sku', match?.sku || skuRaw)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase
+      .from('order_sheet_items')
+      .update({ quantity: existing.quantity + quantity })
+      .eq('id', existing.id)
+  } else {
+    await supabase.from('order_sheet_items').insert({
+      unit_id: unitId,
+      sku: match?.sku || skuRaw,
+      description: match?.description || 'Unknown part - verify at store',
+      cost: match?.cost ?? null,
+      retail_price: match?.retail_price ?? null,
+      quantity,
+    })
+  }
+  revalidatePath('/')
+}
+
+async function deleteOrderSheetItem(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  await supabase.from('order_sheet_items').delete().eq('id', id)
+  revalidatePath('/')
+}
+
+async function clearOrderSheet(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const unitId = formData.get('unit_id') as string
+  await supabase.from('order_sheet_items').delete().eq('unit_id', unitId)
+  revalidatePath('/')
+}
+
 async function addServiceHistoryEntry(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -1270,10 +1357,17 @@ export default async function Home({
 
   const { data: customers } = await supabase.from('customers').select('*').order('name')
   const defaultTaxRatePercent = await getDefaultTaxRatePercent(supabase)
+  const { data: instantSignupSetting } = await supabase
+    .from('shop_settings')
+    .select('value')
+    .eq('key', 'instant_signup_token')
+    .maybeSingle()
+  const instantSignupToken = instantSignupSetting?.value || ''
   const { data: referralSources } = await supabase.from('referral_sources').select('*').order('name')
   const { data: allUnits } = await supabase.from('units').select('*').order('created_at', { ascending: false })
   const { data: modelPartsAll } = await supabase.from('model_parts').select('*')
   const { data: unitOverridesAll } = await supabase.from('unit_part_overrides').select('*')
+  const { data: orderSheetItemsAll } = await supabase.from('order_sheet_items').select('*').order('created_at')
   const { data: serviceHistoryAll } = await supabase
     .from('service_history')
     .select('*')
@@ -1295,7 +1389,7 @@ export default async function Home({
   // current invoice/quote" link and units.invoice_url already point at.
   const { data: unitInvoicesAll } = await supabase
     .from('invoices')
-    .select('id, unit_id, invoice_number, line_items, amount, sales_tax_rate, card_surcharge_amount, labor_type, paid_at, square_payment_link_url')
+    .select('id, unit_id, invoice_number, line_items, amount, sales_tax_rate, card_surcharge_amount, labor_type, paid_at, square_payment_link_url, stripe_payment_link_url')
     .not('unit_id', 'is', null)
     .order('created_at', { ascending: false })
   const latestInvoiceByUnit = new Map<string, NonNullable<typeof unitInvoicesAll>[number]>()
@@ -1550,6 +1644,81 @@ export default async function Home({
     )
   }
 
+  // Order Sheet - see addOrderSheetItem above for the full rationale.
+  // Paste a SKU from STIHL's dealer parts catalog, it auto-fills from
+  // parts_catalog (real distributor pricing), and the running list can be
+  // printed via /order-sheet/[unitId] to take to the store.
+  function UnitOrderSheetSection({ unit }: { unit: any }) {
+    const items = (orderSheetItemsAll || []).filter(i => i.unit_id === unit.id)
+    const totalRetail = items.reduce((sum, i) => sum + (Number(i.retail_price) || 0) * i.quantity, 0)
+    return (
+      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/order-sheet-panel">
+        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
+          <span className="text-xs text-gray-500 uppercase tracking-wider">
+            Order Sheet{items.length > 0 ? ` (${items.length})` : ''}
+          </span>
+          <span className="text-gray-500 text-xs group-open/order-sheet-panel:rotate-180 transition">v</span>
+        </summary>
+        {items.length === 0 ? (
+          <p className="text-xs text-gray-500 mb-2">No parts added yet - paste a SKU below as you diagnose.</p>
+        ) : (
+          <div className="space-y-1.5 mb-2">
+            {items.map(i => (
+              <div key={i.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-mono text-orange-300">{i.sku}</span>
+                <span className="text-gray-300 flex-1 min-w-[120px]">{i.description}</span>
+                <span className="text-xs text-gray-500">Qty {i.quantity}</span>
+                <span className="text-xs text-gray-400 w-16 text-right">
+                  {i.retail_price != null ? `$${Number(i.retail_price).toFixed(2)}` : '-'}
+                </span>
+                <form action={deleteOrderSheetItem}>
+                  <input type="hidden" name="id" value={i.id} />
+                  <button type="submit" className="text-xs text-red-400 hover:text-red-300">Remove</button>
+                </form>
+              </div>
+            ))}
+            <p className="text-xs text-gray-500 pt-1">Estimated retail total: ${totalRetail.toFixed(2)}</p>
+          </div>
+        )}
+        <form action={addOrderSheetItem} className="flex flex-wrap gap-2 mb-2">
+          <input type="hidden" name="unit_id" value={unit.id} />
+          <UppercaseInput
+            name="sku"
+            placeholder="Paste SKU from Steele's/STIHL catalog"
+            className="flex-1 min-w-[160px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
+          />
+          <input
+            name="quantity"
+            type="number"
+            min={1}
+            defaultValue={1}
+            className="w-16 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
+          />
+          <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
+            Add
+          </button>
+        </form>
+        <div className="flex gap-3">
+          {items.length > 0 && (
+            <Link
+              href={`/order-sheet/${unit.id}`}
+              target="_blank"
+              className="text-xs text-orange-400 hover:text-orange-300"
+            >
+              Print Order Sheet {'->'}
+            </Link>
+          )}
+          {items.length > 0 && (
+            <form action={clearOrderSheet}>
+              <input type="hidden" name="unit_id" value={unit.id} />
+              <button type="submit" className="text-xs text-gray-500 hover:text-red-400">Clear list</button>
+            </form>
+          )}
+        </div>
+      </details>
+    )
+  }
+
   function UnitPhotosSection({ unit }: { unit: any }) {
     const extraPhotos = (unitPhotosAll || []).filter(p => p.unit_id === unit.id && p.stage === 'checkin')
     const photos = [
@@ -1772,7 +1941,7 @@ export default async function Home({
               <span className="px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400">
                 Already Paid - editing still allowed, but double-check with the customer first
               </span>
-            ) : invoice.square_payment_link_url ? (
+            ) : (invoice.square_payment_link_url || invoice.stripe_payment_link_url) ? (
               <span className="px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/20 text-yellow-400">
                 Has a Payment Link - saving will clear it so a fresh one matches the new total
               </span>
@@ -2040,6 +2209,7 @@ export default async function Home({
                   <DiagnosisFindingsSection unit={unit} />
                   <BeforeAfterCompareSection unit={unit} />
                   <UnitPartsSection unit={unit} />
+                  <UnitOrderSheetSection unit={unit} />
                 </div>
               </UnitStatusProvider>
             )
@@ -2672,6 +2842,7 @@ export default async function Home({
                               <UnitPhotosSection unit={unit} />
                               <BeforeAfterCompareSection unit={unit} />
                               <UnitPartsSection unit={unit} />
+                              <UnitOrderSheetSection unit={unit} />
                               <ServiceHistorySection unit={unit} />
                               <CreateInvoiceSection unit={unit} />
 
@@ -2799,6 +2970,33 @@ export default async function Home({
               customers={(customers || []).map(c => ({ id: c.id, name: c.name }))}
               action={createCustomerLogin}
             />
+          </div>
+        </details>
+
+        <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
+          <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
+            <h2 className="font-semibold text-orange-400">Instant Customer Signup Link</h2>
+            <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
+          </summary>
+          <div className="border-t border-zinc-800 p-4 sm:p-6 space-y-3">
+            <p className="text-xs text-gray-500">
+              Text this link to someone on the spot - they sign up and get instant access, no admin review needed.
+              Anyone without this exact link can&apos;t sign up at all. If the link ever leaks somewhere it shouldn&apos;t,
+              regenerate it below to invalidate the old one immediately.
+            </p>
+            {instantSignupToken ? (
+              <CopyInstantSignupLink token={instantSignupToken} />
+            ) : (
+              <p className="text-xs text-yellow-400">No link generated yet - click regenerate to create one.</p>
+            )}
+            <form action={regenerateInstantSignupToken}>
+              <button
+                type="submit"
+                className="text-xs border border-zinc-600 hover:border-orange-500 text-gray-300 px-3 py-1.5 rounded-lg"
+              >
+                Regenerate Link
+              </button>
+            </form>
           </div>
         </details>
 

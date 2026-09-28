@@ -103,7 +103,7 @@ export default function TaxAndSurchargeFields({
           Include 3% card processing fee line
         </label>
         <p className="text-xs text-gray-600 mt-1">
-          Only for credit card payments via the Square Payment Link - uncheck this (or regenerate the invoice with it
+          Only for credit card payments via the Stripe payment link - uncheck this (or regenerate the invoice with it
           unchecked) if the customer ends up paying by Zelle, Cash App, or debit.
         </p>
       </div>

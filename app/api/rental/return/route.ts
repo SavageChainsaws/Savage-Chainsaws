@@ -8,7 +8,7 @@ import { computeLateFee, capDamageCharge } from '@/lib/rentals'
 // (Section 4), caps any damage charge at the rental's snapshotted liability
 // cap (Section 2), and nets the security deposit already collected against
 // the late/fuel/damage total - a new balance is only owed (and only then
-// does a fresh Square payment link become available) if that total exceeds
+// does a fresh Stripe payment link become available) if that total exceeds
 // the deposit. Regenerates the same agreement PDF in place with the
 // Post-Rental Condition section filled in, and returns the rental unit to
 // the fleet (or Maintenance, if damage was found, so it isn't rented out
@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
 
   // The pickup charge's payment fields are about to be reused for the
   // balance-due cycle (if any) - record what happened to it first so that
-  // history isn't silently lost, since paid_at/square_* only ever track
-  // "the current charge cycle", not a full payment history.
+  // history isn't silently lost, since paid_at/square_*/stripe_* only ever
+  // track "the current charge cycle", not a full payment history.
   const pickupSummary = `Pickup charge $${Number(rental.total_owed).toFixed(2)} - ${
     rental.paid_at ? `paid (${rental.paid_via || 'unknown'}) ${new Date(rental.paid_at).toLocaleDateString()}` : 'UNPAID'
   } as of return on ${now.toLocaleDateString()}.`
@@ -82,7 +82,15 @@ export async function POST(request: NextRequest) {
       total_owed: balanceDue,
       notes,
       ...(balanceDue > 0
-        ? { square_payment_link_id: null, square_order_id: null, square_payment_link_url: null, paid_at: null, paid_via: null }
+        ? {
+            square_payment_link_id: null,
+            square_order_id: null,
+            square_payment_link_url: null,
+            stripe_checkout_session_id: null,
+            stripe_payment_link_url: null,
+            paid_at: null,
+            paid_via: null,
+          }
         : {}),
     })
     .eq('id', rentalId)

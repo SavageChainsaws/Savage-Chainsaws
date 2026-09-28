@@ -30,7 +30,7 @@ type Plan = {
 // Lets an eligible customer's invoice (see the "Allow payment plans"
 // checkbox on Edit Customer) be split into scheduled installments instead
 // of one all-or-nothing charge - each installment gets its own on-demand
-// Square Payment Link via the same InvoicePaymentActions/MarkPaidToggle
+// Stripe Checkout Session via the same InvoicePaymentActions/MarkPaidToggle
 // components regular invoices already use, so paying one off (online or
 // manually) works identically. The invoice itself auto-marks Paid once
 // every installment clears (see maybeCompletePlan in app/invoices/page.tsx)
@@ -131,7 +131,7 @@ export default function PaymentPlanSection({
               {inst.paidAt ? (
                 <span
                   className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
-                  title={inst.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
+                  title={inst.paidVia === 'stripe' ? 'Paid online via Stripe' : inst.paidVia === 'square' ? 'Paid online via Square' : 'Marked paid manually'}
                 >
                   Paid
                 </span>

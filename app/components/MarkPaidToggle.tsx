@@ -5,9 +5,9 @@ import { useActionState } from 'react'
 type State = { success: boolean; message: string } | null
 
 // Lets an admin mark an invoice paid (or undo that) without going through
-// Square at all - some customers pay by Zelle, Cash App, or tap-to-pay in
+// Stripe at all - some customers pay by Zelle, Cash App, or tap-to-pay in
 // person, and the invoice needs to reflect that just as clearly as an
-// online Square payment does.
+// online Stripe payment does.
 export default function MarkPaidToggle({
   invoiceId,
   isPaid,
