@@ -11,6 +11,37 @@ export type ResolvedPart = {
   hasDefault: boolean
 }
 
+// Parts pricing catalog (from Excel source data)
+export interface Part {
+  sku: string
+  description: string
+  cost: number
+  retail_price: number
+  category?: string
+}
+
+// Order sheet line item
+export interface OrderSheetLineItem {
+  id: string // Random ID for tracking
+  sku: string
+  description: string
+  quantity: number
+  unit_cost: number
+  unit_retail: number
+  line_total_cost: number
+  line_total_retail: number
+}
+
+// Unit order sheet
+export interface UnitOrderSheet {
+  id: string
+  unit_id: string
+  model: string
+  created_at: string
+  updated_at: string
+  line_items: OrderSheetLineItem[]
+}
+
 export function normalizeModelKey(model: string | null): string {
   return (model || '').toUpperCase().replace(/\s+/g, '')
 }
@@ -57,4 +88,42 @@ export function resolveUnitParts(
     })
   }
   return resolved.sort((a, b) => a.part_name.localeCompare(b.part_name))
+}
+
+// Order sheet utilities
+
+// Calculate line item totals
+export function calculateLineItemTotals(item: Omit<OrderSheetLineItem, 'line_total_cost' | 'line_total_retail'>): OrderSheetLineItem {
+  return {
+    ...item,
+    line_total_cost: item.unit_cost * item.quantity,
+    line_total_retail: item.unit_retail * item.quantity,
+  }
+}
+
+// Calculate order sheet totals
+export function calculateOrderSheetTotals(items: OrderSheetLineItem[]) {
+  return {
+    total_cost: items.reduce((sum, item) => sum + item.line_total_cost, 0),
+    total_retail: items.reduce((sum, item) => sum + item.line_total_retail, 0),
+    item_count: items.length,
+    total_quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+  }
+}
+
+// Parse SKU input (supports multiple formats: comma, newline, space-separated)
+export function parseSKUInput(input: string): string[] {
+  return input
+    .split(/[\s,]+/)
+    .map((sku) => sku.trim().toUpperCase())
+    .filter((sku) => sku.length > 0)
+}
+
+// Format currency
+export function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+  }).format(value)
 }

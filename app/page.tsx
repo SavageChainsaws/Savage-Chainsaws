@@ -41,6 +41,7 @@ import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 import PushToggle from './components/PushToggle'
 import { getDefaultTaxRatePercent, parseInvoiceLineItemsForEdit } from '@/lib/billing'
+import PartOrderSheet from './components/PartOrderSheet'
 
 function stampHistory(existing: string | null, entry: string) {
   const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
@@ -2040,6 +2041,7 @@ export default async function Home({
                   <DiagnosisFindingsSection unit={unit} />
                   <BeforeAfterCompareSection unit={unit} />
                   <UnitPartsSection unit={unit} />
+                  <PartOrderSheet unitId={unit.id} model={unit.model || 'Unknown'} />
                 </div>
               </UnitStatusProvider>
             )
