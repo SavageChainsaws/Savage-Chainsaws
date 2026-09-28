@@ -1890,6 +1890,13 @@ export default async function Home({
     const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
     const history = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
     const latestCost = history[0]?.cost ?? ''
+    const orderSheetItems = (orderSheetItemsAll || []).filter(i => i.unit_id === unit.id)
+    // Retail price is what the customer pays - cost stays Order-Sheet-only,
+    // for Jesse's own reference when he's at the store buying the parts.
+    const defaultPartsItems = orderSheetItems.map(i => ({
+      description: `${i.description} (${i.sku})${i.quantity > 1 ? ` x${i.quantity}` : ''}`,
+      price: ((Number(i.retail_price) || 0) * i.quantity).toFixed(2),
+    }))
     return (
       <details className="group/invoice-panel">
         <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
@@ -1902,10 +1909,13 @@ export default async function Home({
             defaultLaborPrice={latestCost}
             defaultPriorityFee={unit.is_priority ? PRIORITY_FEE : ''}
             defaultTaxRatePercent={defaultTaxRatePercent}
+            defaultPartsItems={defaultPartsItems}
           />
           <p className="text-xs text-gray-600 mt-1.5">
-            {parts.length > 0
-              ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file will be listed on the invoice.`
+            {orderSheetItems.length > 0
+              ? `${orderSheetItems.length} part${orderSheetItems.length === 1 ? '' : 's'} loaded from the Order Sheet at retail price - just add labor below.`
+              : parts.length > 0
+              ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file for this model - add them to Parts above if used on this job.`
               : 'No parts on file for this unit - the invoice will still generate.'}
           </p>
         </div>
