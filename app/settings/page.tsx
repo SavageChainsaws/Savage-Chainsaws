@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import CopyableSignupLink from '../components/CopyableSignupLink'
 import AdminLogout from '../components/AdminLogout'
+import PartsImportForm from '../components/PartsImportForm'
 
 export default async function SettingsPage() {
   const { user, isAdmin } = await getSessionInfo()
@@ -124,6 +125,17 @@ export default async function SettingsPage() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Parts Catalog Import */}
+        <div className="border border-green-500/30 rounded-xl p-6 bg-green-500/[0.03] space-y-4">
+          <div>
+            <h2 className="text-xl font-bold text-green-400 mb-2">Parts Catalog</h2>
+            <p className="text-sm text-gray-400">
+              Import Steele's pricing data to enable automatic SKU lookup in order sheets. Upload the Excel file with columns: SKU, Description, Cost, Retail Price.
+            </p>
+          </div>
+          <PartsImportForm />
         </div>
 
         {/* Next Steps */}
