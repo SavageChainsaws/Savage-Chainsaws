@@ -2352,10 +2352,9 @@ export default async function Home({
           or a collapsed accordion section (see the full admin panel further
           down for regenerating it). */}
       {instantSignupToken && (
-        <div className="sticky top-0 z-50 -m-4 sm:-m-6 md:-m-10 mb-4 sm:mb-6 md:mb-10 px-4 sm:px-6 md:px-10 py-2 bg-zinc-900/95 backdrop-blur border-b border-orange-500/40">
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-orange-400 whitespace-nowrap">Customer Signup Link:</span>
-            <CopyInstantSignupLink token={instantSignupToken} />
+        <div className="sticky top-0 z-50 -m-4 sm:-m-6 md:-m-10 mb-4 sm:mb-6 md:mb-10 px-4 sm:px-6 md:px-10 py-2.5 bg-zinc-900/95 backdrop-blur border-b border-orange-500/40">
+          <div className="max-w-6xl mx-auto">
+            <CopyInstantSignupLink token={instantSignupToken} variant="button" />
           </div>
         </div>
       )}
