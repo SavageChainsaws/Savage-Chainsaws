@@ -43,14 +43,25 @@ export async function POST(request: NextRequest) {
 
   const partsDescriptions = formData.getAll('parts_description') as string[]
   const partsPrices = formData.getAll('parts_price') as string[]
+  const partsQuantities = formData.getAll('parts_quantity') as string[]
   const laborDescriptions = formData.getAll('labor_description') as string[]
   const laborPrices = formData.getAll('labor_price') as string[]
   const laborTypeRaw = formData.get('labor_type') as string
   const taxRatePercentRaw = formData.get('tax_rate_percent') as string
   const includeCardSurcharge = formData.get('include_card_surcharge') === 'true'
 
+  // parts_price is always a per-unit amount - quantity multiplies it into
+  // the line's actual billed amount and gets appended to the printed
+  // description (e.g. "Sleeve x3") - see app/api/invoice/route.ts.
   const partsLineItems = partsDescriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
+    .map((description, i) => {
+      const quantity = Math.max(1, parseInt(partsQuantities[i] || '1', 10) || 1)
+      const unitPrice = Number(partsPrices[i]) || 0
+      return {
+        description: quantity > 1 ? `${description.trim()} x${quantity}` : description.trim(),
+        amount: unitPrice * quantity,
+      }
+    })
     .filter(li => li.description.length > 0)
   const rawLaborLineItems = laborDescriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
