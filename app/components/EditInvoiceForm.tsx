@@ -148,7 +148,8 @@ export default function EditInvoiceForm({
         items={partsItems}
         descriptionField="parts_description"
         priceField="parts_price"
-        placeholder="Description (e.g. Handle bracket)"
+        placeholder="Description, or paste a SKU (e.g. Handle bracket)"
+        skuLookup
         onUpdate={(i, field, value) => updateItem(setPartsItems, i, field, value)}
         onAdd={() => addItem(setPartsItems)}
         onRemove={i => removeItem(setPartsItems, i)}
