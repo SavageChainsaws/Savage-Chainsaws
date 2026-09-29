@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
 import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 import { liveTitleCase } from '@/lib/text'
@@ -48,18 +49,26 @@ export default function EditInvoiceForm({
   taxRatePercent: number
   includeCardSurcharge: boolean
   laborType: 'STLA' | 'NTSTLA'
-  // Fired on submit (the native POST/target=_blank still proceeds - this
-  // never calls preventDefault) so a caller showing this form inside a
-  // modal (see EditInvoiceButton) can close itself right away instead of
-  // leaving the admin looking at a form behind their newly-opened PDF tab.
+  // Fired once the edit has actually saved server-side (not just on click)
+  // so a caller showing this form inside a modal (see EditInvoiceButton)
+  // can close itself - previously this fired the instant the native
+  // form's POST was dispatched, before the page hosting this form (the
+  // /invoices list or a unit's own page) had any way to know the payment
+  // link had just been cleared server-side, so it kept showing the old
+  // Pay Now button/link until a manual reload. Now that this submits via
+  // fetch, a successful save also calls router.refresh() itself so that
+  // page always reflects the fresh data as soon as the tab regains focus.
   onSubmit?: () => void
 }) {
+  const router = useRouter()
   const [customerId, setCustomerId] = useState(initialCustomerId || '')
   const [customerName, setCustomerName] = useState(initialCustomerName)
   const [customerEmail, setCustomerEmail] = useState(initialCustomerEmail)
   const [partsItems, setPartsItems] = useState<LineItem[]>(initialPartsItems)
   const [laborItems, setLaborItems] = useState<LineItem[]>(initialLaborItems)
   const [priorityFee, setPriorityFee] = useState(initialPriorityFee ? String(initialPriorityFee) : '')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   function handleSelectCustomer(id: string) {
     setCustomerId(id)
@@ -92,8 +101,39 @@ export default function EditInvoiceForm({
   const laborTotal = laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
   const priorityFeeAmount = Number(priorityFee) || 0
 
+  // Fetch rather than a plain form POST, same reasoning as
+  // CreateCustomInvoiceForm - lets this tell success from failure and only
+  // call router.refresh()/onSubmit once the invoice has actually been
+  // re-saved, rather than the instant the POST was dispatched.
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+    setIsSubmitting(true)
+    const newTab = window.open('', '_blank')
+    try {
+      const res = await fetch('/api/invoice/edit', { method: 'POST', body: new FormData(e.currentTarget) })
+      if (!res.ok) {
+        newTab?.close()
+        const body = await res.json().catch(() => ({}))
+        setError(body?.error || `Could not save changes (${res.status}).`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      if (newTab) newTab.location.href = url
+      else window.open(url, '_blank')
+      router.refresh()
+      onSubmit?.()
+    } catch {
+      newTab?.close()
+      setError('Could not reach the server. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return (
-    <form action="/api/invoice/edit" method="POST" target="_blank" onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3">
       <input type="hidden" name="invoice_id" value={invoiceId} />
       <input type="hidden" name="referral_discount_amount" value={initialReferralDiscountAmount} />
 
@@ -197,8 +237,14 @@ export default function EditInvoiceForm({
         defaultLaborType={laborType}
       />
 
-      <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
-        Save Changes
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg"
+      >
+        {isSubmitting ? 'Saving...' : 'Save Changes'}
       </button>
     </form>
   )
