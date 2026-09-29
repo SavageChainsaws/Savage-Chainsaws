@@ -72,7 +72,13 @@ export default function EditInvoiceButton({
         Edit
       </button>
       <div
-        className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-4 overflow-y-auto"
+        // Always items-start, never sm:items-center - vertically centering a
+        // flex item inside an overflow-y-auto container clips whatever
+        // spills above/below the centered box instead of letting you scroll
+        // to it (a well-known flexbox+overflow trap), which is exactly why
+        // this modal couldn't be scrolled once its content grew past one
+        // screen (e.g. after adding a Qty field to every Parts line).
+        className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto"
         onClick={() => setOpen(false)}
       >
         <div

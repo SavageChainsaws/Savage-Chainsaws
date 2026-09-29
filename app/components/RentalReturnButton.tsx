@@ -28,7 +28,9 @@ export default function RentalReturnButton({
       </button>
       {open && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 flex items-start sm:items-center justify-center p-4 overflow-y-auto"
+          // items-start, not sm:items-center - see EditInvoiceButton for why
+          // centering here silently blocks scrolling to the rest of the modal.
+          className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto"
           onClick={() => setOpen(false)}
         >
           <div

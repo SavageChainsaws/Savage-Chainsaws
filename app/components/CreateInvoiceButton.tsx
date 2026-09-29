@@ -38,7 +38,9 @@ export default function CreateInvoiceButton({
 
       {isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 p-4 overflow-y-auto"
+          // items-start, not sm:items-center - see EditInvoiceButton for why
+          // centering here silently blocks scrolling to the rest of the modal.
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 overflow-y-auto"
           onClick={() => setIsOpen(false)}
         >
           <div
