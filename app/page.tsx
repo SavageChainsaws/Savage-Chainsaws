@@ -1195,6 +1195,16 @@ async function addOrderSheetItem(formData: FormData) {
   revalidatePath('/')
 }
 
+async function updateOrderSheetItemQuantity(formData: FormData) {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+  const id = formData.get('id') as string
+  const quantity = Math.max(1, parseInt((formData.get('quantity') as string) || '1', 10) || 1)
+  await supabase.from('order_sheet_items').update({ quantity }).eq('id', id)
+  revalidatePath('/')
+}
+
 async function deleteOrderSheetItem(formData: FormData) {
   'use server'
   const { supabase, isAdmin } = await getSessionInfo()
@@ -1667,7 +1677,18 @@ export default async function Home({
               <div key={i.id} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono text-orange-300">{i.sku}</span>
                 <span className="text-gray-300 flex-1 min-w-[120px]">{i.description}</span>
-                <span className="text-xs text-gray-500">Qty {i.quantity}</span>
+                <form action={updateOrderSheetItemQuantity} className="flex items-center gap-1">
+                  <input type="hidden" name="id" value={i.id} />
+                  <label className="text-xs text-gray-500">Qty</label>
+                  <input
+                    name="quantity"
+                    type="number"
+                    min={1}
+                    defaultValue={i.quantity}
+                    className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 py-0.5 text-xs"
+                  />
+                  <button type="submit" className="text-xs text-orange-400 hover:text-orange-300">Save</button>
+                </form>
                 <span className="text-xs text-gray-400 w-16 text-right">
                   {i.retail_price != null ? `$${Number(i.retail_price).toFixed(2)}` : '-'}
                 </span>
