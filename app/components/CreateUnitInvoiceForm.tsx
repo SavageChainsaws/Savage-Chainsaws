@@ -29,7 +29,7 @@ export default function CreateUnitInvoiceForm({
   defaultPartsItems?: LineItem[]
 }) {
   const [partsItems, setPartsItems] = useState<LineItem[]>(
-    defaultPartsItems && defaultPartsItems.length > 0 ? defaultPartsItems : [{ description: '', price: '' }]
+    defaultPartsItems && defaultPartsItems.length > 0 ? defaultPartsItems : [{ description: '', price: '', quantity: '1' }]
   )
   const [laborItems, setLaborItems] = useState<LineItem[]>([
     { description: '', price: defaultLaborPrice ? String(defaultLaborPrice) : '' },
@@ -46,7 +46,7 @@ export default function CreateUnitInvoiceForm({
   }
 
   function addItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>) {
-    setter(prev => [...prev, { description: '', price: '' }])
+    setter(prev => [...prev, { description: '', price: '', quantity: '1' }])
   }
 
   function removeItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>, index: number) {
@@ -57,7 +57,7 @@ export default function CreateUnitInvoiceForm({
   // taxable, regardless of its price - the moment tangible parts/materials
   // are transferred, Fla. Admin. Code 12A-1.006 taxes the full invoice.
   const hasParts = partsItems.some(it => it.description.trim().length > 0)
-  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0)
   const laborTotal = laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
   const priorityFeeAmount = Number(priorityFee) || 0
 
@@ -70,6 +70,7 @@ export default function CreateUnitInvoiceForm({
         items={partsItems}
         descriptionField="parts_description"
         priceField="parts_price"
+        quantityField="parts_quantity"
         placeholder="Description, or paste a SKU (e.g. Handle bracket)"
         skuLookup
         onUpdate={(i, field, value) => updateItem(setPartsItems, i, field, value)}

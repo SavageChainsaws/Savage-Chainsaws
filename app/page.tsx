@@ -1663,11 +1663,9 @@ export default async function Home({
     const totalRetail = items.reduce((sum, i) => sum + (Number(i.retail_price) || 0) * i.quantity, 0)
     return (
       <details className="mt-3 border-t border-zinc-800 pt-2.5 group/order-sheet-panel">
-        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider">
-            Order Sheet{items.length > 0 ? ` (${items.length})` : ''}
-          </span>
-          <span className="text-gray-500 text-xs group-open/order-sheet-panel:rotate-180 transition">v</span>
+        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg mb-2">
+          Order Sheet{items.length > 0 ? ` (${items.length})` : ''}
+          <span className="text-xs group-open/order-sheet-panel:rotate-180 transition">v</span>
         </summary>
         {items.length === 0 ? (
           <p className="text-xs text-gray-500 mb-2">No parts added yet - paste a SKU below as you diagnose.</p>
@@ -1723,6 +1721,19 @@ export default async function Home({
             Add
           </button>
         </form>
+        {items.length > 0 && (
+          // Jumps to CreateInvoiceSection's <details> below (see its
+          // matching id) - browsers auto-expand a closed <details> you link
+          // to (the HTML "reveal" algorithm), so this needs no client JS to
+          // both open it and scroll it into view, already pre-filled with
+          // these same Order Sheet parts at retail price.
+          <a
+            href={`#create-invoice-${unit.id}`}
+            className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg mb-2"
+          >
+            Generate Invoice from Order Sheet {'->'}
+          </a>
+        )}
         <div className="flex gap-3">
           {items.length > 0 && (
             <Link
@@ -1919,11 +1930,12 @@ export default async function Home({
     // Retail price is what the customer pays - cost stays Order-Sheet-only,
     // for Jesse's own reference when he's at the store buying the parts.
     const defaultPartsItems = orderSheetItems.map(i => ({
-      description: `${i.description} (${i.sku})${i.quantity > 1 ? ` x${i.quantity}` : ''}`,
-      price: ((Number(i.retail_price) || 0) * i.quantity).toFixed(2),
+      description: `${i.description} (${i.sku})`,
+      price: (Number(i.retail_price) || 0).toFixed(2),
+      quantity: String(i.quantity),
     }))
     return (
-      <details className="group/invoice-panel">
+      <details id={`create-invoice-${unit.id}`} className="group/invoice-panel">
         <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
           Create Invoice
           <span className="text-xs group-open/invoice-panel:rotate-180 transition">v</span>

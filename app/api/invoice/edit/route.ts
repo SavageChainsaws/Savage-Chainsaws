@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
   const invoiceId = (formData.get('invoice_id') as string) || ''
   const partsDescriptions = formData.getAll('parts_description') as string[]
   const partsPrices = formData.getAll('parts_price') as string[]
+  const partsQuantities = formData.getAll('parts_quantity') as string[]
   const laborDescriptions = formData.getAll('labor_description') as string[]
   const laborPrices = formData.getAll('labor_price') as string[]
   const priorityFeeRaw = formData.get('priority_fee') as string
@@ -66,8 +67,14 @@ export async function POST(request: NextRequest) {
   }
   const unitId = existingInvoice.unit_id as string | null
 
+  // parts_price is always a per-unit amount - quantity multiplies it into
+  // the line's actual billed amount, see app/api/invoice/route.ts.
   const rawPartsLineItems = partsDescriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
+    .map((description, i) => {
+      const quantity = Math.max(1, parseInt(partsQuantities[i] || '1', 10) || 1)
+      const unitPrice = Number(partsPrices[i]) || 0
+      return { description: description.trim(), amount: unitPrice * quantity, quantity }
+    })
     .filter(li => li.description.length > 0)
   const rawLaborLineItems = laborDescriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
@@ -150,7 +157,11 @@ export async function POST(request: NextRequest) {
     ])
     resolvedParts = resolveUnitParts(unit, modelPartsAll || [], unitOverrides || [])
   }
-  const partsLineItems = rawPartsLineItems.map(li => ({ ...li, sku: matchPartSku(li.description, resolvedParts) }))
+  const partsLineItems = rawPartsLineItems.map(li => ({
+    description: li.quantity > 1 ? `${li.description} x${li.quantity}` : li.description,
+    amount: li.amount,
+    sku: matchPartSku(li.description, resolvedParts),
+  }))
 
   const now = new Date()
   const logoUrl = new URL('/images/logo.png', request.url).toString()

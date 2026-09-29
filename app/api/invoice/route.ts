@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
   const unitId = (formData.get('unit_id') as string) || ''
   const partsDescriptions = formData.getAll('parts_description') as string[]
   const partsPrices = formData.getAll('parts_price') as string[]
+  const partsQuantities = formData.getAll('parts_quantity') as string[]
   const laborDescriptions = formData.getAll('labor_description') as string[]
   const laborPrices = formData.getAll('labor_price') as string[]
   const priorityFeeRaw = formData.get('priority_fee') as string
@@ -52,8 +53,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing unit_id' }, { status: 400 })
   }
 
+  // parts_price is always a per-unit amount (e.g. the parts_catalog retail
+  // price for a SKU) - quantity multiplies it into the line's actual billed
+  // amount, and gets appended to the printed description (e.g. "Sleeve x3")
+  // so the PDF shows what was actually billed rather than a bare unit price.
   const rawPartsLineItems = partsDescriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(partsPrices[i]) || 0 }))
+    .map((description, i) => {
+      const quantity = Math.max(1, parseInt(partsQuantities[i] || '1', 10) || 1)
+      const unitPrice = Number(partsPrices[i]) || 0
+      return { description: description.trim(), amount: unitPrice * quantity, quantity }
+    })
     .filter(li => li.description.length > 0)
   const rawLaborLineItems = laborDescriptions
     .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
@@ -101,7 +110,11 @@ export async function POST(request: NextRequest) {
   // directly under that line in the PDF, instead of every resolved part
   // for the unit's model being dumped in one disconnected list at the
   // bottom regardless of what was actually invoiced.
-  const partsLineItems = rawPartsLineItems.map(li => ({ ...li, sku: matchPartSku(li.description, resolvedParts) }))
+  const partsLineItems = rawPartsLineItems.map(li => ({
+    description: li.quantity > 1 ? `${li.description} x${li.quantity}` : li.description,
+    amount: li.amount,
+    sku: matchPartSku(li.description, resolvedParts),
+  }))
 
   const now = new Date()
   // Shared, atomic sequence (SC-0001, SC-0002, ...) - see migration

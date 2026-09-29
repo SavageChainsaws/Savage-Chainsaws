@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { liveTitleCase } from '@/lib/text'
 
-export type LineItem = { description: string; price: string }
+export type LineItem = { description: string; price: string; quantity?: string }
 
 type CatalogMatch = { sku: string; description: string; cost: number; retail_price: number }
 
@@ -21,11 +21,19 @@ type CatalogMatch = { sku: string; description: string; cost: number; retail_pri
 // already uses. A no-match blur (already-resolved text, a typo, a part not
 // in the catalog) just leaves whatever was typed - manual entry always
 // still works.
+//
+// quantityField (Parts group only) - a per-line Qty input alongside price,
+// so e.g. 3 sleeves is one line at $1.33 x3 instead of 3 separate lines at
+// the same price. price always stays a per-unit amount; the API routes
+// (see app/api/invoice/route.ts) multiply by quantity to get the line's
+// actual billed amount. Omitted entirely for Labor, which has no quantity
+// concept - unset means 1 wherever it's read.
 export default function InvoiceItemGroup({
   title,
   items,
   descriptionField,
   priceField,
+  quantityField,
   placeholder,
   skuLookup,
   onUpdate,
@@ -36,6 +44,7 @@ export default function InvoiceItemGroup({
   items: LineItem[]
   descriptionField: string
   priceField: string
+  quantityField?: string
   placeholder: string
   skuLookup?: boolean
   onUpdate: (index: number, field: keyof LineItem, value: string) => void
@@ -69,6 +78,7 @@ export default function InvoiceItemGroup({
       <label className="block text-xs text-gray-500 mb-1">
         {title}
         {skuLookup && <span className="text-gray-600 font-normal"> - paste a SKU to auto-fill price</span>}
+        {quantityField && <span className="text-gray-600 font-normal"> - Qty x Price = line total</span>}
       </label>
       <div className="space-y-2">
         {items.map((item, i) => (
@@ -81,6 +91,17 @@ export default function InvoiceItemGroup({
               placeholder={lookingUp === i ? 'Looking up...' : placeholder}
               className="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
+            {quantityField && (
+              <input
+                name={quantityField}
+                type="number"
+                min="1"
+                value={item.quantity ?? '1'}
+                onChange={e => onUpdate(i, 'quantity', e.target.value)}
+                title="Quantity"
+                className="w-16 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
+              />
+            )}
             <input
               name={priceField}
               type="number"
@@ -88,7 +109,8 @@ export default function InvoiceItemGroup({
               min="0"
               value={item.price}
               onChange={e => onUpdate(i, 'price', e.target.value)}
-              placeholder="0.00"
+              placeholder={quantityField ? '0.00 ea' : '0.00'}
+              title={quantityField ? 'Price per unit' : undefined}
               className="w-28 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
             {items.length > 1 && (

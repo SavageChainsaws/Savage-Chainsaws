@@ -80,7 +80,7 @@ export default function EditInvoiceForm({
   }
 
   function addItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>) {
-    setter(prev => [...prev, { description: '', price: '' }])
+    setter(prev => [...prev, { description: '', price: '', quantity: '1' }])
   }
 
   function removeItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>, index: number) {
@@ -88,7 +88,7 @@ export default function EditInvoiceForm({
   }
 
   const hasParts = partsItems.some(it => it.description.trim().length > 0)
-  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0)
   const laborTotal = laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
   const priorityFeeAmount = Number(priorityFee) || 0
 
@@ -148,6 +148,7 @@ export default function EditInvoiceForm({
         items={partsItems}
         descriptionField="parts_description"
         priceField="parts_price"
+        quantityField="parts_quantity"
         placeholder="Description, or paste a SKU (e.g. Handle bracket)"
         skuLookup
         onUpdate={(i, field, value) => updateItem(setPartsItems, i, field, value)}

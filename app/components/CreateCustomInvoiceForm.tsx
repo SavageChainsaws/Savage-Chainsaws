@@ -30,7 +30,7 @@ export default function CreateCustomInvoiceForm({
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '' }])
+  const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '', quantity: '1' }])
   const [laborItems, setLaborItems] = useState<LineItem[]>([{ description: '', price: '' }])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +55,7 @@ export default function CreateCustomInvoiceForm({
   }
 
   function addItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>) {
-    setter(prev => [...prev, { description: '', price: '' }])
+    setter(prev => [...prev, { description: '', price: '', quantity: '1' }])
   }
 
   function removeItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>, index: number) {
@@ -65,7 +65,7 @@ export default function CreateCustomInvoiceForm({
   // Any Parts line with a description is enough to make the whole invoice
   // taxable, regardless of its price - see CreateUnitInvoiceForm.
   const hasParts = partsItems.some(it => it.description.trim().length > 0)
-  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
+  const partsTotal = partsItems.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0)
   const laborTotal = laborItems.reduce((sum, it) => sum + (Number(it.price) || 0), 0)
 
   // Fetch rather than a plain form POST so this can tell success from
@@ -172,6 +172,7 @@ export default function CreateCustomInvoiceForm({
         items={partsItems}
         descriptionField="parts_description"
         priceField="parts_price"
+        quantityField="parts_quantity"
         placeholder="Description, or paste a SKU (e.g. Handle bracket)"
         skuLookup
         onUpdate={(i, field, value) => updateItem(setPartsItems, i, field, value)}
