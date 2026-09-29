@@ -1680,7 +1680,11 @@ export default async function Home({
             <p className="text-xs text-gray-500 pt-1">Estimated retail total: ${totalRetail.toFixed(2)}</p>
           </div>
         )}
-        <form action={addOrderSheetItem} className="flex flex-wrap gap-2 mb-2">
+        {/* key={items.length} forces a remount after each successful Add, so
+            the uncontrolled SKU/quantity inputs reset to empty - otherwise
+            React reconciles the same DOM nodes across the revalidatePath
+            re-render and leaves the typed SKU sitting in the field. */}
+        <form key={items.length} action={addOrderSheetItem} className="flex flex-wrap gap-2 mb-2">
           <input type="hidden" name="unit_id" value={unit.id} />
           <UppercaseInput
             name="sku"
