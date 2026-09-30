@@ -9,6 +9,7 @@ import { createStripeCheckoutSession, getStripeSessionPaidStatus } from '@/lib/s
 import { CARD_SURCHARGE_DISCLOSURE, getDefaultTaxRatePercent } from '@/lib/billing'
 import { computeInstallmentAmounts, computeDueDates, type PlanFrequency } from '@/lib/paymentPlans'
 import { unitLabel } from '@/lib/units'
+import { sendPushToCustomer } from '@/lib/push'
 import SendInvoiceButton from '../components/SendInvoiceButton'
 import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
@@ -476,7 +477,7 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, invoice_number, amount, pdf_url, customer_name, square_payment_link_url, stripe_payment_link_url, paid_at')
+    .select('id, invoice_number, amount, pdf_url, customer_name, customer_id, square_payment_link_url, stripe_payment_link_url, paid_at')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
@@ -524,6 +525,22 @@ async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: FormData
     .update({ sent_at: new Date().toISOString(), sent_to: recipientEmail })
     .eq('id', invoiceId)
   revalidatePath('/invoices')
+
+  // Best-effort, free self-hosted Web Push (see lib/push.ts) - no-ops
+  // silently if this customer never opted in or has no login at all, same
+  // as every other push send in this app. Piggybacks on the moment the
+  // invoice email actually goes out, so a customer who doesn't check email
+  // still gets pinged the second it's sent - covers the "don't check email"
+  // case the badge on Active Invoices doesn't (that only shows once they
+  // open the app on their own).
+  if (invoice.customer_id && !invoice.paid_at) {
+    await sendPushToCustomer(invoice.customer_id, {
+      title: 'New invoice from Savage Chainsaws',
+      body: `Invoice ${invoiceNumber} - $${total.toFixed(2)} due`,
+      url: '/customer',
+      tag: `invoice-${invoiceId}`,
+    })
+  }
 
   return { success: true, message: `Invoice sent to ${recipientEmail}.` }
 }
