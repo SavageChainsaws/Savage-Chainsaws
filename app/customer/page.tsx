@@ -11,7 +11,6 @@ import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
 import PushToggle from '../components/PushToggle'
 import RentalSignCard from '../components/RentalSignCard'
 import PaymentPlanCard from '../components/PaymentPlanCard'
-import CustomerInvoicesCard from '../components/CustomerInvoicesCard'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
@@ -159,6 +158,16 @@ type Customer = {
 
 type ReferralWelcomeInfo = { name: string; contact: string | null }
 
+type InvoiceRow = {
+  id: string
+  invoice_number: string | null
+  amount: number
+  paid_at: string | null
+  pdf_url: string | null
+  created_at: string
+  unit_id: string | null
+}
+
 const ACTIVE_STATUSES = [
   'Received',
   'Diagnosing',
@@ -242,6 +251,8 @@ export default function CustomerPortal() {
   const [showAddFleet, setShowAddFleet] = useState(false)
   const [showLogoUpload, setShowLogoUpload] = useState(false)
   const [showMyFleet, setShowMyFleet] = useState(false)
+  const [showActiveInvoices, setShowActiveInvoices] = useState(false)
+  const [showArchivedInvoices, setShowArchivedInvoices] = useState(false)
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -267,6 +278,12 @@ export default function CustomerPortal() {
   // PDF - keyed off the previously-unused invoices table, now populated
   // by the admin's invoice tool (app/api/invoice/route.ts).
   const [invoiceTotals, setInvoiceTotals] = useState<Record<string, number>>({})
+
+  // Every invoice ever billed to this customer (unit-linked and standalone
+  // alike) - powers the Active Invoices / Archive buttons up top, including
+  // the unpaid-count badge, so a customer can tell at a glance whether they
+  // owe anything without opening email at all.
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([])
 
   // Private, customer-only reference note per unit (e.g. "hard time
   // starting") - lives in its own unit_customer_notes table with RLS that
@@ -474,6 +491,13 @@ export default function CustomerPortal() {
       }
       setInvoiceTotals(totals)
     }
+
+    const { data: allInvoices } = await supabase
+      .from('invoices')
+      .select('id, invoice_number, amount, paid_at, pdf_url, created_at, unit_id')
+      .eq('customer_id', cust.id)
+      .order('created_at', { ascending: false })
+    setInvoices((allInvoices as InvoiceRow[]) || [])
 
     setLoading(false)
   }
@@ -1224,6 +1248,14 @@ export default function CustomerPortal() {
   )
   const firstReadyForPickup = units.find(u => u.status === 'Ready for Pickup')
 
+  const activeInvoices = invoices.filter(i => !i.paid_at)
+  const archivedInvoices = invoices.filter(i => i.paid_at)
+  function invoiceUnitLabel(inv: InvoiceRow) {
+    const u = inv.unit_id ? units.find(u => u.id === inv.unit_id) : null
+    if (!u) return null
+    return u.nickname || [u.model, u.equipment_type].filter(Boolean).join(' - ') || null
+  }
+
   function displayName(u: Unit) {
     const model = (u.model || '').trim()
     const type = (u.equipment_type || '').trim()
@@ -1402,6 +1434,8 @@ export default function CustomerPortal() {
                     onClick={() => {
                       setShowSettingsMenu(false)
                       setShowSettings(!showSettings)
+                      setShowActiveInvoices(false)
+                      setShowArchivedInvoices(false)
                       setShowAddFleet(false)
                       setShowCheckIn(false)
                       setShowLogoUpload(false)
@@ -1482,7 +1516,44 @@ export default function CustomerPortal() {
         <div className="flex flex-wrap justify-end gap-2">
           <button
             onClick={() => {
+              setShowActiveInvoices(!showActiveInvoices)
+              setShowArchivedInvoices(false)
+              setShowAddFleet(false)
+              setShowCheckIn(false)
+              setShowLogoUpload(false)
+              setShowMyFleet(false)
+              setShowSettings(false)
+              closeUnit()
+            }}
+            className="relative border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            {showActiveInvoices ? 'Close' : 'Active Invoices'}
+            {activeInvoices.length > 0 && (
+              <span className="absolute -top-2 -right-2 h-5 min-w-5 px-1 flex items-center justify-center rounded-full bg-red-600 text-white text-xs font-bold">
+                {activeInvoices.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setShowArchivedInvoices(!showArchivedInvoices)
+              setShowActiveInvoices(false)
+              setShowAddFleet(false)
+              setShowCheckIn(false)
+              setShowLogoUpload(false)
+              setShowMyFleet(false)
+              setShowSettings(false)
+              closeUnit()
+            }}
+            className="border border-zinc-600 hover:border-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            {showArchivedInvoices ? 'Close' : 'Archive'}
+          </button>
+          <button
+            onClick={() => {
               setShowLogoUpload(!showLogoUpload)
+              setShowActiveInvoices(false)
+              setShowArchivedInvoices(false)
               setShowAddFleet(false)
               setShowCheckIn(false)
               setShowMyFleet(false)
@@ -1496,6 +1567,8 @@ export default function CustomerPortal() {
           <button
             onClick={() => {
               setShowMyFleet(!showMyFleet)
+              setShowActiveInvoices(false)
+              setShowArchivedInvoices(false)
               setShowAddFleet(false)
               setShowCheckIn(false)
               setShowLogoUpload(false)
@@ -1514,6 +1587,8 @@ export default function CustomerPortal() {
           <button
             onClick={() => {
               setShowAddFleet(!showAddFleet)
+              setShowActiveInvoices(false)
+              setShowArchivedInvoices(false)
               setShowCheckIn(false)
               setShowLogoUpload(false)
               setShowMyFleet(false)
@@ -1528,6 +1603,8 @@ export default function CustomerPortal() {
           <button
             onClick={() => {
               setShowCheckIn(!showCheckIn)
+              setShowActiveInvoices(false)
+              setShowArchivedInvoices(false)
               setShowAddFleet(false)
               setShowLogoUpload(false)
               setShowMyFleet(false)
@@ -1539,6 +1616,62 @@ export default function CustomerPortal() {
             {showCheckIn ? 'Close Check-In' : 'Check In a Unit'}
           </button>
         </div>
+
+        {(showActiveInvoices || showArchivedInvoices) && (() => {
+          const list = showActiveInvoices ? activeInvoices : archivedInvoices
+          return (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="px-4 sm:px-6 py-3 border-b border-zinc-800">
+                <h2 className="text-lg font-semibold text-orange-400">
+                  {showActiveInvoices ? 'Active Invoices' : 'Archive'}
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  {showActiveInvoices
+                    ? 'Anything still unpaid, most recent first.'
+                    : 'Your paid invoice history, for your own records/taxes.'}
+                </p>
+              </div>
+              <div className="p-3 sm:p-4 space-y-1.5">
+                {list.length === 0 ? (
+                  <p className="text-gray-500 text-sm px-1">
+                    {showActiveInvoices ? "You're all caught up - nothing outstanding." : 'No paid invoices yet.'}
+                  </p>
+                ) : (
+                  list.map(inv => {
+                    const label = invoiceUnitLabel(inv)
+                    return (
+                      <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg px-3 py-2 text-sm">
+                        <div>
+                          <span className="font-medium">{inv.invoice_number || 'Invoice'}</span>
+                          <span className="text-gray-500"> - {new Date(inv.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                          {label && <span className="text-gray-500"> - {label}</span>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-medium">${Number(inv.amount).toFixed(2)}</span>
+                          {inv.paid_at ? (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400">Paid</span>
+                          ) : (
+                            <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/20 text-yellow-400">Unpaid</span>
+                          )}
+                          {inv.pdf_url && (
+                            <a
+                              href={inv.pdf_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs border border-zinc-600 hover:border-orange-500 text-white font-medium px-2.5 py-1 rounded-lg transition"
+                            >
+                              View PDF
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {showMyFleet && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
@@ -2598,8 +2731,6 @@ export default function CustomerPortal() {
             )}
           </div>
         </details>
-
-        {customer && <CustomerInvoicesCard customerId={customer.id} />}
 
         <SiteFooter />
       </div>
