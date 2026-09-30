@@ -11,6 +11,7 @@ import { BeforeAfterCompare } from '../components/BeforeAfterCompare'
 import PushToggle from '../components/PushToggle'
 import RentalSignCard from '../components/RentalSignCard'
 import PaymentPlanCard from '../components/PaymentPlanCard'
+import CustomerInvoicesCard from '../components/CustomerInvoicesCard'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
@@ -2597,6 +2598,8 @@ export default function CustomerPortal() {
             )}
           </div>
         </details>
+
+        {customer && <CustomerInvoicesCard customerId={customer.id} />}
 
         <SiteFooter />
       </div>
