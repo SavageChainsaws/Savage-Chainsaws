@@ -107,6 +107,37 @@ async function startPaymentPlan(_prevState: PlanState, formData: FormData): Prom
   return { success: true, message: `Payment plan created - ${installmentCount} installments.` }
 }
 
+// Alternative to startPaymentPlan above for when the customer, not Jesse,
+// should pick the installment count/frequency - they're the ones who have
+// to make the schedule fit their own cash flow. Just flips a flag; the
+// actual plan gets created by the customer themselves via
+// app/api/payment-plan/create once they've made their choice in their
+// portal (see PaymentPlanCard.tsx).
+async function offerPaymentPlan(_prevState: PlanState, formData: FormData): Promise<PlanState> {
+  'use server'
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const invoiceId = (formData.get('invoice_id') as string) || ''
+  if (!invoiceId) return { success: false, message: 'Missing invoice id.' }
+
+  const { data: invoice } = await supabase
+    .from('invoices')
+    .select('id, paid_at, customers(payment_plans_enabled)')
+    .eq('id', invoiceId)
+    .maybeSingle()
+  if (!invoice) return { success: false, message: 'Invoice not found.' }
+  if (invoice.paid_at) return { success: false, message: 'This invoice is already paid.' }
+  const customer = invoice.customers as unknown as { payment_plans_enabled: boolean } | null
+  if (!customer?.payment_plans_enabled) {
+    return { success: false, message: "Payment plans aren't enabled for this customer yet - turn it on via Edit Customer first." }
+  }
+
+  await supabase.from('invoices').update({ payment_plan_offered: true }).eq('id', invoiceId)
+  revalidatePath('/invoices')
+  return { success: true, message: 'Payment plan offered - the customer can now choose their own schedule in their portal.' }
+}
+
 // Identical shape to generatePaymentLink below, just scoped to one
 // installment's amount instead of the invoice's full total - reuses the
 // same InvoicePaymentActions component (its hidden field is always named
@@ -522,7 +553,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, payment_plan_offered, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
     )
     .order('created_at', { ascending: false })
 
@@ -600,6 +631,7 @@ export default async function InvoicesPage({
       // invoice that isn't paid (e.g. cancelled/written off).
       isArchived: !!paidAt || !!archivedAt,
       paymentPlansEnabledForCustomer: !!directCustomer?.payment_plans_enabled,
+      paymentPlanOffered: !!inv.payment_plan_offered,
       paymentPlan: plan
         ? {
             id: plan.id,
@@ -878,8 +910,10 @@ export default async function InvoicesPage({
                           invoiceId={r.id}
                           isPaid={!!r.paidAt}
                           paymentPlansEnabledForCustomer={r.paymentPlansEnabledForCustomer}
+                          paymentPlanOffered={r.paymentPlanOffered}
                           plan={r.paymentPlan}
                           startPlanAction={startPaymentPlan}
+                          offerPlanAction={offerPaymentPlan}
                           generateLinkAction={generateInstallmentPaymentLink}
                           checkStatusAction={checkInstallmentPaymentStatus}
                           toggleManualPaidAction={toggleInstallmentManualPaid}
@@ -1014,8 +1048,10 @@ export default async function InvoicesPage({
                     invoiceId={r.id}
                     isPaid={!!r.paidAt}
                     paymentPlansEnabledForCustomer={r.paymentPlansEnabledForCustomer}
+                    paymentPlanOffered={r.paymentPlanOffered}
                     plan={r.paymentPlan}
                     startPlanAction={startPaymentPlan}
+                    offerPlanAction={offerPaymentPlan}
                     generateLinkAction={generateInstallmentPaymentLink}
                     checkStatusAction={checkInstallmentPaymentStatus}
                     toggleManualPaidAction={toggleInstallmentManualPaid}
