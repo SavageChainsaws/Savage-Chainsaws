@@ -2990,6 +2990,12 @@ export default async function Home({
           </div>
         </details>
 
+        {/* Shop-wide admin tools, not scoped to any one customer - only
+            shown in the Action Center (no customer selected) so they don't
+            clutter the screen while looking at a specific customer's units.
+            Referral Partners is deliberately left visible either way. */}
+        {!selectedCustomerId && (
+        <>
         <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
           <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
             <h2 className="font-semibold text-orange-400">Shop Settings</h2>
@@ -3058,6 +3064,8 @@ export default async function Home({
             </form>
           </div>
         </details>
+        </>
+        )}
 
         <details className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-4 group">
           <summary className="px-4 sm:px-6 py-3 cursor-pointer list-none flex items-center justify-between hover:bg-zinc-800/40 transition">
