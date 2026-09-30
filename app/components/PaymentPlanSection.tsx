@@ -35,12 +35,20 @@ type Plan = {
 // manually) works identically. The invoice itself auto-marks Paid once
 // every installment clears (see maybeCompletePlan in app/invoices/page.tsx)
 // - nothing here needs to be "acknowledged" by hand.
+//
+// Two ways to get a plan started: Jesse picks the schedule himself ("Split
+// into Payments", startPlanAction), or he offers the option and leaves the
+// count/frequency to the customer ("Let Customer Choose", offerPlanAction -
+// see PaymentPlanCard.tsx and app/api/payment-plan/create, since they're
+// the ones who have to make the schedule fit their own cash flow).
 export default function PaymentPlanSection({
   invoiceId,
   isPaid,
   paymentPlansEnabledForCustomer,
+  paymentPlanOffered,
   plan,
   startPlanAction,
+  offerPlanAction,
   generateLinkAction,
   checkStatusAction,
   toggleManualPaidAction,
@@ -48,29 +56,57 @@ export default function PaymentPlanSection({
   invoiceId: string
   isPaid: boolean
   paymentPlansEnabledForCustomer: boolean
+  paymentPlanOffered: boolean
   plan: Plan
   startPlanAction: (prevState: PlanState, formData: FormData) => Promise<PlanState>
+  offerPlanAction: (prevState: PlanState, formData: FormData) => Promise<PlanState>
   generateLinkAction: (prevState: LinkState, formData: FormData) => Promise<LinkState>
   checkStatusAction: (prevState: StatusState, formData: FormData) => Promise<StatusState>
   toggleManualPaidAction: (prevState: MarkState, formData: FormData) => Promise<MarkState>
 }) {
   const [startState, startAction, startPending] = useActionState(startPlanAction, null)
+  const [offerState, offerAction, offerPending] = useActionState(offerPlanAction, null)
   const [showForm, setShowForm] = useState(false)
 
   if (!plan) {
     // Nothing to offer if this invoice is already paid, or its customer
     // hasn't been opted in - keeps the table clean for the common case.
     if (isPaid || !paymentPlansEnabledForCustomer) return null
+
+    if (paymentPlanOffered) {
+      return (
+        <div className="pt-1">
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-400">
+            Payment plan offered - waiting for the customer to choose a schedule
+          </span>
+        </div>
+      )
+    }
+
     return (
       <div className="pt-1">
         {!showForm ? (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="text-xs text-orange-400 hover:text-orange-300 underline"
-          >
-            Split into Payments
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              className="text-xs text-orange-400 hover:text-orange-300 underline"
+            >
+              Split into Payments
+            </button>
+            <span className="text-xs text-gray-600">or</span>
+            <form action={offerAction}>
+              <input type="hidden" name="invoice_id" value={invoiceId} />
+              <button
+                type="submit"
+                disabled={offerPending}
+                className="text-xs text-blue-400 hover:text-blue-300 underline disabled:opacity-50"
+              >
+                {offerPending ? 'Offering...' : 'Let Customer Choose'}
+              </button>
+            </form>
+            {offerState && !offerState.success && <p className="w-full text-xs text-red-400">{offerState.message}</p>}
+          </div>
         ) : (
           <form action={startAction} className="flex flex-wrap items-end gap-2 bg-zinc-800/40 border border-zinc-800 rounded-lg p-3 mt-1">
             <input type="hidden" name="invoice_id" value={invoiceId} />
