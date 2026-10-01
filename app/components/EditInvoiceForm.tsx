@@ -26,6 +26,7 @@ export default function EditInvoiceForm({
   initialLaborItems,
   initialPriorityFee,
   initialReferralDiscountAmount,
+  initialNotes,
   taxRatePercent,
   includeCardSurcharge,
   laborType,
@@ -46,6 +47,7 @@ export default function EditInvoiceForm({
   initialLaborItems: LineItem[]
   initialPriorityFee: number
   initialReferralDiscountAmount: number
+  initialNotes: string
   taxRatePercent: number
   includeCardSurcharge: boolean
   laborType: 'STLA' | 'NTSTLA'
@@ -67,6 +69,7 @@ export default function EditInvoiceForm({
   const [partsItems, setPartsItems] = useState<LineItem[]>(initialPartsItems)
   const [laborItems, setLaborItems] = useState<LineItem[]>(initialLaborItems)
   const [priorityFee, setPriorityFee] = useState(initialPriorityFee ? String(initialPriorityFee) : '')
+  const [notes, setNotes] = useState(initialNotes)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -236,6 +239,19 @@ export default function EditInvoiceForm({
         defaultIncludeSurcharge={includeCardSurcharge}
         defaultLaborType={laborType}
       />
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Notes (Optional)</label>
+        <textarea
+          name="notes"
+          rows={2}
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="e.g. Customer aware bearings are shot on right front tire - unit still usable, but for how long is undetermined"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-gray-600 mt-1">Prints on the invoice itself - a documented record of anything the customer was told.</p>
+      </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

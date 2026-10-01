@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
   const laborTypeRaw = formData.get('labor_type') as string
   const taxRatePercentRaw = formData.get('tax_rate_percent') as string
   const includeCardSurcharge = formData.get('include_card_surcharge') === 'true'
+  const notes = ((formData.get('notes') as string) || '').trim() || null
   if (!invoiceId) {
     return NextResponse.json({ error: 'Missing invoice_id' }, { status: 400 })
   }
@@ -213,6 +214,7 @@ export async function POST(request: NextRequest) {
     logoUrl,
     laborOnlyNote: billing.laborOnlyNote,
     showCardSurchargeDisclosure: !!billing.surchargeLine,
+    notes,
   })
 
   // Editing the total invalidates any payment link already generated for
@@ -231,6 +233,7 @@ export async function POST(request: NextRequest) {
       sales_tax_amount: billing.taxAmount,
       card_surcharge_amount: billing.surchargeAmount,
       labor_type: laborType,
+      notes,
       // Only ever touched for a standalone invoice - a unit-linked one's
       // customer identity is never stored on the invoice row itself.
       ...(!unitId

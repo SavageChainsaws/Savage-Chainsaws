@@ -1399,7 +1399,7 @@ export default async function Home({
   // current invoice/quote" link and units.invoice_url already point at.
   const { data: unitInvoicesAll } = await supabase
     .from('invoices')
-    .select('id, unit_id, invoice_number, line_items, amount, sales_tax_rate, card_surcharge_amount, labor_type, paid_at, square_payment_link_url, stripe_payment_link_url')
+    .select('id, unit_id, invoice_number, line_items, amount, sales_tax_rate, card_surcharge_amount, labor_type, paid_at, square_payment_link_url, stripe_payment_link_url, notes')
     .not('unit_id', 'is', null)
     .order('created_at', { ascending: false })
   const latestInvoiceByUnit = new Map<string, NonNullable<typeof unitInvoicesAll>[number]>()
@@ -1923,6 +1923,7 @@ export default async function Home({
   // editable; parts have no price data to draw from (Parts & SKUs tracks
   // name/SKU/OEM-Aftermarket only, no pricing) so they're always blank.
   function CreateInvoiceSection({ unit }: { unit: any }) {
+    const unitCustomer = (customers || []).find(c => c.id === unit.customer_id)
     const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
     const history = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
     const latestCost = history[0]?.cost ?? ''
@@ -1947,6 +1948,7 @@ export default async function Home({
             defaultPriorityFee={unit.is_priority ? PRIORITY_FEE : ''}
             defaultTaxRatePercent={defaultTaxRatePercent}
             defaultPartsItems={defaultPartsItems}
+            customerPaymentPlansEnabled={!!unitCustomer?.payment_plans_enabled}
           />
           <p className="text-xs text-gray-600 mt-1.5">
             {orderSheetItems.length > 0
@@ -2005,6 +2007,7 @@ export default async function Home({
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}
             initialReferralDiscountAmount={parsed.referralDiscountAmount}
+            initialNotes={invoice.notes || ''}
             taxRatePercent={invoice.sales_tax_rate ?? defaultTaxRatePercent}
             includeCardSurcharge={Number(invoice.card_surcharge_amount) > 0}
             laborType={(invoice.labor_type as 'STLA' | 'NTSTLA') || (hasParts ? 'STLA' : 'NTSTLA')}
@@ -2984,7 +2987,7 @@ export default async function Home({
               Build a standalone itemized invoice on the spot - not tied to a tracked unit. Link an existing customer to auto-fill their info, or skip that and type everything from scratch.
             </p>
             <CreateCustomInvoiceForm
-              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, paymentPlansEnabled: !!c.payment_plans_enabled }))}
               defaultTaxRatePercent={defaultTaxRatePercent}
             />
           </div>

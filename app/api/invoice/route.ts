@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
   const laborTypeRaw = formData.get('labor_type') as string
   const taxRatePercentRaw = formData.get('tax_rate_percent') as string
   const includeCardSurcharge = formData.get('include_card_surcharge') === 'true'
+  const notes = ((formData.get('notes') as string) || '').trim() || null
+  const offerPaymentPlan = formData.get('offer_payment_plan') === 'true'
   if (!unitId) {
     return NextResponse.json({ error: 'Missing unit_id' }, { status: 400 })
   }
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
   const { data: customer } = unit.customer_id
     ? await supabase
         .from('customers')
-        .select('name, email, phone, logo_url, brand_color, referral_source_id, referral_discount_used')
+        .select('name, email, phone, logo_url, brand_color, referral_source_id, referral_discount_used, payment_plans_enabled')
         .eq('id', unit.customer_id)
         .single()
     : { data: null }
@@ -175,6 +177,7 @@ export async function POST(request: NextRequest) {
     logoUrl,
     laborOnlyNote: billing.laborOnlyNote,
     showCardSurchargeDisclosure: !!billing.surchargeLine,
+    notes,
   })
 
   // Best-effort: save this as the unit's current invoice/quote so it shows
@@ -205,6 +208,12 @@ export async function POST(request: NextRequest) {
         sales_tax_amount: billing.taxAmount,
         card_surcharge_amount: billing.surchargeAmount,
         labor_type: laborType,
+        notes,
+        // Re-checked server-side against the customer's own eligibility
+        // rather than trusting the checkbox alone - it only renders when
+        // customerPaymentPlansEnabled was true at page-load time, but that
+        // flag could have been turned off since.
+        payment_plan_offered: offerPaymentPlan && !!customer?.payment_plans_enabled,
       })
       .select('id')
       .single()

@@ -10,6 +10,7 @@ type CustomerOption = {
   name: string
   email: string | null
   phone: string | null
+  paymentPlansEnabled?: boolean
 }
 
 export default function CreateCustomInvoiceForm({
@@ -32,6 +33,7 @@ export default function CreateCustomInvoiceForm({
   const [phone, setPhone] = useState('')
   const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '', quantity: '1' }])
   const [laborItems, setLaborItems] = useState<LineItem[]>([{ description: '', price: '' }])
+  const [paymentPlansEnabled, setPaymentPlansEnabled] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,6 +45,7 @@ export default function CreateCustomInvoiceForm({
       setEmail(c.email || '')
       setPhone(c.phone || '')
     }
+    setPaymentPlansEnabled(!!c?.paymentPlansEnabled)
   }
 
   function updateItem(
@@ -196,6 +199,24 @@ export default function CreateCustomInvoiceForm({
         taxableSubtotal={partsTotal + laborTotal}
         defaultTaxRatePercent={defaultTaxRatePercent}
       />
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Notes (Optional)</label>
+        <textarea
+          name="notes"
+          rows={2}
+          placeholder="e.g. Customer aware bearings are shot on right front tire - unit still usable, but for how long is undetermined"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-gray-600 mt-1">Prints on the invoice itself - a documented record of anything the customer was told.</p>
+      </div>
+
+      {paymentPlansEnabled && (
+        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+          <input type="checkbox" name="offer_payment_plan" value="true" className="rounded border-zinc-700 bg-zinc-900" />
+          Offer a payment plan on this invoice
+        </label>
+      )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
