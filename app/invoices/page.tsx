@@ -570,7 +570,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, payment_plan_offered, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, line_items, sales_tax_rate, card_surcharge_amount, labor_type, payment_plan_offered, notes, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
     )
     .order('created_at', { ascending: false })
 
@@ -642,6 +642,7 @@ export default async function InvoicesPage({
       taxRatePercent: Number(inv.sales_tax_rate) || 0,
       cardSurchargeAmount: Number(inv.card_surcharge_amount) || 0,
       laborType: (inv.labor_type as 'STLA' | 'NTSTLA' | null) || null,
+      notes: inv.notes as string | null,
       // Paid invoices archive automatically the moment paid_at is set - no
       // separate "move to archive" step needed, the view filter below is
       // the whole mechanism. archived_at lets the admin also archive an
@@ -905,6 +906,7 @@ export default async function InvoicesPage({
                           customerId={r.customerId}
                           customerName={r.customerName}
                           customerEmail={r.defaultEmail}
+                          notes={r.notes}
                         />
                         {r.pdfUrl && (
                           <SendInvoiceButton
@@ -1056,6 +1058,7 @@ export default async function InvoicesPage({
                     customerId={r.customerId}
                     customerName={r.customerName}
                     customerEmail={r.defaultEmail}
+                    notes={r.notes}
                   />
                   {r.pdfUrl && (
                     <SendInvoiceButton

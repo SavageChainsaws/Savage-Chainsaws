@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   const { data: linkedCustomer } = customerId
     ? await supabase
         .from('customers')
-        .select('logo_url, brand_color, referral_source_id, referral_discount_used')
+        .select('logo_url, brand_color, referral_source_id, referral_discount_used, payment_plans_enabled')
         .eq('id', customerId)
         .maybeSingle()
     : { data: null }
@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
   const laborTypeRaw = formData.get('labor_type') as string
   const taxRatePercentRaw = formData.get('tax_rate_percent') as string
   const includeCardSurcharge = formData.get('include_card_surcharge') === 'true'
+  const notes = ((formData.get('notes') as string) || '').trim() || null
+  const offerPaymentPlan = formData.get('offer_payment_plan') === 'true'
 
   // parts_price is always a per-unit amount - quantity multiplies it into
   // the line's actual billed amount and gets appended to the printed
@@ -131,6 +133,7 @@ export async function POST(request: NextRequest) {
     logoUrl,
     laborOnlyNote: billing.laborOnlyNote,
     showCardSurchargeDisclosure: !!billing.surchargeLine,
+    notes,
   })
 
   // Best-effort record for the admin's own bookkeeping (see /invoices) -
@@ -153,6 +156,8 @@ export async function POST(request: NextRequest) {
         sales_tax_amount: billing.taxAmount,
         card_surcharge_amount: billing.surchargeAmount,
         labor_type: laborType,
+        notes,
+        payment_plan_offered: offerPaymentPlan && !!linkedCustomer?.payment_plans_enabled,
       })
       .select('id')
       .single()

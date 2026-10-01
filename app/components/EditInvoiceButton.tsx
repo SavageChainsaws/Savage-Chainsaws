@@ -28,6 +28,7 @@ export default function EditInvoiceButton({
   customerId,
   customerName,
   customerEmail,
+  notes,
 }: {
   invoiceId: string
   invoiceNumber: string
@@ -44,6 +45,7 @@ export default function EditInvoiceButton({
   customerId: string | null
   customerName: string
   customerEmail: string
+  notes: string | null
 }) {
   const [open, setOpen] = useState(false)
 
@@ -121,6 +123,7 @@ export default function EditInvoiceButton({
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}
             initialReferralDiscountAmount={parsed.referralDiscountAmount}
+            initialNotes={notes || ''}
             taxRatePercent={taxRatePercent}
             includeCardSurcharge={includeCardSurcharge}
             laborType={laborType || (hasParts ? 'STLA' : 'NTSTLA')}

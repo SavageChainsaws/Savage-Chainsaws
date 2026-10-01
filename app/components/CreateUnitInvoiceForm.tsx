@@ -16,6 +16,7 @@ export default function CreateUnitInvoiceForm({
   defaultPriorityFee,
   defaultTaxRatePercent,
   defaultPartsItems,
+  customerPaymentPlansEnabled,
 }: {
   unitId: string
   defaultLaborPrice: number | string
@@ -27,6 +28,12 @@ export default function CreateUnitInvoiceForm({
   // invoice and just add labor" in one step instead of retyping every part
   // by hand. Still fully editable before submitting.
   defaultPartsItems?: LineItem[]
+  // Only this unit's customer having "Allow payment plans" turned on (Edit
+  // Customer) makes the checkbox below possible to show at all - it's a
+  // per-invoice decision on top of that per-customer eligibility, not a
+  // replacement for it, so every other invoice stays full-price-only by
+  // default even for an eligible customer.
+  customerPaymentPlansEnabled?: boolean
 }) {
   const [partsItems, setPartsItems] = useState<LineItem[]>(
     defaultPartsItems && defaultPartsItems.length > 0 ? defaultPartsItems : [{ description: '', price: '', quantity: '1' }]
@@ -110,6 +117,24 @@ export default function CreateUnitInvoiceForm({
         otherCharges={priorityFeeAmount}
         defaultTaxRatePercent={defaultTaxRatePercent}
       />
+
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Notes (Optional)</label>
+        <textarea
+          name="notes"
+          rows={2}
+          placeholder="e.g. Customer aware bearings are shot on right front tire - unit still usable, but for how long is undetermined"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-gray-600 mt-1">Prints on the invoice itself - a documented record of anything the customer was told.</p>
+      </div>
+
+      {customerPaymentPlansEnabled && (
+        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+          <input type="checkbox" name="offer_payment_plan" value="true" className="rounded border-zinc-700 bg-zinc-900" />
+          Offer a payment plan on this invoice
+        </label>
+      )}
 
       <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
         Create Invoice

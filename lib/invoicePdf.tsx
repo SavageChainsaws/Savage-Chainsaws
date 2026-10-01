@@ -148,6 +148,20 @@ const styles = StyleSheet.create({
   grandTotalLabel: { fontSize: 10.5, fontWeight: 700, color: BRAND.dark },
   grandTotalValue: { fontSize: 15, fontWeight: 700, color: BRAND.orange },
 
+  // Printed as its own boxed section near the bottom, same treatment as
+  // Bill To/the unit box - this is a documented record (e.g. "customer
+  // told bearings are shot, unit still usable but for how long is
+  // undetermined"), not a throwaway comment, so it needs to actually be
+  // legible on the page rather than a buried one-liner.
+  notesBox: {
+    border: `1 solid ${BRAND.border}`,
+    borderRadius: 6,
+    padding: 9,
+    marginTop: 10,
+    backgroundColor: BRAND.boxBg,
+  },
+  notesText: { fontSize: 9.5, color: '#333333', lineHeight: 1.4 },
+
   footer: {
     position: 'absolute',
     bottom: 0,
@@ -208,6 +222,10 @@ export type InvoicePdfInput = {
   // surcharge requires, printed near the totals since this PDF has no
   // payment button of its own (that only lives in the invoice email).
   showCardSurchargeDisclosure?: boolean
+  // Free-text, admin-entered - e.g. a known issue the customer was told
+  // about at the time of service. Printed as its own section when present,
+  // omitted entirely otherwise.
+  notes?: string | null
 }
 
 function InvoiceDocument({
@@ -219,6 +237,7 @@ function InvoiceDocument({
   logoUrl,
   laborOnlyNote,
   showCardSurchargeDisclosure,
+  notes,
 }: InvoicePdfInput) {
   const grandTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
   const hasUnit = !!unit && (unit.model || unit.serialNumber || unit.equipmentType || unit.nickname || unit.thumbnailUrl)
@@ -327,6 +346,13 @@ function InvoiceDocument({
               </View>
             </View>
           </View>
+
+          {notes && notes.trim() && (
+            <View style={styles.notesBox}>
+              <Text style={styles.boxTitle}>Notes</Text>
+              <Text style={styles.notesText}>{notes.trim()}</Text>
+            </View>
+          )}
         </View>
 
         <Text style={styles.footer}>Thank you for choosing Savage Chainsaws!</Text>
