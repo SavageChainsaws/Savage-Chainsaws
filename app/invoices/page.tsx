@@ -673,7 +673,15 @@ export default async function InvoicesPage({
 
   const activeRows = rows.filter(r => !r.isArchived)
   const archivedRows = rows.filter(r => r.isArchived)
-  const visibleRows = view === 'archived' ? archivedRows : activeRows
+  // Active invoices with a running payment plan sit there for a while by
+  // design (weekly/biweekly/monthly installments, not a one-time unpaid
+  // balance) - bumped to the bottom of their own bracket instead of mixed
+  // in with invoices actually awaiting a single payment, so the main list
+  // only shows what needs attention right now.
+  const nonPlanActiveRows = activeRows.filter(r => !(r.paymentPlan && r.paymentPlan.status === 'Active'))
+  const planActiveRows = activeRows.filter(r => r.paymentPlan && r.paymentPlan.status === 'Active')
+  const visibleRows = view === 'archived' ? archivedRows : [...nonPlanActiveRows, ...planActiveRows]
+  const paymentPlanDividerIndex = view === 'archived' || planActiveRows.length === 0 ? -1 : nonPlanActiveRows.length
 
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -806,8 +814,17 @@ export default async function InvoicesPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
-                {visibleRows.map(r => (
+                {visibleRows.map((r, i) => (
                   <Fragment key={r.id}>
+                  {i === paymentPlanDividerIndex && (
+                    <tr>
+                      <td colSpan={9} className="px-3 sm:px-4 pt-4 pb-2">
+                        <p className="text-xs text-blue-400 uppercase tracking-wider font-semibold">
+                          Payment Plans ({planActiveRows.length})
+                        </p>
+                      </td>
+                    </tr>
+                  )}
                   <tr className="hover:bg-zinc-800/40">
                     <td className="px-3 sm:px-4 py-2 text-gray-300 whitespace-nowrap">
                       {new Date(r.date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}
@@ -955,8 +972,14 @@ export default async function InvoicesPage({
               comment above the table for why this exists as its own layout
               rather than just another breakpoint tweak on the table. */}
           <div className="sm:hidden divide-y divide-zinc-800">
-            {visibleRows.map(r => (
-              <div key={r.id} className="p-4 space-y-2">
+            {visibleRows.map((r, i) => (
+              <Fragment key={r.id}>
+              {i === paymentPlanDividerIndex && (
+                <p className="px-4 pt-4 pb-1 text-xs text-blue-400 uppercase tracking-wider font-semibold">
+                  Payment Plans ({planActiveRows.length})
+                </p>
+              )}
+              <div className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-medium">{r.invoiceNumber}</p>
@@ -1075,6 +1098,7 @@ export default async function InvoicesPage({
                   />
                 )}
               </div>
+              </Fragment>
             ))}
             {visibleRows.length === 0 && (
               <p className="px-6 py-8 text-gray-500 text-center text-sm">
