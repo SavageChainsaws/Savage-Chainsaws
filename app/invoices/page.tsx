@@ -674,13 +674,18 @@ export default async function InvoicesPage({
 
   const activeRows = rows.filter(r => !r.isArchived)
   const archivedRows = rows.filter(r => r.isArchived)
-  // Active invoices with a running payment plan sit there for a while by
-  // design (weekly/biweekly/monthly installments, not a one-time unpaid
-  // balance) - bumped to the bottom of their own bracket instead of mixed
-  // in with invoices actually awaiting a single payment, so the main list
-  // only shows what needs attention right now.
-  const nonPlanActiveRows = activeRows.filter(r => !(r.paymentPlan && r.paymentPlan.status === 'Active'))
-  const planActiveRows = activeRows.filter(r => r.paymentPlan && r.paymentPlan.status === 'Active')
+  // Active invoices on a payment-plan track sit there for a while by design
+  // (weekly/biweekly/monthly installments, or still waiting on the customer
+  // to even pick a schedule) rather than a one-time unpaid balance - bumped
+  // to the bottom of their own bracket instead of mixed in with invoices
+  // actually awaiting a single payment, so the main list only shows what
+  // needs attention right now. Covers both an already-running plan AND one
+  // merely offered (payment_plan_offered) but not yet chosen - the moment
+  // Jesse diverts an invoice off the full-price track, it belongs here.
+  const isPaymentPlanRow = (r: typeof activeRows[number]) =>
+    (r.paymentPlan && r.paymentPlan.status === 'Active') || r.paymentPlanOffered
+  const nonPlanActiveRows = activeRows.filter(r => !isPaymentPlanRow(r))
+  const planActiveRows = activeRows.filter(isPaymentPlanRow)
   const visibleRows = view === 'archived' ? archivedRows : [...nonPlanActiveRows, ...planActiveRows]
   const paymentPlanDividerIndex = view === 'archived' || planActiveRows.length === 0 ? -1 : nonPlanActiveRows.length
 
