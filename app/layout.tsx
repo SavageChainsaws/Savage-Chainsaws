@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import PullToRefresh from './components/PullToRefresh'
+import AuthRecoveryRedirect from './components/AuthRecoveryRedirect'
 
 // iOS shows a launch splash screen built from these device-specific images
 // while the PWA cold-starts after being added to the home screen; there is
@@ -61,6 +62,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-zinc-950 text-white antialiased">
         <PullToRefresh />
+        <AuthRecoveryRedirect />
         {children}
       </body>
     </html>
