@@ -28,7 +28,7 @@
   /* A dark photo reads as moody atmosphere against black; against white it
      just looks like a gray smudge, so it needs to be far more subtle in
      light mode. */
-  --bg-photo-opacity: 0.22;
+  --bg-photo-opacity: 0.34;
 
   --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -44,7 +44,7 @@
     --text-primary: #000000;
     --text-secondary: #333333;
     --text-tertiary: #666666;
-    --bg-photo-opacity: 0.1;
+    --bg-photo-opacity: 0.16;
     color-scheme: light;
   }
 }
@@ -58,7 +58,7 @@
   --text-primary: #000000;
   --text-secondary: #333333;
   --text-tertiary: #666666;
-  --bg-photo-opacity: 0.1;
+  --bg-photo-opacity: 0.16;
   color-scheme: light;
 }
 
@@ -71,7 +71,7 @@
   --text-primary: #ffffff;
   --text-secondary: #cccccc;
   --text-tertiary: #999999;
-  --bg-photo-opacity: 0.22;
+  --bg-photo-opacity: 0.34;
   color-scheme: dark;
 }
 
@@ -104,8 +104,14 @@ body::before {
   position: fixed;
   inset: 0;
   background-image: url('/images/linktree-bg.jpg');
-  background-size: cover;
-  background-position: center 15%;
+  /* "cover" was cropping hard into a tall, narrow mobile viewport -
+     the photo is portrait but not as tall/narrow as a phone screen, so
+     covering edge-to-edge zoomed into a thin vertical sliver and lost
+     most of the actual scene (the banner, the saw, the sparks). "contain"
+     shows the whole frame instead. */
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center top;
   opacity: var(--bg-photo-opacity);
   z-index: -2;
 }
@@ -238,6 +244,20 @@ body::after {
 
 .link-icon-badge.neutral svg {
   stroke: var(--accent);
+}
+
+/* The real badge logo instead of a generic icon for the primary CTA -
+   it already has its own circular border/backdrop baked in, so (same
+   reasoning as the hero logo) no extra background circle behind it -
+   that would just be a redundant second frame. */
+.link-icon-badge.brand-logo {
+  background: transparent;
+}
+
+.link-icon-badge.brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .link-icon-badge.facebook {
@@ -394,8 +414,8 @@ a {
 <div class="links-container">
   <!-- Primary CTA: Signup -->
   <a href="https://app.savagechainsaws.com/signup" class="link-card primary">
-    <span class="link-icon-badge neutral" aria-hidden="true">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+    <span class="link-icon-badge brand-logo" aria-hidden="true">
+      <img src="/images/logo.png" alt="">
     </span>
     <span class="link-text">
       <span class="link-label">Request a Service Account</span>
