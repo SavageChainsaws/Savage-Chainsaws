@@ -23,6 +23,41 @@ function recapitalize(word: string): string {
   return word.toLowerCase().replace(/(^|-)\p{L}/gu, m => m.toUpperCase())
 }
 
+// True only for a genuinely, deliberately mixed-case word (McDonald,
+// DeAngelo, iPhone) - a single interior capital with lowercase around it.
+// Two capitals in a row is never that pattern (no real name doubles up
+// like "MCDonald") and is instead the signature of a caps-lock/shift-lock
+// run: liveTitleCase evaluates this on the string as typed so far, and its
+// own earlier correction (lowercasing everything but a word's first
+// letter) plants exactly one interior capital the moment the very next
+// keystroke also happens to be uppercase - indistinguishable, for that one
+// keystroke, from someone deliberately typing a name like "McD...". The
+// very next caps-lock letter after that removes the ambiguity (two
+// interior capitals back to back), so requiring the absence of a
+// consecutive pair here is what lets a caps-lock run self-correct instead
+// of freezing permanently mid-word, while still preserving a real
+// deliberately-cased name exactly as before.
+function isIntentionallyMixedCase(word: string): boolean {
+  const hasLower = /\p{Ll}/u.test(word)
+  const hasInteriorUpper = /\p{Lu}/u.test(word.slice(1))
+  const hasConsecutiveUpper = /\p{Lu}\p{Lu}/u.test(word)
+  return hasLower && hasInteriorUpper && !hasConsecutiveUpper
+}
+
+// A *finished* word whose only interior capital is its very last letter is
+// never how a real deliberately-cased name ends (McDonald/DeAngelo/iPhone
+// all have the capital *followed* by more lowercase, never as the final
+// character) - it's what a caps-lock run looks like when liveTitleCase's
+// own self-correction happens to land on a fresh, still-ambiguous capital
+// right as typing of that word stops (see isIntentionallyMixedCase above).
+// Only checked at finalization (toTitleCase), never in liveTitleCase - a
+// name that's still being actively typed may well be a genuine "McD..." in
+// progress, and flattening that early would destroy it before the rest of
+// the name arrives.
+function endsInLoneTrailingCapital(word: string): boolean {
+  return /\p{Ll}\p{Lu}$/u.test(word)
+}
+
 // Title-cases a name, but only ever touches a word that was typed in one
 // uniform case (all caps from Caps Lock, or all lowercase from not
 // bothering with Shift) - real names routinely mix case on purpose
@@ -38,9 +73,7 @@ export function toTitleCase(input: string): string {
       const lettersOnly = word.replace(/[^\p{L}]/gu, '')
       if (!lettersOnly) return word
       if (BUSINESS_SUFFIXES.has(lettersOnly.toUpperCase())) return word.toUpperCase()
-      const hasLower = /\p{Ll}/u.test(word)
-      const hasInteriorUpper = /\p{Lu}/u.test(word.slice(1))
-      if (hasLower && hasInteriorUpper) return word
+      if (isIntentionallyMixedCase(word) && !endsInLoneTrailingCapital(word)) return word
       return recapitalize(word)
     })
     .join(' ')
@@ -58,9 +91,7 @@ export function toTitleCase(input: string): string {
 export function liveTitleCase(input: string): string {
   return input.replace(/\p{L}[\p{L}'-]*/gu, word => {
     if (BUSINESS_SUFFIXES.has(word.toUpperCase())) return word.toUpperCase()
-    const hasLower = /\p{Ll}/u.test(word)
-    const hasInteriorUpper = /\p{Lu}/u.test(word.slice(1))
-    if (hasLower && hasInteriorUpper) return word
+    if (isIntentionallyMixedCase(word)) return word
     return recapitalize(word)
   })
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import Link from 'next/link'
 import UppercaseInput from '../components/UppercaseInput'
 import TitleCaseInput from '../components/TitleCaseInput'
+import { toTitleCase } from '@/lib/text'
 
 async function upsertModelPart(formData: FormData) {
   'use server'
@@ -12,7 +13,8 @@ async function upsertModelPart(formData: FormData) {
 
   const id = (formData.get('id') as string) || null
   const model = (formData.get('model') as string || '').trim()
-  const partName = (formData.get('part_name') as string || '').trim()
+  const partNameRaw = (formData.get('part_name') as string || '').trim()
+  const partName = partNameRaw ? toTitleCase(partNameRaw) : ''
   const sku = (formData.get('sku') as string || '').trim().toUpperCase()
   const skuType = (formData.get('sku_type') as string) === 'Aftermarket' ? 'Aftermarket' : 'OEM'
   if (!model || !partName || !sku) return

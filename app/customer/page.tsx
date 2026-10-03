@@ -15,7 +15,7 @@ import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
-import { normalizeEmail, liveTitleCase } from '@/lib/text'
+import { normalizeEmail, liveTitleCase, toTitleCase } from '@/lib/text'
 
 const supabase = createClient()
 
@@ -791,7 +791,7 @@ export default function CustomerPortal() {
         serial_number: trimmedFleetSerial,
         model: fleetModel.trim() || null,
         equipment_type: finalFleetType || null,
-        nickname: fleetNickname.trim() || null,
+        nickname: fleetNickname.trim() ? toTitleCase(fleetNickname) : null,
         hour_meter: fleetType === 'Riding Lawn Mower' ? (fleetHours.trim() || null) : null,
       }
 
@@ -998,7 +998,7 @@ export default function CustomerPortal() {
     const { error } = await supabase
       .from('units')
       .update({
-        nickname: editNickname.trim() || null,
+        nickname: editNickname.trim() ? toTitleCase(editNickname) : null,
         serial_number: editSerial.trim(),
         model: editModel.trim() || null,
         equipment_type: finalEditType || null,
@@ -1017,7 +1017,7 @@ export default function CustomerPortal() {
       prev
         ? {
             ...prev,
-            nickname: editNickname.trim() || null,
+            nickname: editNickname.trim() ? toTitleCase(editNickname) : null,
             serial_number: editSerial.trim(),
             model: editModel.trim() || null,
             equipment_type: finalEditType || null,

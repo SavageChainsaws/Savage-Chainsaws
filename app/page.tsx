@@ -253,7 +253,8 @@ async function addFleetUnit(formData: FormData) {
   const warrantyEnd = formData.get('warranty_end') as string
   const fleetNotes = formData.get('fleet_notes') as string
   const partNumbers = formData.get('part_numbers') as string
-  const nickname = formData.get('nickname') as string
+  const nicknameRaw = ((formData.get('nickname') as string) || '').trim()
+  const nickname = nicknameRaw ? toTitleCase(nicknameRaw) : ''
   const trimmedSerial = serial.trim()
 
   // Same serial/customer dedup as check-in (addUnit) - a unit already
@@ -319,7 +320,8 @@ async function updateFleetUnit(formData: FormData) {
   const purchaseDate = formData.get('purchase_date') as string
   const warrantyEnd = formData.get('warranty_end') as string
   const hourMeter = formData.get('hour_meter') as string
-  const nickname = formData.get('nickname') as string
+  const nicknameRaw = ((formData.get('nickname') as string) || '').trim()
+  const nickname = nicknameRaw ? toTitleCase(nicknameRaw) : ''
   const serial = formData.get('serial') as string
   const shortblockReplaced = formData.get('shortblock_replaced') === 'true'
 

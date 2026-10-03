@@ -3,6 +3,7 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { resolveUnitParts, type ResolvedPart } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
+import { toTitleCase } from '@/lib/text'
 
 // Admin types a free-text Parts line item (e.g. "Replacement chain") with
 // no dropdown tying it to a specific catalog part, so there's no exact key
@@ -66,8 +67,14 @@ export async function POST(request: NextRequest) {
       return { description: description.trim(), amount: unitPrice * quantity, quantity }
     })
     .filter(li => li.description.length > 0)
+  // Labor (unlike Parts, which doubles as a SKU-search box and
+  // intentionally skips live title-casing - see InvoiceItemGroup/
+  // skuLookup) goes through liveTitleCase client-side, so it needs the
+  // same save-time toTitleCase pass every other title-cased field gets -
+  // otherwise a caps-lock-typed description could still land on the PDF
+  // with a stray capital (see lib/text.ts).
   const rawLaborLineItems = laborDescriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
+    .map((description, i) => ({ description: toTitleCase(description), amount: Number(laborPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
   const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
 
@@ -146,14 +153,13 @@ export async function POST(request: NextRequest) {
     includeCardSurcharge,
   })
 
-  const lineItems = [
-    ...partsLineItems,
-    ...laborLineItems,
+  const otherLineItems = [
     ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
     ...(billing.taxLine ? [billing.taxLine] : []),
     ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
+  const lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
   const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 
   const pdfBuffer = await renderInvoicePdf({
@@ -173,7 +179,9 @@ export async function POST(request: NextRequest) {
       nickname: unit.nickname,
       thumbnailUrl: unit.thumbnail_url || unit.photo_url || null,
     },
-    lineItems,
+    partsLineItems,
+    laborLineItems,
+    otherLineItems,
     logoUrl,
     laborOnlyNote: billing.laborOnlyNote,
     showCardSurchargeDisclosure: !!billing.surchargeLine,

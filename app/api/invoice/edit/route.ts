@@ -77,8 +77,11 @@ export async function POST(request: NextRequest) {
       return { description: description.trim(), amount: unitPrice * quantity, quantity }
     })
     .filter(li => li.description.length > 0)
+  // See app/api/invoice/route.ts - Labor descriptions go through
+  // liveTitleCase client-side, so they need the same save-time toTitleCase
+  // pass every other title-cased field gets.
   const rawLaborLineItems = laborDescriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
+    .map((description, i) => ({ description: toTitleCase(description), amount: Number(laborPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
   const priorityFee = priorityFeeRaw ? Number(priorityFeeRaw) : 0
 
@@ -181,14 +184,13 @@ export async function POST(request: NextRequest) {
     includeCardSurcharge,
   })
 
-  const lineItems = [
-    ...partsLineItems,
-    ...laborLineItems,
+  const otherLineItems = [
     ...(referralDiscountAmount > 0 ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
     ...(billing.taxLine ? [billing.taxLine] : []),
     ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
+  const lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
   const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
 
   const pdfBuffer = await renderInvoicePdf({
@@ -210,7 +212,9 @@ export async function POST(request: NextRequest) {
           thumbnailUrl: unit.thumbnail_url || unit.photo_url || null,
         }
       : null,
-    lineItems,
+    partsLineItems,
+    laborLineItems,
+    otherLineItems,
     logoUrl,
     laborOnlyNote: billing.laborOnlyNote,
     showCardSurchargeDisclosure: !!billing.surchargeLine,
