@@ -20,6 +20,19 @@ const nextConfig: NextConfig = {
       },
     ]
   },
+  async rewrites() {
+    return [
+      // Clean path for the social-bio Linktree page (public/linktree.html)
+      // - /links is what actually goes in Instagram/TikTok bios, not the
+      // long savage-chainsaws.vercel.app/linktree.html. A rewrite (not a
+      // redirect) so the URL bar shows /links, not the .html file it
+      // actually serves.
+      {
+        source: '/links',
+        destination: '/linktree.html',
+      },
+    ]
+  },
 };
 
 export default nextConfig;
