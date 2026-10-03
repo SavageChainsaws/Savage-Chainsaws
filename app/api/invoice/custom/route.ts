@@ -65,8 +65,11 @@ export async function POST(request: NextRequest) {
       }
     })
     .filter(li => li.description.length > 0)
+  // See app/api/invoice/route.ts - Labor descriptions go through
+  // liveTitleCase client-side, so they need the same save-time toTitleCase
+  // pass every other title-cased field gets.
   const rawLaborLineItems = laborDescriptions
-    .map((description, i) => ({ description: description.trim(), amount: Number(laborPrices[i]) || 0 }))
+    .map((description, i) => ({ description: toTitleCase(description), amount: Number(laborPrices[i]) || 0 }))
     .filter(li => li.description.length > 0)
 
   if (partsLineItems.length === 0 && rawLaborLineItems.length === 0) {
@@ -98,13 +101,12 @@ export async function POST(request: NextRequest) {
     includeCardSurcharge,
   })
 
-  const lineItems = [
-    ...partsLineItems,
-    ...laborLineItems,
+  const otherLineItems = [
     ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(billing.taxLine ? [billing.taxLine] : []),
     ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
+  const lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
 
   const now = new Date()
   // Shared, atomic sequence (SC-0001, SC-0002, ...) - same one the
@@ -129,7 +131,9 @@ export async function POST(request: NextRequest) {
       brandColor: linkedCustomer?.brand_color ?? null,
     },
     unit: hasUnitInfo ? { model: unitModel, serialNumber: unitSerial, equipmentType: unitEquipmentType } : null,
-    lineItems,
+    partsLineItems,
+    laborLineItems,
+    otherLineItems,
     logoUrl,
     laborOnlyNote: billing.laborOnlyNote,
     showCardSurchargeDisclosure: !!billing.surchargeLine,

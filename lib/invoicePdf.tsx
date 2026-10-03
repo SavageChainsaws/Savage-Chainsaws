@@ -113,6 +113,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   sectionRule: { flex: 1, borderTop: `1 solid ${BRAND.border}` },
+  // Pushes the Labor section divider down from the Parts table right above
+  // it, so the two read as clearly separate groups rather than one table
+  // that happens to have two headers back to back.
+  sectionDividerSpaced: { marginTop: 10 },
 
   table: { marginTop: 0, marginBottom: 4 },
   tableHeaderRow: {
@@ -210,7 +214,16 @@ export type InvoicePdfInput = {
     nickname?: string | null
     thumbnailUrl?: string | null
   } | null
-  lineItems: InvoiceLineItem[]
+  // Split into three groups (rather than one flat list) so the PDF can
+  // print Parts and Labor as visually separate tables - Jesse wants to be
+  // able to tell at a glance what was materials versus what was billed for
+  // time, instead of them interleaved in whatever order they were entered.
+  // otherLineItems covers everything that's neither (priority fee,
+  // referral discount, tax, card surcharge) and prints last, unheadered,
+  // same as it always has.
+  partsLineItems: InvoiceLineItem[]
+  laborLineItems: InvoiceLineItem[]
+  otherLineItems: InvoiceLineItem[]
   // Savage Chainsaws' own logo - kept as an input (rather than hardcoded)
   // so the API routes control the absolute URL, same as before.
   logoUrl?: string | null
@@ -228,18 +241,45 @@ export type InvoicePdfInput = {
   notes?: string | null
 }
 
+// Description/Amount pairs for one group (Parts, Labor, or the trailing
+// other-charges rows) - factored out since Parts and Labor now each need
+// their own header row instead of one table covering everything.
+function LineItemTable({ items, showHeader = true }: { items: InvoiceLineItem[]; showHeader?: boolean }) {
+  return (
+    <View style={styles.table}>
+      {showHeader && (
+        <View style={styles.tableHeaderRow}>
+          <Text style={[styles.tableHeaderText, styles.colDescription]}>Description</Text>
+          <Text style={[styles.tableHeaderText, styles.colAmount]}>Amount</Text>
+        </View>
+      )}
+      {items.map((li, i) => (
+        <View key={i} style={styles.tableRow}>
+          <View style={styles.colDescription}>
+            <Text style={styles.descriptionText}>{li.description}</Text>
+            {li.sku && <Text style={styles.skuLine}>SKU: {li.sku}</Text>}
+          </View>
+          <Text style={styles.colAmount}>{money(li.amount)}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 function InvoiceDocument({
   invoiceNumber,
   invoiceDate,
   customer,
   unit,
-  lineItems,
+  partsLineItems,
+  laborLineItems,
+  otherLineItems,
   logoUrl,
   laborOnlyNote,
   showCardSurchargeDisclosure,
   notes,
 }: InvoicePdfInput) {
-  const grandTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
+  const grandTotal = [...partsLineItems, ...laborLineItems, ...otherLineItems].reduce((sum, li) => sum + li.amount, 0)
   const hasUnit = !!unit && (unit.model || unit.serialNumber || unit.equipmentType || unit.nickname || unit.thumbnailUrl)
   const customerAccent = customer.brandColor || DEFAULT_ACCENT
 
@@ -313,27 +353,27 @@ function InvoiceDocument({
             </View>
           )}
 
-          <View style={styles.sectionDivider}>
-            <Text style={styles.sectionLabel}>Services &amp; Parts</Text>
-            <View style={styles.sectionRule} />
-          </View>
-
-          <View style={styles.table}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableHeaderText, styles.colDescription]}>Description</Text>
-              <Text style={[styles.tableHeaderText, styles.colAmount]}>Amount</Text>
-            </View>
-
-            {lineItems.map((li, i) => (
-              <View key={i} style={styles.tableRow}>
-                <View style={styles.colDescription}>
-                  <Text style={styles.descriptionText}>{li.description}</Text>
-                  {li.sku && <Text style={styles.skuLine}>SKU: {li.sku}</Text>}
-                </View>
-                <Text style={styles.colAmount}>{money(li.amount)}</Text>
+          {partsLineItems.length > 0 && (
+            <>
+              <View style={styles.sectionDivider}>
+                <Text style={styles.sectionLabel}>Parts</Text>
+                <View style={styles.sectionRule} />
               </View>
-            ))}
-          </View>
+              <LineItemTable items={partsLineItems} />
+            </>
+          )}
+
+          {laborLineItems.length > 0 && (
+            <>
+              <View style={[styles.sectionDivider, partsLineItems.length > 0 ? styles.sectionDividerSpaced : undefined]}>
+                <Text style={styles.sectionLabel}>Labor</Text>
+                <View style={styles.sectionRule} />
+              </View>
+              <LineItemTable items={laborLineItems} />
+            </>
+          )}
+
+          {otherLineItems.length > 0 && <LineItemTable items={otherLineItems} showHeader={false} />}
 
           {laborOnlyNote && <Text style={styles.laborOnlyNote}>{LABOR_ONLY_NOTE}</Text>}
           {showCardSurchargeDisclosure && <Text style={styles.noteLine}>{CARD_SURCHARGE_DISCLOSURE}</Text>}
