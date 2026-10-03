@@ -1,0 +1,364 @@
+<title>Savage Chainsaws Links</title>
+
+<style>
+/* Design: Dark brutalist layout with orange accent, card-based link stack, mobile-first */
+
+:root {
+  --bg: #000000;
+  --surface: #1a1a1a;
+  --border: #333333;
+  --accent: #ff6600;
+  --accent-hover: #ff8533;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-tertiary: #999999;
+
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --accent: #ff6600;
+    --accent-hover: #ff8533;
+    --text-primary: #000000;
+    --text-secondary: #333333;
+    --text-tertiary: #666666;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #f5f5f5;
+  --border: #e0e0e0;
+  --accent: #ff6600;
+  --accent-hover: #ff8533;
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --text-tertiary: #666666;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --surface: #1a1a1a;
+  --border: #333333;
+  --accent: #ff6600;
+  --accent-hover: #ff8533;
+  --text-primary: #ffffff;
+  --text-secondary: #cccccc;
+  --text-tertiary: #999999;
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  padding: 20px;
+}
+
+/* Hero section */
+.hero {
+  text-align: center;
+  margin-bottom: 40px;
+  padding: 20px 0;
+}
+
+.logo {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 20px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  margin-bottom: 8px;
+  text-wrap: balance;
+}
+
+.hero h1 .accent {
+  color: var(--accent);
+}
+
+.hero p {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.hero .tagline {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 12px;
+}
+
+/* Link cards container */
+.links-container {
+  max-width: 480px;
+  margin: 0 auto 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.link-card {
+  display: block;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.link-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: -1;
+}
+
+.link-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.link-card:hover .link-label {
+  color: var(--accent);
+}
+
+.link-icon {
+  font-size: 20px;
+  margin-right: 12px;
+  display: inline-block;
+  width: 24px;
+  text-align: center;
+}
+
+.link-label {
+  font-weight: 600;
+  font-size: 16px;
+  transition: color 0.2s ease;
+}
+
+.link-sublabel {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  display: block;
+}
+
+/* Primary CTA - Signup */
+.link-card.primary {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, rgba(255, 102, 0, 0.1) 0%, rgba(255, 102, 0, 0.05) 100%);
+}
+
+.link-card.primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.link-card.primary:hover .link-label {
+  color: var(--bg);
+}
+
+/* Contact section */
+.contact-section {
+  max-width: 480px;
+  margin: 0 auto;
+  padding-top: 30px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.contact-section h3 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 16px;
+}
+
+.contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.contact-item {
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.contact-label {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* Footer */
+footer {
+  max-width: 480px;
+  margin: 40px auto 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  body {
+    padding: 16px;
+  }
+
+  .hero {
+    margin-bottom: 32px;
+  }
+
+  .hero h1 {
+    font-size: 28px;
+  }
+
+  .links-container {
+    gap: 10px;
+  }
+
+  .link-card {
+    padding: 14px;
+  }
+}
+
+/* Focus states for accessibility */
+.link-card:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+</style>
+
+<div class="hero">
+  <div class="logo">⚙️</div>
+  <h1>SAVAGE <span class="accent">CHAINSAWS</span></h1>
+  <p>Mobile Repair & Equipment Rentals</p>
+  <p class="tagline">Professional chainsaw service for contractors & landscapers</p>
+</div>
+
+<div class="links-container">
+  <!-- Primary CTA: Signup -->
+  <a href="https://savage-chainsaws.vercel.app/signup" class="link-card primary">
+    <span class="link-icon">📋</span>
+    <span class="link-label">Request a Service Account</span>
+    <span class="link-sublabel">Create a customer portal to manage repairs & rentals</span>
+  </a>
+
+  <!-- Service Inquiries -->
+  <a href="mailto:service@savagechainsaws.com" class="link-card">
+    <span class="link-icon">✉️</span>
+    <span class="link-label">Email for Service</span>
+    <span class="link-sublabel">service@savagechainsaws.com</span>
+  </a>
+
+  <!-- Phone -->
+  <a href="tel:+14073758199" class="link-card">
+    <span class="link-icon">☎️</span>
+    <span class="link-label">Call Us</span>
+    <span class="link-sublabel">(407) 375-8199</span>
+  </a>
+
+  <!-- Website -->
+  <a href="https://savagechainsaws.com" class="link-card">
+    <span class="link-icon">🌐</span>
+    <span class="link-label">Visit Website</span>
+    <span class="link-sublabel">savagechainsaws.com</span>
+  </a>
+
+  <!-- TikTok -->
+  <a href="https://www.tiktok.com/@radfj40" class="link-card">
+    <span class="link-icon">🎬</span>
+    <span class="link-label">Follow on TikTok</span>
+    <span class="link-sublabel">@radfj40 — Performance builds & repairs</span>
+  </a>
+
+  <!-- Instagram -->
+  <a href="https://www.instagram.com/rad_fj40" class="link-card">
+    <span class="link-icon">📸</span>
+    <span class="link-label">Follow on Instagram</span>
+    <span class="link-sublabel">@rad_fj40</span>
+  </a>
+
+  <!-- Facebook -->
+  <a href="https://www.facebook.com/share/19393mzdgR/" class="link-card">
+    <span class="link-icon">f</span>
+    <span class="link-label">Follow on Facebook</span>
+    <span class="link-sublabel">Savage Chainsaws Page</span>
+  </a>
+</div>
+
+<div class="contact-section">
+  <h3>Business Contact</h3>
+  <div class="contact-info">
+    <div class="contact-item">
+      <span class="contact-label">Email</span>
+      service@savagechainsaws.com
+    </div>
+    <div class="contact-item">
+      <span class="contact-label">Phone</span>
+      (407) 375-8199
+    </div>
+    <div class="contact-item">
+      <span class="contact-label">Service Area</span>
+      Greater Orlando, FL & Mobile
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>Savage Chainsaws LLC | Mobile Equipment Service & Rentals</p>
+</footer>
