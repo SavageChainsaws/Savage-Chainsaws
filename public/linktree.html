@@ -25,6 +25,10 @@
   --text-primary: #ffffff;
   --text-secondary: #cccccc;
   --text-tertiary: #999999;
+  /* A dark photo reads as moody atmosphere against black; against white it
+     just looks like a gray smudge, so it needs to be far more subtle in
+     light mode. */
+  --bg-photo-opacity: 0.22;
 
   --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -40,6 +44,7 @@
     --text-primary: #000000;
     --text-secondary: #333333;
     --text-tertiary: #666666;
+    --bg-photo-opacity: 0.1;
     color-scheme: light;
   }
 }
@@ -53,6 +58,7 @@
   --text-primary: #000000;
   --text-secondary: #333333;
   --text-tertiary: #666666;
+  --bg-photo-opacity: 0.1;
   color-scheme: light;
 }
 
@@ -65,6 +71,7 @@
   --text-primary: #ffffff;
   --text-secondary: #cccccc;
   --text-tertiary: #999999;
+  --bg-photo-opacity: 0.22;
   color-scheme: dark;
 }
 
@@ -81,6 +88,34 @@ body {
   font-size: 16px;
   line-height: 1.6;
   padding: 20px;
+}
+
+/* Subtle photo backdrop - a real action shot (grinding a bar at a STIHL
+   event) instead of a generic texture, kept low-opacity and faded into
+   the theme's own background at the top/bottom via ::after so the link
+   cards stay fully legible - meant to read as atmosphere, not compete
+   with the content. ::before/::after are fixed (not background-attachment:
+   fixed on body itself, which mobile Safari ignores) so it holds steady
+   as the page scrolls. Ordinary in-flow content (.hero, .links-container,
+   etc.) always paints above a negative z-index descendant in the same
+   stacking context, so nothing extra is needed to keep them on top. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('/images/linktree-bg.jpg');
+  background-size: cover;
+  background-position: center 15%;
+  opacity: var(--bg-photo-opacity);
+  z-index: -2;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(to bottom, var(--bg) 0%, transparent 20%, transparent 55%, var(--bg) 100%);
+  z-index: -1;
 }
 
 /* Hero section */
