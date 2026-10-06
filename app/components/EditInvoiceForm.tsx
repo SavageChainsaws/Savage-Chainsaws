@@ -67,6 +67,7 @@ export default function EditInvoiceForm({
   const [customerName, setCustomerName] = useState(initialCustomerName)
   const [customerEmail, setCustomerEmail] = useState(initialCustomerEmail)
   const [partsItems, setPartsItems] = useState<LineItem[]>(initialPartsItems)
+  const [effectiveLaborType, setEffectiveLaborType] = useState<'STLA' | 'NTSTLA'>(laborType)
   const [laborItems, setLaborItems] = useState<LineItem[]>(initialLaborItems)
   const [priorityFee, setPriorityFee] = useState(initialPriorityFee ? String(initialPriorityFee) : '')
   const [notes, setNotes] = useState(initialNotes)
@@ -204,6 +205,7 @@ export default function EditInvoiceForm({
         items={laborItems}
         descriptionField="labor_description"
         priceField="labor_price"
+        laborMinutes={effectiveLaborType === 'STLA'}
         placeholder="Description (e.g. Tune-up)"
         onUpdate={(i, field, value) => updateItem(setLaborItems, i, field, value)}
         onAdd={() => addItem(setLaborItems)}
@@ -232,6 +234,7 @@ export default function EditInvoiceForm({
       )}
 
       <TaxAndSurchargeFields
+        onLaborTypeChange={setEffectiveLaborType}
         hasParts={hasParts}
         taxableSubtotal={partsTotal + laborTotal}
         otherCharges={priorityFeeAmount - initialReferralDiscountAmount}

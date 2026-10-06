@@ -38,6 +38,7 @@ export default function CreateUnitInvoiceForm({
   const [partsItems, setPartsItems] = useState<LineItem[]>(
     defaultPartsItems && defaultPartsItems.length > 0 ? defaultPartsItems : [{ description: '', price: '', quantity: '1' }]
   )
+  const [laborType, setLaborType] = useState<'STLA' | 'NTSTLA'>('NTSTLA')
   const [laborItems, setLaborItems] = useState<LineItem[]>([
     { description: '', price: defaultLaborPrice ? String(defaultLaborPrice) : '' },
   ])
@@ -90,6 +91,7 @@ export default function CreateUnitInvoiceForm({
         items={laborItems}
         descriptionField="labor_description"
         priceField="labor_price"
+        laborMinutes={laborType === 'STLA'}
         placeholder="Description (e.g. Tune-up)"
         onUpdate={(i, field, value) => updateItem(setLaborItems, i, field, value)}
         onAdd={() => addItem(setLaborItems)}
@@ -112,6 +114,7 @@ export default function CreateUnitInvoiceForm({
       </div>
 
       <TaxAndSurchargeFields
+        onLaborTypeChange={setLaborType}
         hasParts={hasParts}
         taxableSubtotal={partsTotal + laborTotal}
         otherCharges={priorityFeeAmount}
