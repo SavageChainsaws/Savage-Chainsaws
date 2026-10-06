@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
 import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 import { liveTitleCase } from '@/lib/text'
+import { SERVICE_CALL_DESCRIPTION, SERVICE_CALL_DEFAULT_AMOUNT } from '@/lib/billing'
 
 type CustomerOption = {
   id: string
@@ -57,8 +58,17 @@ export default function CreateCustomInvoiceForm({
     setter(prev => prev.map((it, i) => (i === index ? { ...it, [field]: value } : it)))
   }
 
-  function addItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>) {
-    setter(prev => [...prev, { description: '', price: '', quantity: '1' }])
+  // prefill, when passed (see InvoiceItemGroup's quickAdd), replaces the
+  // last line instead of appending a new one if that line is still
+  // completely blank - see CreateUnitInvoiceForm.
+  function addItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>, prefill?: Partial<LineItem>) {
+    setter(prev => {
+      const last = prev[prev.length - 1]
+      if (prefill && last && !last.description.trim() && !last.price.trim()) {
+        return [...prev.slice(0, -1), { ...last, ...prefill }]
+      }
+      return [...prev, { description: '', price: '', quantity: '1', ...prefill }]
+    })
   }
 
   function removeItem(setter: React.Dispatch<React.SetStateAction<LineItem[]>>, index: number) {
@@ -189,8 +199,13 @@ export default function CreateCustomInvoiceForm({
         descriptionField="labor_description"
         priceField="labor_price"
         placeholder="Description (e.g. Tune-up)"
+        quickAdd={[{
+          label: `Service Call ($${SERVICE_CALL_DEFAULT_AMOUNT})`,
+          description: SERVICE_CALL_DESCRIPTION,
+          price: SERVICE_CALL_DEFAULT_AMOUNT.toFixed(2),
+        }]}
         onUpdate={(i, field, value) => updateItem(setLaborItems, i, field, value)}
-        onAdd={() => addItem(setLaborItems)}
+        onAdd={prefill => addItem(setLaborItems, prefill)}
         onRemove={i => removeItem(setLaborItems, i)}
       />
 
