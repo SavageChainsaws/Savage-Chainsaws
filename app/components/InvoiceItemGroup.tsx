@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { liveTitleCase } from '@/lib/text'
+import { LABOR_RATE_PER_MINUTE } from '@/lib/billing'
 
-export type LineItem = { description: string; price: string; quantity?: string }
+export type LineItem = { description: string; price: string; quantity?: string; minutes?: string }
 
 type CatalogMatch = { sku: string; description: string; cost: number; retail_price: number }
 
@@ -37,6 +38,7 @@ export default function InvoiceItemGroup({
   placeholder,
   skuLookup,
   quickAdd,
+  minutesField,
   onUpdate,
   onAdd,
   onRemove,
@@ -53,6 +55,14 @@ export default function InvoiceItemGroup({
   // "+ Service Call" on the Labor group - see SERVICE_CALL_DEFAULT_AMOUNT
   // in lib/billing.ts). Still a completely normal, editable line afterward.
   quickAdd?: { label: string; description: string; price: string }[]
+  // Labor group only - a Min input ahead of the amount; typing minutes
+  // pre-fills the line amount as minutes x LABOR_RATE_PER_MINUTE ($1.67),
+  // so it's already there when tabbing over. The amount stays editable
+  // afterward (e.g. the job ran longer than the clock says) and is still
+  // what gets submitted as the line total - minutes themselves are never
+  // submitted or stored. Applies regardless of STLA/NTSTLA - a timed labor
+  // line is timed either way, parts on the invoice or not.
+  minutesField?: boolean
   onUpdate: (index: number, field: keyof LineItem, value: string) => void
   // prefill, when passed, fills the new line instead of leaving it blank -
   // see quickAdd above. The plain "+ Add X Line" button below always omits
@@ -61,6 +71,14 @@ export default function InvoiceItemGroup({
   onRemove: (index: number) => void
 }) {
   const [lookingUp, setLookingUp] = useState<number | null>(null)
+
+  function handleMinutesChange(i: number, value: string) {
+    onUpdate(i, 'minutes', value)
+    const minutes = Number(value)
+    if (value.trim() && minutes > 0) {
+      onUpdate(i, 'price', (Math.round(minutes * LABOR_RATE_PER_MINUTE * 100) / 100).toFixed(2))
+    }
+  }
 
   async function handleBlur(i: number, value: string) {
     if (!skuLookup) return
@@ -88,6 +106,9 @@ export default function InvoiceItemGroup({
         {title}
         {skuLookup && <span className="text-gray-600 font-normal"> - paste a SKU to auto-fill price</span>}
         {quantityField && <span className="text-gray-600 font-normal"> - Qty x Price = line total</span>}
+        {minutesField && (
+          <span className="text-gray-600 font-normal"> - Minutes x ${LABOR_RATE_PER_MINUTE.toFixed(2)}/min = line total</span>
+        )}
       </label>
       <div className="space-y-2">
         {items.map((item, i) => (
@@ -111,6 +132,18 @@ export default function InvoiceItemGroup({
                 className="w-16 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
               />
             )}
+            {minutesField && (
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={item.minutes ?? ''}
+                onChange={e => handleMinutesChange(i, e.target.value)}
+                placeholder="Min"
+                title="Minutes of labor"
+                className="w-20 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
+              />
+            )}
             <input
               name={priceField}
               type="number"
@@ -119,7 +152,7 @@ export default function InvoiceItemGroup({
               value={item.price}
               onChange={e => onUpdate(i, 'price', e.target.value)}
               placeholder={quantityField ? '0.00 ea' : '0.00'}
-              title={quantityField ? 'Price per unit' : undefined}
+              title={quantityField ? 'Price per unit' : minutesField ? 'Line total' : undefined}
               className="w-28 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
             {items.length > 1 && (

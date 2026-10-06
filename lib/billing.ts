@@ -155,6 +155,13 @@ export const DEFAULT_FL_SALES_TAX_RATE_PERCENT = 7
 export const SERVICE_CALL_DESCRIPTION = 'Service Call'
 export const SERVICE_CALL_DEFAULT_AMOUNT = 75
 
+// Shop labor rate for timed Labor lines - entered as minutes on the invoice
+// forms, which pre-fill the line amount as minutes x this rate (see
+// InvoiceItemGroup's minutesField). Applies to every Labor line regardless
+// of STLA/NTSTLA - a timed repair is timed the same way whether or not
+// parts are also on the invoice.
+export const LABOR_RATE_PER_MINUTE = 1.67
+
 // Shop-wide default (Settings -> FL Sales Tax Rate on the dashboard),
 // looked up fresh on every invoice-creation request rather than cached -
 // this is exactly the "easy for Jesse to change later" lever for jobs

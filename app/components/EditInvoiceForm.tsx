@@ -215,6 +215,7 @@ export default function EditInvoiceForm({
         descriptionField="labor_description"
         priceField="labor_price"
         placeholder="Description (e.g. Tune-up)"
+        minutesField
         quickAdd={[{
           label: `Service Call ($${SERVICE_CALL_DEFAULT_AMOUNT})`,
           description: SERVICE_CALL_DESCRIPTION,
