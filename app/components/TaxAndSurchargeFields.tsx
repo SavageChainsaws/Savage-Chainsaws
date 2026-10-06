@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 // Shared by CreateUnitInvoiceForm and CreateCustomInvoiceForm. Renders the
 // hidden fields the server actually reads (labor_type, tax_rate_percent,
@@ -17,6 +17,7 @@ export default function TaxAndSurchargeFields({
   defaultTaxRatePercent,
   defaultIncludeSurcharge = true,
   defaultLaborType,
+  onLaborTypeChange,
 }: {
   hasParts: boolean
   // Parts + labor only - the tax base (Fla. Admin. Code 12A-1.006).
@@ -36,6 +37,9 @@ export default function TaxAndSurchargeFields({
   // overridden away from what hasParts alone would auto-derive, the edit
   // form should show that override rather than silently reverting to Auto.
   defaultLaborType?: 'STLA' | 'NTSTLA'
+  // Lets the parent form know the effective labor type (auto or manually
+  // set) - the Labor group only offers minutes x rate for STLA.
+  onLaborTypeChange?: (laborType: 'STLA' | 'NTSTLA') => void
 }) {
   const [taxRatePercent, setTaxRatePercent] = useState(defaultTaxRatePercent)
   const [laborTypeOverride, setLaborTypeOverride] = useState<'STLA' | 'NTSTLA' | ''>(
@@ -44,6 +48,9 @@ export default function TaxAndSurchargeFields({
   const [includeSurcharge, setIncludeSurcharge] = useState(defaultIncludeSurcharge)
 
   const laborType = laborTypeOverride || (hasParts ? 'STLA' : 'NTSTLA')
+  useEffect(() => {
+    onLaborTypeChange?.(laborType)
+  }, [laborType, onLaborTypeChange])
   const subtotal = taxableSubtotal + otherCharges
   const taxAmount = hasParts ? Math.round(taxableSubtotal * (taxRatePercent / 100) * 100) / 100 : 0
   const surchargeAmount = includeSurcharge ? Math.round((subtotal + taxAmount) * 0.03 * 100) / 100 : 0

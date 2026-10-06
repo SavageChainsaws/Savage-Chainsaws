@@ -145,6 +145,12 @@ export const LABOR_ONLY_NOTE = 'Labor Only - No Parts or Materials Provided'
 
 export const DEFAULT_FL_SALES_TAX_RATE_PERCENT = 7
 
+// Flat shop labor rate for STLA labor lines - entered as minutes on the
+// invoice forms, which pre-fill the line amount as minutes x this rate
+// (see InvoiceItemGroup). NTSTLA labor lines skip it: those stay a single
+// flat dollar amount Jesse types in.
+export const LABOR_RATE_PER_MINUTE = 1.67
+
 // Shop-wide default (Settings -> FL Sales Tax Rate on the dashboard),
 // looked up fresh on every invoice-creation request rather than cached -
 // this is exactly the "easy for Jesse to change later" lever for jobs

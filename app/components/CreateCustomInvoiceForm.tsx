@@ -32,6 +32,7 @@ export default function CreateCustomInvoiceForm({
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [partsItems, setPartsItems] = useState<LineItem[]>([{ description: '', price: '', quantity: '1' }])
+  const [laborType, setLaborType] = useState<'STLA' | 'NTSTLA'>('NTSTLA')
   const [laborItems, setLaborItems] = useState<LineItem[]>([{ description: '', price: '' }])
   const [paymentPlansEnabled, setPaymentPlansEnabled] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -188,6 +189,7 @@ export default function CreateCustomInvoiceForm({
         items={laborItems}
         descriptionField="labor_description"
         priceField="labor_price"
+        laborMinutes={laborType === 'STLA'}
         placeholder="Description (e.g. Tune-up)"
         onUpdate={(i, field, value) => updateItem(setLaborItems, i, field, value)}
         onAdd={() => addItem(setLaborItems)}
@@ -195,6 +197,7 @@ export default function CreateCustomInvoiceForm({
       />
 
       <TaxAndSurchargeFields
+        onLaborTypeChange={setLaborType}
         hasParts={hasParts}
         taxableSubtotal={partsTotal + laborTotal}
         defaultTaxRatePercent={defaultTaxRatePercent}
