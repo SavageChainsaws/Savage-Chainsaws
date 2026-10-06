@@ -36,6 +36,7 @@ export default function InvoiceItemGroup({
   quantityField,
   placeholder,
   skuLookup,
+  quickAdd,
   onUpdate,
   onAdd,
   onRemove,
@@ -47,8 +48,16 @@ export default function InvoiceItemGroup({
   quantityField?: string
   placeholder: string
   skuLookup?: boolean
+  // One button per entry, next to "+ Add X Line" - clicking it calls onAdd
+  // with this description/price already filled in rather than blank (e.g.
+  // "+ Service Call" on the Labor group - see SERVICE_CALL_DEFAULT_AMOUNT
+  // in lib/billing.ts). Still a completely normal, editable line afterward.
+  quickAdd?: { label: string; description: string; price: string }[]
   onUpdate: (index: number, field: keyof LineItem, value: string) => void
-  onAdd: () => void
+  // prefill, when passed, fills the new line instead of leaving it blank -
+  // see quickAdd above. The plain "+ Add X Line" button below always omits
+  // it.
+  onAdd: (prefill?: Partial<LineItem>) => void
   onRemove: (index: number) => void
 }) {
   const [lookingUp, setLookingUp] = useState<number | null>(null)
@@ -121,13 +130,25 @@ export default function InvoiceItemGroup({
           </div>
         ))}
       </div>
-      <button
-        type="button"
-        onClick={onAdd}
-        className="mt-2 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg"
-      >
-        + Add {title.split(' ')[0]} Line
-      </button>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onAdd()}
+          className="text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg"
+        >
+          + Add {title.split(' ')[0]} Line
+        </button>
+        {quickAdd?.map(qa => (
+          <button
+            key={qa.label}
+            type="button"
+            onClick={() => onAdd({ description: qa.description, price: qa.price })}
+            className="text-xs bg-zinc-800 hover:bg-zinc-700 border border-orange-700/60 text-orange-300 px-3 py-1.5 rounded-lg"
+          >
+            + {qa.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

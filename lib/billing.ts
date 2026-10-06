@@ -145,6 +145,16 @@ export const LABOR_ONLY_NOTE = 'Labor Only - No Parts or Materials Provided'
 
 export const DEFAULT_FL_SALES_TAX_RATE_PERCENT = 7
 
+// Flat minimum charge for a mobile dispatch - the "+ Service Call" quick-add
+// button on the Labor group (see InvoiceItemGroup) pre-fills a new labor
+// line with this description and amount, covering the shop's minimum
+// mileage. The amount is just a starting point: it stays a normal editable
+// line afterward, so a job further out than the minimum can be bumped up
+// by hand before the invoice is submitted. Just a client-side convenience -
+// nothing server-side treats "Service Call" as special, unlike Priority Fee.
+export const SERVICE_CALL_DESCRIPTION = 'Service Call'
+export const SERVICE_CALL_DEFAULT_AMOUNT = 75
+
 // Shop-wide default (Settings -> FL Sales Tax Rate on the dashboard),
 // looked up fresh on every invoice-creation request rather than cached -
 // this is exactly the "easy for Jesse to change later" lever for jobs
