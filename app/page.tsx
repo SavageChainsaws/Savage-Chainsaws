@@ -1938,12 +1938,21 @@ export default async function Home({
       quantity: String(i.quantity),
     }))
     return (
-      <details id={`create-invoice-${unit.id}`} className="group/invoice-panel">
+      <details className="group/invoice-panel">
         <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
           Create Invoice
           <span className="text-xs group-open/invoice-panel:rotate-180 transition">v</span>
         </summary>
-        <div className="w-full mt-2">
+        {/* id lives on this inner, closed-by-default div (not the <details>
+            itself) - a <details>'s own visibility never depends on its open
+            state (the summary always shows), so a fragment link targeting
+            the <details> tag directly doesn't qualify for the browser's
+            auto-open-closed-ancestor-details behavior and just scrolls to
+            the still-collapsed header. Targeting genuinely hidden content
+            instead makes the browser open this <details> for us - see the
+            "Generate Invoice from Order Sheet" link in
+            UnitOrderSheetSection above. */}
+        <div id={`create-invoice-${unit.id}`} className="w-full mt-2">
           <CreateUnitInvoiceForm
             unitId={unit.id}
             defaultLaborPrice={latestCost}
