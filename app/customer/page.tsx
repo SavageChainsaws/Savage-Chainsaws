@@ -279,6 +279,16 @@ export default function CustomerPortal() {
   // by the admin's invoice tool (app/api/invoice/route.ts).
   const [invoiceTotals, setInvoiceTotals] = useState<Record<string, number>>({})
 
+  // Latest invoice's own PDF per unit_id - the authoritative link for the
+  // Needs Approval card (see below), rather than units.invoice_url, which
+  // is a separate field that only an admin-initiated per-unit "Create
+  // Invoice"/"Edit Invoice" or a manual photo upload sets, and never a
+  // standalone/custom invoice (no real unit_id to link back to - see
+  // app/api/invoice/custom/route.ts). Pulling straight from the invoices
+  // table this way means the link always matches whatever was actually
+  // just generated, no separate upload step required.
+  const [invoicePdfUrls, setInvoicePdfUrls] = useState<Record<string, string>>({})
+
   // Every invoice ever billed to this customer (unit-linked and standalone
   // alike) - powers the Active Invoices / Archive buttons up top, including
   // the unpaid-count badge, so a customer can tell at a glance whether they
@@ -482,14 +492,17 @@ export default function CustomerPortal() {
     if (unitIds.length > 0) {
       const { data: invoiceRows } = await supabase
         .from('invoices')
-        .select('unit_id, amount, created_at')
+        .select('unit_id, amount, pdf_url, created_at')
         .in('unit_id', unitIds)
         .order('created_at', { ascending: false })
       const totals: Record<string, number> = {}
+      const pdfUrls: Record<string, string> = {}
       for (const row of invoiceRows || []) {
         if (!(row.unit_id in totals) && row.amount != null) totals[row.unit_id] = Number(row.amount)
+        if (!(row.unit_id in pdfUrls) && row.pdf_url) pdfUrls[row.unit_id] = row.pdf_url
       }
       setInvoiceTotals(totals)
+      setInvoicePdfUrls(pdfUrls)
     }
 
     const { data: allInvoices } = await supabase
@@ -2422,14 +2435,23 @@ export default function CustomerPortal() {
                     Estimate total: ${invoiceTotals[selectedUnit.id].toFixed(2)}
                   </p>
                 )}
-                {selectedUnit.invoice_url && (
+                {/* invoicePdfUrls (the actual generated invoice, read straight
+                    from the invoices table) takes priority over the older
+                    units.invoice_url - that field needs a separate manual
+                    upload step to ever get set, so relying on it alone left
+                    this link missing on an otherwise perfectly normal
+                    generated invoice. Styled as a real button, same weight
+                    as Approve/Deny below - a judgment call needs the actual
+                    line-itemized invoice in front of someone, not a small
+                    underlined link easy to scroll past. */}
+                {(invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url) && (
                   <a
-                    href={selectedUnit.invoice_url}
+                    href={invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url || undefined}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-block text-xs text-orange-400 hover:text-orange-300 underline"
+                    className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg"
                   >
-                    View Full Estimate (PDF) {'->'}
+                    📄 View Full Invoice (PDF) {'->'}
                   </a>
                 )}
 
@@ -2518,9 +2540,9 @@ export default function CustomerPortal() {
                     </div>
                   )}
 
-                  {selectedUnit.invoice_url && (
+                  {(invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url) && (
                     <a
-                      href={selectedUnit.invoice_url}
+                      href={invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url || undefined}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-block text-sm text-orange-400 hover:text-orange-300 underline"
