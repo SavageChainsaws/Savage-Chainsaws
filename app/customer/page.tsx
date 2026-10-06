@@ -1454,6 +1454,30 @@ export default function CustomerPortal() {
       </header>
 
       <div className="max-w-4xl mx-auto p-3 sm:p-4 space-y-4">
+        {/* Loud, animated banner above everything else when a decision is
+            waiting - the "Needs Approval" stat tile below is easy to miss
+            among three other equal-looking tiles (see animate-approval-pulse
+            in globals.css for why). Redundant with that tile on purpose -
+            this is the thing that's supposed to be impossible to miss, not
+            a replacement for the other ways to get there. */}
+        {needsApproval > 0 && firstNeedsApproval && (
+          <button
+            type="button"
+            onClick={() => openUnit(firstNeedsApproval)}
+            className="w-full flex items-center justify-between gap-3 bg-red-600 hover:bg-red-500 text-white rounded-xl px-4 py-3.5 sm:py-4 shadow-lg shadow-red-900/50 animate-approval-pulse transition"
+          >
+            <span className="flex items-center gap-2.5 min-w-0 text-left">
+              <span className="text-2xl shrink-0" aria-hidden="true">⚠️</span>
+              <span className="min-w-0">
+                <span className="block font-bold text-base sm:text-lg leading-tight">
+                  {needsApproval === 1 ? '1 Repair Needs Your Approval' : `${needsApproval} Repairs Need Your Approval`}
+                </span>
+                <span className="block text-xs sm:text-sm text-red-100">Tap here to review and approve</span>
+              </span>
+            </span>
+            <span className="text-2xl shrink-0" aria-hidden="true">{'->'}</span>
+          </button>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <button
             type="button"

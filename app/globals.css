@@ -27,3 +27,18 @@ body {
 .animate-fade-out-delayed {
   animation: fade-out-delayed 2.5s ease-out forwards;
 }
+
+/* Impossible-to-miss alert banner on the customer portal's home screen
+   when a repair is waiting on their decision - a plain stat tile among
+   four equal ones wasn't loud enough (a real, non-technical customer
+   missed it entirely and had to call Jesse to ask what the invoice total
+   even was). A slow (2s) expanding glow reads as "look at me now" without
+   the rapid flicker of old-school <blink> - well under the ~3Hz threshold
+   that can trigger photosensitive seizures. */
+@keyframes approval-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6); }
+  50% { box-shadow: 0 0 0 12px rgba(220, 38, 38, 0); }
+}
+.animate-approval-pulse {
+  animation: approval-pulse 2s ease-out infinite;
+}
