@@ -62,6 +62,7 @@ import {
 } from './actions/orderSheet'
 import { addServiceHistoryEntry, deleteServiceHistoryEntry } from './actions/serviceHistory'
 import { upsertUnitPartOverride, deleteUnitPartOverride } from './actions/unitParts'
+import { addUnitPhoto, deleteUnitPhoto, addDiagnosisMedia } from './actions/unitPhotos'
 
 // Case-insensitive referral code lookup, shared by every flow that can
 // attach a referral_source_id to a customer (createCustomerLogin, addUnit).
@@ -1094,46 +1095,6 @@ async function updateThumbnail(_prevState: { savedAt: number } | null, formData:
   return { savedAt: Date.now() }
 }
 
-async function addUnitPhoto(formData: FormData) {
-  'use server'
-  const { supabase, isAdmin } = await getSessionInfo()
-  if (!isAdmin) throw new Error('Not authorized')
-  const unitId = formData.get('unit_id') as string
-  const photoUrls = (formData.getAll('photo_url') as string[]).filter(Boolean)
-  if (!unitId || photoUrls.length === 0) return
-  await supabase.from('unit_photos').insert(photoUrls.map(url => ({ unit_id: unitId, url })))
-  revalidatePath('/')
-}
-
-async function deleteUnitPhoto(formData: FormData) {
-  'use server'
-  const { supabase, isAdmin } = await getSessionInfo()
-  if (!isAdmin) throw new Error('Not authorized')
-  const id = formData.get('id') as string
-  await supabase.from('unit_photos').delete().eq('id', id)
-  revalidatePath('/')
-}
-
-// Diagnosis Findings - photos/videos the admin captures while diagnosing a
-// unit, kept in the same unit_photos table as the check-in gallery but
-// tagged stage: 'diagnosis' so the two never mix. Takes every file from one
-// multi-select upload in a single bulk insert, rather than one row at a
-// time.
-async function addDiagnosisMedia(formData: FormData) {
-  'use server'
-  const { supabase, isAdmin } = await getSessionInfo()
-  if (!isAdmin) throw new Error('Not authorized')
-  const unitId = formData.get('unit_id') as string
-  const urls = formData.getAll('media_url') as string[]
-  const types = formData.getAll('media_type') as string[]
-  if (!unitId || urls.length === 0) return
-  const rows = urls
-    .map((url, i) => ({ unit_id: unitId, url, media_type: types[i] === 'video' ? 'video' : 'photo', stage: 'diagnosis' }))
-    .filter(r => r.url)
-  if (rows.length === 0) return
-  await supabase.from('unit_photos').insert(rows)
-  revalidatePath('/')
-}
 
 // Compact read-at-a-glance indicator for the Fleet Units list - these are
 // already-completed fleet units, not something to edit from this list, so
