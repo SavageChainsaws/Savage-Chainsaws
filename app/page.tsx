@@ -60,6 +60,7 @@ import {
   deleteOrderSheetItem,
   clearOrderSheet,
 } from './actions/orderSheet'
+import { addServiceHistoryEntry, deleteServiceHistoryEntry } from './actions/serviceHistory'
 
 // Case-insensitive referral code lookup, shared by every flow that can
 // attach a referral_source_id to a customer (createCustomerLogin, addUnit).
@@ -1140,33 +1141,6 @@ async function deleteUnitPartOverride(formData: FormData) {
   if (!isAdmin) throw new Error('Not authorized')
   const id = formData.get('id') as string
   await supabase.from('unit_part_overrides').delete().eq('id', id)
-  revalidatePath('/')
-}
-
-async function addServiceHistoryEntry(formData: FormData) {
-  'use server'
-  const { supabase, isAdmin } = await getSessionInfo()
-  if (!isAdmin) throw new Error('Not authorized')
-  const unitId = formData.get('unit_id') as string
-  const serviceDate = formData.get('service_date') as string
-  const description = (formData.get('description') as string || '').trim()
-  const costRaw = formData.get('cost') as string
-  if (!unitId || !description) return
-  await supabase.from('service_history').insert({
-    unit_id: unitId,
-    service_date: serviceDate || new Date().toISOString().split('T')[0],
-    description,
-    cost: costRaw ? Number(costRaw) : null,
-  })
-  revalidatePath('/')
-}
-
-async function deleteServiceHistoryEntry(formData: FormData) {
-  'use server'
-  const { supabase, isAdmin } = await getSessionInfo()
-  if (!isAdmin) throw new Error('Not authorized')
-  const id = formData.get('id') as string
-  await supabase.from('service_history').delete().eq('id', id)
   revalidatePath('/')
 }
 
