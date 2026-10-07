@@ -12,6 +12,13 @@ export function unitLabel(unit: { model?: string | null; equipment_type?: string
   return unit.nickname || unit.serial_number || 'No model'
 }
 
+// Flat admin-set fee, auto-applied the moment the Priority checkbox is
+// checked (updateStatus in app/actions/unitWorkflow.ts and the Create
+// Invoice flow both derive it from is_priority, never a typed amount) -
+// lives here rather than in unitWorkflow.ts because a 'use server' file
+// can only export async functions, not plain constants.
+export const PRIORITY_FEE = 75
+
 export function isUnderWarranty(unit: { warranty_end: string | null }): boolean {
   if (!unit.warranty_end) return false
   const today = new Date().toISOString().slice(0, 10)
