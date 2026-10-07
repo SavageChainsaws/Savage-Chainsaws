@@ -23,7 +23,18 @@ import { resolveUnitParts } from '@/lib/parts'
 import { sendEmail } from '@/lib/email'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
 import { sendPushToCustomer, sendPushToReferralSource } from '@/lib/push'
-import { unitLabel } from '@/lib/units'
+import {
+  unitLabel,
+  isUnderWarranty,
+  getFleetColor,
+  equipmentGroup,
+  groupLabel,
+  stampHistory,
+  isIdentifyingSerial,
+  escapeLikePattern,
+} from '@/lib/units'
+import { formatDate, formatShortDate } from '@/lib/dates'
+import { hexToRgba } from '@/lib/color'
 import { createAdminClient } from '@/lib/supabase/admin'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
@@ -43,26 +54,6 @@ import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 import PushToggle from './components/PushToggle'
 import { getDefaultTaxRatePercent, parseInvoiceLineItemsForEdit } from '@/lib/billing'
-
-function stampHistory(existing: string | null, entry: string) {
-  const line = `${new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} - ${entry}`
-  return existing ? `${line}\n${existing}` : line
-}
-
-// Placeholder text customers/admin type when the real serial isn't known.
-// Never used to match an existing fleet unit - several different physical
-// units can share the same placeholder, so matching on it would silently
-// merge unrelated equipment into one record.
-const NON_IDENTIFYING_SERIALS = new Set(['unknown', 'n/a', 'na', 'none', 'unk', 'tbd', '-', '--', '?'])
-function isIdentifyingSerial(value: string) {
-  const normalized = value.trim().toLowerCase()
-  return normalized.length > 0 && !NON_IDENTIFYING_SERIALS.has(normalized)
-}
-// ilike treats % and _ as wildcards - escape them so a serial containing
-// either is matched literally instead of as a pattern.
-function escapeLikePattern(value: string) {
-  return value.replace(/[\\%_]/g, '\\$&')
-}
 
 // Case-insensitive referral code lookup, shared by every flow that can
 // attach a referral_source_id to a customer (createCustomerLogin, addUnit).
@@ -1293,40 +1284,6 @@ async function addDiagnosisMedia(formData: FormData) {
   revalidatePath('/')
 }
 
-function getFleetColor(unit: any): 'red' | 'green' | 'orange' {
-  const threeMonthsAgo = new Date()
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-  const lastService = unit.last_service_date ? new Date(unit.last_service_date) : null
-  const purchase = unit.purchase_date ? new Date(unit.purchase_date) : null
-  const reference = lastService || purchase
-  if (unit.status === 'Ready for Pickup' || lastService) {
-    if (reference && reference < threeMonthsAgo) return 'red'
-    return 'green'
-  }
-  if (reference && reference < threeMonthsAgo) return 'red'
-  return 'orange'
-}
-
-function equipmentGroup(type: string | null): number {
-  if (!type) return 3
-  const t = type.toLowerCase()
-  if (t.includes('riding') || (t.includes('mower') && !t.includes('walk'))) return 1
-  if (t.includes('chainsaw') || t.includes('pole') || t.includes('cutquik') || t.includes('hedge')) return 2
-  return 3
-}
-
-function groupLabel(n: number) {
-  if (n === 1) return 'Riding Mowers'
-  if (n === 2) return 'Chainsaws / Handheld'
-  return 'Trimmers & Misc'
-}
-
-function isUnderWarranty(unit: any): boolean {
-  if (!unit.warranty_end) return false
-  const today = new Date().toISOString().slice(0, 10)
-  return unit.warranty_end >= today
-}
-
 // Compact read-at-a-glance indicator for the Fleet Units list - these are
 // already-completed fleet units, not something to edit from this list, so
 // this is deliberately just an icon rather than the interactive Yes/No/
@@ -1496,18 +1453,6 @@ export default async function Home({
 
   const repairUnits = sortStaleFirst(units?.filter(u => u.status !== 'Fleet') || [])
 
-  function formatDate(dateString: string | null) {
-    if (!dateString) return '-'
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-    })
-  }
-  function formatShortDate(dateString: string | null) {
-    if (!dateString) return '-'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-    })
-  }
 
   function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
     return (
@@ -2304,17 +2249,6 @@ export default async function Home({
   // hasn't set their own brand_color (paired with their logo on the
   // customer portal) - used to box off each customer's units on this page.
   const SAVAGE_BRAND_COLOR = '#ea580c'
-
-  function hexToRgba(hex: string, alpha: number): string {
-    const clean = hex.replace('#', '')
-    const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean
-    const num = parseInt(full, 16)
-    if (full.length !== 6 || Number.isNaN(num)) return `rgba(234, 88, 12, ${alpha})`
-    const r = (num >> 16) & 255
-    const g = (num >> 8) & 255
-    const b = num & 255
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`
-  }
 
   function groupUnitsByCustomer(unitList: any[]) {
     const groups = new Map<string, { customer: any; units: any[] }>()

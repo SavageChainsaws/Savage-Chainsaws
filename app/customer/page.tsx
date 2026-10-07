@@ -16,6 +16,8 @@ import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { normalizeEmail, liveTitleCase, toTitleCase } from '@/lib/text'
+import { isUnderWarranty, isIdentifyingSerial, escapeLikePattern } from '@/lib/units'
+import { formatShortDate } from '@/lib/dates'
 
 const supabase = createClient()
 
@@ -40,12 +42,6 @@ type Unit = {
   hour_meter: string | null
   warranty_end: string | null
   last_service_date: string | null
-}
-
-function isUnderWarranty(unit: { warranty_end: string | null }): boolean {
-  if (!unit.warranty_end) return false
-  const today = new Date().toISOString().slice(0, 10)
-  return unit.warranty_end >= today
 }
 
 // Read-only shield indicator, reusing the same isUnderWarranty()/
@@ -100,13 +96,6 @@ function needsMaintenanceReminder(unit: { status: string; last_service_date: str
   const fourMonthsAgo = new Date()
   fourMonthsAgo.setMonth(fourMonthsAgo.getMonth() - 4)
   return new Date(unit.last_service_date) < fourMonthsAgo
-}
-
-function formatShortDate(dateString: string | null): string {
-  if (!dateString) return '-'
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
 }
 
 function monthsSince(dateString: string): number {
@@ -209,21 +198,6 @@ const EQUIPMENT_CATEGORIES = [
   'Backpack Sprayer',
   'Other',
 ]
-
-// Placeholder text customers/admin type when the real serial isn't known.
-// Never used to match an existing fleet unit - several different physical
-// units can share the same placeholder, so matching on it would silently
-// merge unrelated equipment into one record.
-const NON_IDENTIFYING_SERIALS = new Set(['unknown', 'n/a', 'na', 'none', 'unk', 'tbd', '-', '--', '?'])
-function isIdentifyingSerial(value: string) {
-  const normalized = value.trim().toLowerCase()
-  return normalized.length > 0 && !NON_IDENTIFYING_SERIALS.has(normalized)
-}
-// ilike treats % and _ as wildcards - escape them so a serial containing
-// either is matched literally instead of as a pattern.
-function escapeLikePattern(value: string) {
-  return value.replace(/[\\%_]/g, '\\$&')
-}
 
 // Fires the admin-facing push for an event this page just wrote to
 // Supabase directly (client-side, under RLS) - the actual send needs the
