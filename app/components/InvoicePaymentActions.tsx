@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useRef, useState } from 'react'
 
 type LinkState = { success: boolean; message: string; url?: string } | null
 type StatusState = { success: boolean; message: string; paid?: boolean } | null
@@ -29,6 +29,26 @@ export default function InvoicePaymentActions({
   const [copied, setCopied] = useState(false)
 
   const currentUrl = genState?.url || paymentLinkUrl
+
+  // Auto-copy the instant a link is freshly generated - one click on "Get
+  // Link" leaves it already on the clipboard, ready to paste into a text,
+  // instead of needing a second click on Copy right after. Keyed off
+  // genState.url specifically (not currentUrl/paymentLinkUrl) so this only
+  // ever fires right after a genuine generate action, never on every
+  // re-render of an invoice that already had a link from a previous visit.
+  const copiedUrlRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!genState?.success || !genState.url || copiedUrlRef.current === genState.url) return
+    copiedUrlRef.current = genState.url
+    navigator.clipboard.writeText(genState.url).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      },
+      () => {}
+    )
+  }, [genState])
+
   // Pre-filled SMS body for customers with no email on file, or who'd
   // rather get a text - sms: link support (and whether ?body= vs &body=
   // is honored) varies by device/OS, and does nothing on a desktop browser
