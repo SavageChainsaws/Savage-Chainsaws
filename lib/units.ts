@@ -2,6 +2,42 @@
 // route, which both need to describe a unit the same way without importing
 // from inside a page component.
 
+// Maps a model's two-letter prefix to its equipment type - shared by the
+// customer portal's Add to Fleet, Check In, and Edit Unit forms so picking
+// a model can auto-fill the type without the customer choosing twice.
+export const STIHL_PREFIX_MAP: Record<string, string> = {
+  FC: 'Edger',
+  FS: 'String Trimmer',
+  MS: 'Chainsaw',
+  HL: 'Hedge Trimmer',
+  HT: 'Pole Saw',
+  TS: 'Cut Quik Saw',
+  KM: 'Kombi Unit',
+  HS: 'Hedge Trimmer',
+  BR: 'Backpack Blower',
+  BG: 'Hand Blower',
+  RB: 'Pressure Washer',
+  RZ: 'Riding Lawn Mower',
+  SR: 'Backpack Sprayer',
+}
+
+export const EQUIPMENT_CATEGORIES = [
+  'Chainsaw',
+  'Pole Saw',
+  'String Trimmer',
+  'Hedge Trimmer',
+  'Handheld Hedge Trimmer',
+  'Edger',
+  'Cut Quik Saw',
+  'Kombi Unit',
+  'Backpack Blower',
+  'Hand Blower',
+  'Pressure Washer',
+  'Riding Lawn Mower',
+  'Backpack Sprayer',
+  'Other',
+]
+
 // Model - Type first - never lead with serial
 export function unitLabel(unit: { model?: string | null; equipment_type?: string | null; nickname?: string | null; serial_number?: string | null }) {
   const model = (unit.model || '').trim()
