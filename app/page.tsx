@@ -12,10 +12,6 @@ import NotesForm from './components/NotesForm'
 import ThumbnailForm from './components/ThumbnailForm'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
-import { UnitPhotoGallery } from './components/UnitPhotoGallery'
-import { BeforeAfterCompare } from './components/BeforeAfterCompare'
-import UnitPhotoUpload from './components/UnitPhotoUpload'
-import UppercaseInput from './components/UppercaseInput'
 import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
 import { resolveUnitParts } from '@/lib/parts'
@@ -44,19 +40,18 @@ import EditInvoiceForm from './components/EditInvoiceForm'
 import TitleCaseInput from './components/TitleCaseInput'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
-import DiagnosisMediaUpload from './components/DiagnosisMediaUpload'
 import PriorityCheckbox from './components/PriorityCheckbox'
 import PushToggle from './components/PushToggle'
+import CustomerInfoSection from './components/CustomerInfoSection'
+import UnitRepliesSection from './components/UnitRepliesSection'
+import MostRecentServiceHistorySection from './components/MostRecentServiceHistorySection'
+import UnitBeforeAfterCompareSection from './components/UnitBeforeAfterCompareSection'
+import DiagnosisFindingsSection from './components/DiagnosisFindingsSection'
+import UnitPhotosSection from './components/UnitPhotosSection'
+import ServiceHistorySection from './components/ServiceHistorySection'
+import UnitPartsSection from './components/UnitPartsSection'
+import UnitOrderSheetSection from './components/UnitOrderSheetSection'
 import { getDefaultTaxRatePercent, parseInvoiceLineItemsForEdit } from '@/lib/billing'
-import {
-  addOrderSheetItem,
-  updateOrderSheetItemQuantity,
-  deleteOrderSheetItem,
-  clearOrderSheet,
-} from './actions/orderSheet'
-import { addServiceHistoryEntry, deleteServiceHistoryEntry } from './actions/serviceHistory'
-import { upsertUnitPartOverride, deleteUnitPartOverride } from './actions/unitParts'
-import { addUnitPhoto, deleteUnitPhoto, addDiagnosisMedia } from './actions/unitPhotos'
 import { updateShopSetting, regenerateInstantSignupToken } from './actions/shopSettings'
 import {
   createCustomerLogin,
@@ -73,7 +68,6 @@ import {
   markDecisionSeen,
   snoozeUnit,
   nudgeUnit,
-  replyToMessage,
   updateNotes,
   updateThumbnail,
 } from './actions/unitWorkflow'
@@ -353,352 +347,6 @@ export default async function Home({
     )
   }
 
-  function UnitPartsSection({ unit }: { unit: any }) {
-    const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
-    return (
-      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/parts-panel">
-        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider">
-            Parts &amp; SKUs (admin only){parts.length > 0 ? ` (${parts.length})` : ''}
-          </span>
-          <span className="text-gray-500 text-xs group-open/parts-panel:rotate-180 transition">v</span>
-        </summary>
-        {parts.length === 0 ? (
-          <div className="mb-2 space-y-1.5">
-            <p className="text-xs text-gray-500">No default parts set for this model yet.</p>
-            <Link href="/parts" className="inline-block text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
-              Add one in the Parts Catalog
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-1.5 mb-2">
-            {parts.map(p => (
-              <div key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="text-gray-300 w-28 shrink-0">{p.part_name}</span>
-                <span className="font-mono text-orange-300">{p.sku}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  p.sku_type === 'Aftermarket' ? 'bg-purple-500/20 text-purple-400' : 'bg-zinc-700 text-gray-300'
-                }`}>
-                  {p.sku_type}
-                </span>
-                {p.isOverride ? (
-                  <>
-                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-400">
-                      {p.hasDefault ? 'Overridden' : 'Unit-only'}
-                    </span>
-                    <form action={deleteUnitPartOverride}>
-                      <input type="hidden" name="id" value={p.id} />
-                      <button type="submit" className="text-xs text-red-400 hover:text-red-300">
-                        {p.hasDefault ? 'Reset to default' : 'Remove'}
-                      </button>
-                    </form>
-                  </>
-                ) : (
-                  <span className="text-xs text-gray-600">Model default</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        <details className="group/parts">
-          <summary className="inline-flex w-fit text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg cursor-pointer list-none select-none">
-            Override or add a part for this unit
-          </summary>
-          <form action={upsertUnitPartOverride} className="mt-2 flex flex-wrap gap-2">
-            <input type="hidden" name="unit_id" value={unit.id} />
-            <input type="hidden" name="unit_model" value={unit.model || ''} />
-            <input
-              name="part_name"
-              list={`parts-${unit.id}`}
-              placeholder="Part name (e.g. Blade)"
-              className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            <datalist id={`parts-${unit.id}`}>
-              {parts.map(p => <option key={p.id} value={p.part_name} />)}
-            </datalist>
-            <UppercaseInput
-              name="sku"
-              placeholder="SKU"
-              className="flex-1 min-w-[140px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            <select
-              name="sku_type"
-              defaultValue="OEM"
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            >
-              <option value="OEM">OEM (sets default for this model)</option>
-              <option value="Aftermarket">Aftermarket (this unit only)</option>
-            </select>
-            <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
-              Save
-            </button>
-          </form>
-        </details>
-      </details>
-    )
-  }
-
-  // Order Sheet - see addOrderSheetItem above for the full rationale.
-  // Paste a SKU from STIHL's dealer parts catalog, it auto-fills from
-  // parts_catalog (real distributor pricing), and the running list can be
-  // printed via /order-sheet/[unitId] to take to the store.
-  function UnitOrderSheetSection({ unit }: { unit: any }) {
-    const items = (orderSheetItemsAll || []).filter(i => i.unit_id === unit.id)
-    const totalRetail = items.reduce((sum, i) => sum + (Number(i.retail_price) || 0) * i.quantity, 0)
-    return (
-      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/order-sheet-panel">
-        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg mb-2">
-          Order Sheet{items.length > 0 ? ` (${items.length})` : ''}
-          <span className="text-xs group-open/order-sheet-panel:rotate-180 transition">v</span>
-        </summary>
-        {items.length === 0 ? (
-          <p className="text-xs text-gray-500 mb-2">No parts added yet - paste a SKU below as you diagnose.</p>
-        ) : (
-          <div className="space-y-1.5 mb-2">
-            {items.map(i => (
-              <div key={i.id} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="font-mono text-orange-300">{i.sku}</span>
-                <span className="text-gray-300 flex-1 min-w-[120px]">{i.description}</span>
-                <form action={updateOrderSheetItemQuantity} className="flex items-center gap-1">
-                  <input type="hidden" name="id" value={i.id} />
-                  <label className="text-xs text-gray-500">Qty</label>
-                  <input
-                    name="quantity"
-                    type="number"
-                    min={1}
-                    defaultValue={i.quantity}
-                    className="w-14 bg-zinc-800 border border-zinc-700 rounded-lg px-1.5 py-0.5 text-xs"
-                  />
-                  <button type="submit" className="text-xs text-orange-400 hover:text-orange-300">Save</button>
-                </form>
-                <span className="text-xs text-gray-400 w-16 text-right">
-                  {i.retail_price != null ? `$${Number(i.retail_price).toFixed(2)}` : '-'}
-                </span>
-                <form action={deleteOrderSheetItem}>
-                  <input type="hidden" name="id" value={i.id} />
-                  <button type="submit" className="text-xs text-red-400 hover:text-red-300">Remove</button>
-                </form>
-              </div>
-            ))}
-            <p className="text-xs text-gray-500 pt-1">Estimated retail total: ${totalRetail.toFixed(2)}</p>
-          </div>
-        )}
-        {/* key={items.length} forces a remount after each successful Add, so
-            the uncontrolled SKU/quantity inputs reset to empty - otherwise
-            React reconciles the same DOM nodes across the revalidatePath
-            re-render and leaves the typed SKU sitting in the field. */}
-        <form key={items.length} action={addOrderSheetItem} className="flex flex-wrap gap-2 mb-2">
-          <input type="hidden" name="unit_id" value={unit.id} />
-          <UppercaseInput
-            name="sku"
-            placeholder="Paste SKU from Steele's/STIHL catalog"
-            className="flex-1 min-w-[160px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-          />
-          <input
-            name="quantity"
-            type="number"
-            min={1}
-            defaultValue={1}
-            className="w-16 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
-          />
-          <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
-            Add
-          </button>
-        </form>
-        {items.length > 0 && (
-          // Jumps to CreateInvoiceSection's <details> below (see its
-          // matching id) - browsers auto-expand a closed <details> you link
-          // to (the HTML "reveal" algorithm), so this needs no client JS to
-          // both open it and scroll it into view, already pre-filled with
-          // these same Order Sheet parts at retail price.
-          <a
-            href={`#create-invoice-${unit.id}`}
-            className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg mb-2"
-          >
-            Generate Invoice from Order Sheet {'->'}
-          </a>
-        )}
-        <div className="flex gap-3">
-          {items.length > 0 && (
-            <Link
-              href={`/order-sheet/${unit.id}`}
-              target="_blank"
-              className="text-xs text-orange-400 hover:text-orange-300"
-            >
-              Print Order Sheet {'->'}
-            </Link>
-          )}
-          {items.length > 0 && (
-            <form action={clearOrderSheet}>
-              <input type="hidden" name="unit_id" value={unit.id} />
-              <button type="submit" className="text-xs text-gray-500 hover:text-red-400">Clear list</button>
-            </form>
-          )}
-        </div>
-      </details>
-    )
-  }
-
-  function UnitPhotosSection({ unit }: { unit: any }) {
-    const extraPhotos = (unitPhotosAll || []).filter(p => p.unit_id === unit.id && p.stage === 'checkin')
-    const photos = [
-      ...(unit.photo_url ? [{ id: 'checkin', url: unit.photo_url as string, caption: 'Check-in photo', deletable: false }] : []),
-      ...extraPhotos.map(p => ({ id: p.id as string, url: p.url as string, caption: p.caption as string | null })),
-    ]
-    return (
-      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/photos-panel">
-        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider">
-            Photos{photos.length > 0 ? ` (${photos.length})` : ''}
-          </span>
-          <span className="text-gray-500 text-xs group-open/photos-panel:rotate-180 transition">v</span>
-        </summary>
-        <div className="space-y-2">
-          {photos.length === 0 ? (
-            <p className="text-xs text-gray-500">No photos yet.</p>
-          ) : (
-            <UnitPhotoGallery photos={photos} onDelete={deleteUnitPhoto} />
-          )}
-          <UnitPhotoUpload unitId={unit.id} action={addUnitPhoto} />
-        </div>
-      </details>
-    )
-  }
-
-  // Diagnosis Findings - a section deliberately separate from Photos above:
-  // its own heading, own upload control (multi-select, photos and videos),
-  // own storage tag (stage: 'diagnosis'). Never mixes with the check-in
-  // gallery. Visible to the customer too (see the matching block in
-  // app/customer/page.tsx), right alongside Diagnosis Notes.
-  function DiagnosisFindingsSection({ unit }: { unit: { id: string } }) {
-    const media = (unitPhotosAll || []).filter(p => p.unit_id === unit.id && p.stage === 'diagnosis')
-    return (
-      <details className="mt-3 group/diagnosis-media-panel" open={media.length > 0}>
-        {/* Deliberately loud - this used to be an easy-to-miss plain-text
-            caption. A highlighted, bordered box makes it impossible to
-            scroll past without noticing there's media attached. */}
-        <summary className="flex items-center justify-between gap-2 cursor-pointer list-none select-none bg-orange-500/15 border border-orange-500/40 rounded-lg px-3 py-2.5 hover:bg-orange-500/20 transition">
-          <span className="flex items-center gap-2 text-sm font-bold text-orange-300 uppercase tracking-wide">
-            Diagnosis Findings - Photos &amp; Videos
-            {media.length > 0 && (
-              <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">{media.length}</span>
-            )}
-          </span>
-          <span className="text-orange-400 text-xs group-open/diagnosis-media-panel:rotate-180 transition">v</span>
-        </summary>
-        <div className="space-y-2 mt-2">
-          {media.length === 0 ? (
-            <p className="text-xs text-gray-500">No diagnosis photos/videos yet.</p>
-          ) : (
-            <UnitPhotoGallery
-              photos={media.map(p => ({ id: p.id as string, url: p.url as string, caption: p.caption as string | null, mediaType: p.media_type as 'photo' | 'video' }))}
-              onDelete={deleteUnitPhoto}
-            />
-          )}
-          <DiagnosisMediaUpload unitId={unit.id} action={addDiagnosisMedia} />
-        </div>
-      </details>
-    )
-  }
-
-  // Pairs the earliest check-in photo with the most recent diagnosis photo
-  // on file so drop-off vs. pickup condition is visible at a glance -
-  // renders nothing (via BeforeAfterCompare's own guard) unless both a
-  // check-in and a diagnosis photo actually exist for this unit. Works
-  // retroactively on any unit's existing photos, not just future check-ins.
-  function BeforeAfterCompareSection({ unit }: { unit: { id: string; photo_url: string | null; created_at: string } }) {
-    const beforePhotos = [
-      ...(unit.photo_url ? [{ id: 'checkin-primary', url: unit.photo_url as string, label: formatShortDate(unit.created_at) }] : []),
-      ...(unitPhotosAll || [])
-        .filter(p => p.unit_id === unit.id && p.stage === 'checkin')
-        .map(p => ({ id: p.id as string, url: p.url as string, label: p.caption || formatShortDate(p.created_at) })),
-    ]
-    const afterPhotos = (unitPhotosAll || [])
-      .filter(p => p.unit_id === unit.id && p.stage === 'diagnosis' && p.media_type !== 'video')
-      .map(p => ({ id: p.id as string, url: p.url as string, label: p.caption || formatShortDate(p.created_at) }))
-    return <BeforeAfterCompare beforePhotos={beforePhotos} afterPhotos={afterPhotos} />
-  }
-
-  // Replaces the old raw unit.history timestamp log - a quick "this unit
-  // was last in for X" reference instead. service_history rows are only
-  // created when a unit reaches Ready for Pickup, so the most recent entry
-  // is naturally the most recent *prior* completed visit, never the one
-  // in progress. Shows nothing if the unit has never completed a visit.
-  function MostRecentServiceHistorySection({ unit }: { unit: { id: string } }) {
-    const latest = (serviceHistoryAll || [])
-      .filter(e => e.unit_id === unit.id)[0]
-    if (!latest) return null
-    return (
-      <div className="mt-3 border-t border-zinc-800 pt-2.5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Most Recent Service History</p>
-        <p className="text-xs text-gray-500">{formatShortDate(latest.service_date)}</p>
-        <p className="text-sm text-gray-300 whitespace-pre-wrap">{latest.description}</p>
-      </div>
-    )
-  }
-
-  function ServiceHistorySection({ unit }: { unit: any }) {
-    const entries = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
-    return (
-      <details className="mt-3 border-t border-zinc-800 pt-2.5 group/history-panel">
-        <summary className="flex items-center justify-between cursor-pointer list-none select-none mb-2">
-          <span className="text-xs text-gray-500 uppercase tracking-wider">
-            Service History{entries.length > 0 ? ` (${entries.length})` : ''}
-          </span>
-          <span className="text-gray-500 text-xs group-open/history-panel:rotate-180 transition">v</span>
-        </summary>
-        {entries.length === 0 ? (
-          <p className="text-xs text-gray-500 mb-2">
-            No service history yet. Entries are logged automatically when a unit is marked Ready for Pickup.
-          </p>
-        ) : (
-          <div className="space-y-1.5 mb-2">
-            {entries.map(e => (
-              <div key={e.id} className="flex flex-wrap items-start gap-2 text-sm">
-                <span className="text-gray-500 w-24 shrink-0">{formatShortDate(e.service_date)}</span>
-                <span className="text-gray-300 flex-1 min-w-[140px]">{e.description}</span>
-                <span className="font-mono text-orange-300">{e.cost != null ? `$${Number(e.cost).toFixed(2)}` : '-'}</span>
-                <form action={deleteServiceHistoryEntry}>
-                  <input type="hidden" name="id" value={e.id} />
-                  <button type="submit" className="text-xs text-red-400 hover:text-red-300">Remove</button>
-                </form>
-              </div>
-            ))}
-          </div>
-        )}
-        <details className="group/service-history">
-          <summary className="inline-flex w-fit text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-orange-400 px-3 py-1.5 rounded-lg cursor-pointer list-none select-none">
-            Add a service history entry
-          </summary>
-          <form action={addServiceHistoryEntry} className="mt-2 flex flex-wrap gap-2">
-            <input type="hidden" name="unit_id" value={unit.id} />
-            <input
-              name="service_date"
-              type="date"
-              defaultValue={new Date().toISOString().split('T')[0]}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            <TitleCaseInput
-              name="description"
-              placeholder="Work performed"
-              className="flex-1 min-w-[140px] bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            <input
-              name="cost"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Cost $"
-              className="w-28 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
-            />
-            <button type="submit" className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-3 py-1.5 rounded-lg">
-              Save
-            </button>
-          </form>
-        </details>
-      </details>
-    )
-  }
 
   // Admin-only. Generates a PDF invoice on demand via /api/invoice - line
   // items are entered fresh each time (not stored), since not every job is
@@ -810,47 +458,6 @@ export default async function Home({
     )
   }
 
-  // The messages thread for this unit (customer questions and admin
-  // replies, distinguished by is_admin) plus a small form to send a new
-  // admin reply - previously read-only from the admin side.
-  type UnitReply = { id: string; customer_name: string | null; is_admin: boolean; created_at: string; message: string }
-  function UnitReplies({ unitId, messages }: { unitId: string; messages: UnitReply[] }) {
-    return (
-      <div className="mt-3 border-t border-zinc-800 pt-2.5">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Messages</p>
-        {messages.length > 0 && (
-          <div className="space-y-2 mb-2">
-            {messages.map(m => (
-              <div
-                key={m.id}
-                className={`border rounded-lg px-3 py-2 ${
-                  m.is_admin ? 'bg-orange-500/10 border-orange-500/30' : 'bg-zinc-800/60 border-zinc-700'
-                }`}
-              >
-                <p className="text-xs text-gray-500">
-                  {m.is_admin ? 'Savage Chainsaws' : m.customer_name || 'Customer'} -{' '}
-                  {new Date(m.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                </p>
-                <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{m.message}</p>
-              </div>
-            ))}
-          </div>
-        )}
-        <form action={replyToMessage} className="flex flex-col sm:flex-row gap-2">
-          <input type="hidden" name="unit_id" value={unitId} />
-          <input
-            name="message"
-            placeholder="Reply to the customer..."
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-          />
-          <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0">
-            Reply
-          </button>
-        </form>
-      </div>
-    )
-  }
-
   // The full editable unit panel - status dropdown, priority/fee/cost,
   // notes, invoice upload, withdraw/pickup, nudge, history, photos, parts,
   // service history. Shared between the per-customer "All Units - Repair
@@ -861,41 +468,6 @@ export default async function Home({
   // accordion group (via <details name>) so expanding one unit in a list
   // auto-collapses the others in that same list without affecting the
   // other list.
-  // Read-only lookup of the customer's own contact info (phone/email/
-  // secondary email) from their existing customer record - nothing here
-  // is unit-specific, it's just surfaced from the action row so admin
-  // doesn't have to leave this panel to find a number to call.
-  function CustomerInfoSection({
-    customer,
-  }: {
-    customer: { name: string; phone: string | null; email: string | null; secondary_email: string | null } | null
-  }) {
-    if (!customer) return null
-    const fields: { label: string; href: string; value: string }[] = []
-    if (customer.phone) fields.push({ label: 'Phone', href: `tel:${customer.phone}`, value: customer.phone })
-    if (customer.email) fields.push({ label: 'Email', href: `mailto:${customer.email}`, value: customer.email })
-    if (customer.secondary_email) {
-      fields.push({ label: 'Secondary Email', href: `mailto:${customer.secondary_email}`, value: customer.secondary_email })
-    }
-    if (fields.length === 0) return null
-    return (
-      <details className="group/customer-info ml-auto">
-        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg whitespace-nowrap">
-          Customer Info
-          <span className="text-xs group-open/customer-info:rotate-180 transition">v</span>
-        </summary>
-        <div className="w-full mt-2 bg-zinc-800/60 border border-zinc-700 rounded-lg px-3 py-2.5 space-y-1.5">
-          <p className="text-sm font-medium text-white">{customer.name}</p>
-          {fields.map(f => (
-            <p key={f.label} className="text-xs text-gray-400">
-              <span className="text-gray-500">{f.label}: </span>
-              <a href={f.href} className="text-orange-400 hover:text-orange-300 underline">{f.value}</a>
-            </p>
-          ))}
-        </div>
-      </details>
-    )
-  }
 
   function UnitDetailPanel({ unit, accordionName }: { unit: any; accordionName: string }) {
     const unitCustomer = customers?.find(c => c.id === unit.customer_id) || null
@@ -1030,7 +602,7 @@ export default async function Home({
                   />
                 </div>
 
-                <UnitPhotosSection unit={unit} />
+                <UnitPhotosSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
 
                 {/* Everything to do with diagnosing this unit - Diagnosis
                     Notes, the quote/estimate link, Parts & SKUs, and
@@ -1049,16 +621,16 @@ export default async function Home({
                     <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
                   )}
                   <EditInvoiceSection unit={unit} />
-                  <DiagnosisFindingsSection unit={unit} />
-                  <BeforeAfterCompareSection unit={unit} />
-                  <UnitPartsSection unit={unit} />
-                  <UnitOrderSheetSection unit={unit} />
+                  <DiagnosisFindingsSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
+                  <UnitBeforeAfterCompareSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
+                  <UnitPartsSection unit={unit} modelPartsAll={modelPartsAll || []} unitOverridesAll={unitOverridesAll || []} />
+                  <UnitOrderSheetSection unit={unit} orderSheetItemsAll={orderSheetItemsAll || []} />
                 </div>
               </UnitStatusProvider>
             )
           })()}
 
-          <UnitReplies unitId={unit.id} messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
+          <UnitRepliesSection unitId={unit.id} messages={unitMessagesAll?.filter(m => m.unit_id === unit.id) || []} />
 
           {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing' || unit.status === 'Registered') && (
             <form action={returnToFleet} className="pt-3">
@@ -1075,8 +647,8 @@ export default async function Home({
             </p>
           )}
 
-          <MostRecentServiceHistorySection unit={unit} />
-          <ServiceHistorySection unit={unit} />
+          <MostRecentServiceHistorySection unitId={unit.id} serviceHistoryAll={serviceHistoryAll || []} />
+          <ServiceHistorySection unit={unit} serviceHistoryAll={serviceHistoryAll || []} />
         </div>
       </details>
     )
@@ -1683,11 +1255,11 @@ export default async function Home({
                                 </div>
                               </form>
 
-                              <UnitPhotosSection unit={unit} />
-                              <BeforeAfterCompareSection unit={unit} />
-                              <UnitPartsSection unit={unit} />
-                              <UnitOrderSheetSection unit={unit} />
-                              <ServiceHistorySection unit={unit} />
+                              <UnitPhotosSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
+                              <UnitBeforeAfterCompareSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
+                              <UnitPartsSection unit={unit} modelPartsAll={modelPartsAll || []} unitOverridesAll={unitOverridesAll || []} />
+                              <UnitOrderSheetSection unit={unit} orderSheetItemsAll={orderSheetItemsAll || []} />
+                              <ServiceHistorySection unit={unit} serviceHistoryAll={serviceHistoryAll || []} />
                               <CreateInvoiceSection unit={unit} />
 
                               {unit.status === 'Fleet' && (
