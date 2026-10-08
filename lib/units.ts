@@ -89,6 +89,29 @@ export function isUnderWarranty(unit: { warranty_end: string | null }): boolean 
   return unit.warranty_end >= today
 }
 
+type GroupableCustomer = { id: string; name?: string | null; brand_color?: string | null; logo_url?: string | null; referral_source_id?: string | null }
+
+// Buckets a flat unit list by customer_id, biggest group first (ties broken
+// alphabetically) - used to box off each customer's units on the admin
+// dashboard's Action Center and status-queue views.
+export function groupUnitsByCustomer<U extends { customer_id: string | null }>(
+  unitList: U[],
+  customers: GroupableCustomer[] | null | undefined
+) {
+  const groups = new Map<string, { customer: GroupableCustomer | null; units: U[] }>()
+  for (const unit of unitList) {
+    const key = unit.customer_id || 'unknown'
+    if (!groups.has(key)) {
+      groups.set(key, { customer: customers?.find(c => c.id === unit.customer_id) || null, units: [] })
+    }
+    groups.get(key)!.units.push(unit)
+  }
+  return Array.from(groups.values()).sort((a, b) => {
+    if (b.units.length !== a.units.length) return b.units.length - a.units.length
+    return (a.customer?.name || 'Unknown').localeCompare(b.customer?.name || 'Unknown')
+  })
+}
+
 // A live, color-coded countdown - never a bare negative number, and never
 // silently disappears once the end date has passed, so a customer can't
 // mistake "no warning shown" for "still covered." Shared by the customer
