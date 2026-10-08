@@ -23,10 +23,10 @@ import MyFleetTable from '../components/MyFleetTable'
 import UnitsSummaryHeader from '../components/UnitsSummaryHeader'
 import InvoiceListPanel from '../components/InvoiceListPanel'
 import PrivateNoteEditor from '../components/PrivateNoteEditor'
+import UnitDetailActions from '../components/UnitDetailActions'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { notifyAdminPush } from '@/lib/notifyAdminPush'
-import { liveTitleCase, toTitleCase } from '@/lib/text'
-import { isUnderWarranty, STIHL_PREFIX_MAP, EQUIPMENT_CATEGORIES, unitLabel, warrantyCountdown, ACTIVE_STATUSES } from '@/lib/units'
+import { isUnderWarranty, unitLabel, warrantyCountdown, ACTIVE_STATUSES } from '@/lib/units'
 import { formatShortDate } from '@/lib/dates'
 
 const supabase = createClient()
@@ -164,30 +164,7 @@ export default function CustomerPortal() {
 
   const [replyBusy, setReplyBusy] = useState(false)
 
-  const [editNickname, setEditNickname] = useState('')
-  const [editSerial, setEditSerial] = useState('')
-  const [editModel, setEditModel] = useState('')
-  const [editType, setEditType] = useState('')
-  const [editCustomType, setEditCustomType] = useState('')
-  const [editTypeManuallySet, setEditTypeManuallySet] = useState(false)
-  const [editHours, setEditHours] = useState('')
-  const [thumbFile, setThumbFile] = useState<File | null>(null)
-  const [thumbPreview, setThumbPreview] = useState<string | null>(null)
-  const [serviceNote, setServiceNote] = useState('')
   const [detailBusy, setDetailBusy] = useState(false)
-
-  function handleEditModelChange(value: string) {
-    const upper = value.toUpperCase()
-    setEditModel(upper)
-    if (editTypeManuallySet) return
-    const prefix = upper.trim().slice(0, 2)
-    setEditType(STIHL_PREFIX_MAP[prefix] || (upper.trim() ? 'Other' : ''))
-  }
-
-  function handleEditTypeChange(value: string) {
-    setEditTypeManuallySet(true)
-    setEditType(value)
-  }
 
   useEffect(() => {
     loadData()
@@ -327,33 +304,8 @@ export default function CustomerPortal() {
     setReferralWelcome(null)
   }
 
-  async function uploadFile(file: File, prefix: string) {
-    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const fileName = `${prefix}-${Date.now()}-${safe}`
-    const { error } = await supabase.storage
-      .from('invoices')
-      .upload(fileName, file, {
-        contentType: file.type || 'image/jpeg',
-        upsert: false,
-      })
-    if (error) throw error
-    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-    return publicUrl
-  }
-
   function openUnit(unit: Unit) {
     setSelectedUnit(unit)
-    setEditNickname(unit.nickname || '')
-    setEditSerial(unit.serial_number || '')
-    setEditModel(unit.model || '')
-    setEditType(unit.equipment_type || '')
-    setEditCustomType('')
-    setEditTypeManuallySet(false)
-    setEditHours(unit.hour_meter || '')
-    setThumbFile(null)
-    if (thumbPreview) URL.revokeObjectURL(thumbPreview)
-    setThumbPreview(null)
-    setServiceNote('')
     setMessage(null)
     setShowCheckIn(false)
     setShowAddFleet(false)
@@ -400,10 +352,6 @@ export default function CustomerPortal() {
 
   function closeUnit() {
     setSelectedUnit(null)
-    setThumbFile(null)
-    if (thumbPreview) URL.revokeObjectURL(thumbPreview)
-    setThumbPreview(null)
-    setServiceNote('')
     setServiceHistory([])
     setUnitPhotos([])
     setUnitReplies([])
@@ -451,144 +399,6 @@ export default function CustomerPortal() {
     setAskingQuestion(true)
     replyInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     replyInputRef.current?.focus()
-  }
-
-  function onThumbPick(file: File | null) {
-    setThumbFile(file)
-    if (thumbPreview) URL.revokeObjectURL(thumbPreview)
-    setThumbPreview(file ? URL.createObjectURL(file) : null)
-  }
-
-  async function saveUnitDetails() {
-    if (!selectedUnit || !editSerial.trim()) {
-      setMessage('Serial number is required.')
-      return
-    }
-    setDetailBusy(true)
-    const finalEditType = editType === 'Other' && editCustomType.trim() ? editCustomType.trim() : editType
-    const finalEditHours = editType === 'Riding Lawn Mower' ? (editHours.trim() || null) : null
-    const { error } = await supabase
-      .from('units')
-      .update({
-        nickname: editNickname.trim() ? toTitleCase(editNickname) : null,
-        serial_number: editSerial.trim(),
-        model: editModel.trim() || null,
-        equipment_type: finalEditType || null,
-        hour_meter: finalEditHours,
-      })
-      .eq('id', selectedUnit.id)
-    setDetailBusy(false)
-    if (error) {
-      console.error(error)
-      setMessage('Could not save changes.')
-      return
-    }
-    setMessage('Unit details saved.')
-    await loadData()
-    setSelectedUnit(prev =>
-      prev
-        ? {
-            ...prev,
-            nickname: editNickname.trim() ? toTitleCase(editNickname) : null,
-            serial_number: editSerial.trim(),
-            model: editModel.trim() || null,
-            equipment_type: finalEditType || null,
-            hour_meter: finalEditHours,
-          }
-        : null
-    )
-  }
-
-  async function saveThumbnail() {
-    if (!selectedUnit || !thumbFile) return
-    setDetailBusy(true)
-    try {
-      const url = await uploadFile(thumbFile, `thumb-${selectedUnit.id}`)
-      const { error } = await supabase
-        .from('units')
-        .update({ thumbnail_url: url })
-        .eq('id', selectedUnit.id)
-      if (error) throw error
-      setMessage('Thumbnail updated.')
-      onThumbPick(null)
-      await loadData()
-      setSelectedUnit(prev => prev ? { ...prev, thumbnail_url: url } : null)
-    } catch (err) {
-      console.error(err)
-      setMessage('Could not upload thumbnail.')
-    }
-    setDetailBusy(false)
-  }
-
-  async function requestService() {
-    if (!selectedUnit || !customer) return
-    setDetailBusy(true)
-    const name = customer.name || userEmail || 'Customer'
-    const note = serviceNote.trim() || 'Customer requested tune-up / service'
-    const historyLine = `${new Date().toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} - Service requested by ${name}: ${note}`
-    const { data: existing } = await supabase
-      .from('units')
-      .select('notes, history')
-      .eq('id', selectedUnit.id)
-      .single()
-    const { error } = await supabase
-      .from('units')
-      .update({
-        status: 'Repair Requested',
-        status_since: new Date().toISOString(),
-        problem_type: note,
-        notes: existing?.notes ? `${note}\n${existing.notes}` : note,
-        notes_updated_at: new Date().toISOString(),
-        decision_seen: true,
-        history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
-      })
-      .eq('id', selectedUnit.id)
-    setDetailBusy(false)
-    if (error) {
-      console.error(error)
-      setMessage('Could not request service.')
-      return
-    }
-    notifyAdminPush('service_request', selectedUnit.id)
-    setMessage('Service requested. Jesse has been notified.')
-    await loadData()
-    closeUnit()
-  }
-
-  async function withdrawService() {
-    if (!selectedUnit || !customer) return
-    if (!confirm('Withdraw this service request? The unit will go back to your fleet list.')) return
-    setDetailBusy(true)
-    const name = customer.name || userEmail || 'Customer'
-    const historyLine = `${new Date().toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    })} - Service withdrawn by ${name} - returned to fleet`
-    const { data: existing } = await supabase
-      .from('units')
-      .select('history')
-      .eq('id', selectedUnit.id)
-      .single()
-    const { error } = await supabase
-      .from('units')
-      .update({
-        status: 'Fleet',
-        status_since: new Date().toISOString(),
-        problem_type: null,
-        decision_seen: true,
-        history: existing?.history ? `${historyLine}\n${existing.history}` : historyLine,
-      })
-      .eq('id', selectedUnit.id)
-    setDetailBusy(false)
-    if (error) {
-      console.error(error)
-      setMessage('Could not withdraw service request.')
-      return
-    }
-    setMessage('Service request withdrawn. Unit is back on your fleet list.')
-    closeUnit()
-    await loadData()
   }
 
   async function archiveUnit() {
@@ -1049,141 +859,17 @@ export default function CustomerPortal() {
               <PrivateNoteEditor key={selectedUnit.id} unitId={selectedUnit.id} onMessage={setMessage} />
             )}
 
-            {canEditDetails && (
-              <div className="space-y-3 border-t border-zinc-800 pt-3">
-                <p className="text-sm font-medium text-orange-300">Edit unit details</p>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Model</label>
-                    <input
-                      value={editModel}
-                      onChange={e => handleEditModelChange(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                    <input
-                      value={editSerial}
-                      onChange={e => setEditSerial(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Unit Type</label>
-                    <select
-                      value={editType}
-                      onChange={e => handleEditTypeChange(e.target.value)}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    >
-                      <option value="">Select equipment type</option>
-                      {EQUIPMENT_CATEGORIES.map(t => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                    {editType === 'Other' && (
-                      <input
-                        value={editCustomType}
-                        onChange={e => setEditCustomType(e.target.value)}
-                        placeholder="Describe equipment type (e.g. battery unit)"
-                        className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Nickname</label>
-                    <input
-                      value={editNickname}
-                      onChange={e => setEditNickname(liveTitleCase(e.target.value))}
-                      placeholder="e.g. Shop mower #2"
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-                  {editType === 'Riding Lawn Mower' && (
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs text-gray-500 mb-1">Hour meter</label>
-                      <input
-                        value={editHours}
-                        onChange={e => setEditHours(e.target.value)}
-                        placeholder="e.g. 142.5"
-                        inputMode="decimal"
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={saveUnitDetails}
-                  disabled={detailBusy}
-                  className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                >
-                  {detailBusy ? 'Saving...' : 'Save Details'}
-                </button>
-              </div>
-            )}
-
-            <div className="border-t border-zinc-800 pt-3">
-              <label className="block text-xs text-gray-500 mb-1">Unit thumbnail photo</label>
-              <p className="text-xs text-gray-600 mb-2">Update this any time - e.g. after you&apos;ve cleaned it up.</p>
-              <div className="flex flex-col gap-3">
-                {thumbPreview && (
-                  <img
-                    src={thumbPreview}
-                    alt="New thumbnail preview"
-                    className="h-24 w-24 object-cover rounded-lg border border-orange-500/50"
-                  />
-                )}
-                <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg cursor-pointer w-full sm:w-auto">
-                  {thumbFile ? 'Choose Different Photo' : 'Choose Photo'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => onThumbPick(e.target.files?.[0] || null)}
-                  />
-                </label>
-                {thumbFile && (
-                  <button
-                    onClick={saveThumbnail}
-                    disabled={detailBusy}
-                    className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-lg w-full sm:w-auto"
-                  >
-                    {detailBusy ? 'Uploading...' : 'Save Thumbnail'}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {canEditDetails && (
-              <div className="border-t border-zinc-800 pt-3">
-                <label className="block text-xs text-gray-500 mb-1">Request service / tune-up</label>
-                <input
-                  value={serviceNote}
-                  onChange={e => setServiceNote(e.target.value)}
-                  placeholder="e.g. Due for 3-month tune-up..."
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm mb-2"
-                />
-                <button
-                  onClick={requestService}
-                  disabled={detailBusy}
-                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                >
-                  Schedule Service
-                </button>
-              </div>
-            )}
-
-            {(selectedUnit.status === 'Repair Requested' || selectedUnit.status === 'Received' || selectedUnit.status === 'Diagnosing') && (
-              <div className="border-t border-zinc-800 pt-3">
-                <button
-                  onClick={withdrawService}
-                  disabled={detailBusy}
-                  className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                >
-                  Withdraw Service {'->'} Back to Fleet
-                </button>
-              </div>
-            )}
+            <UnitDetailActions
+              key={selectedUnit.id}
+              unit={selectedUnit}
+              customerName={customer.name || userEmail || 'Customer'}
+              busy={detailBusy}
+              onBusyChange={setDetailBusy}
+              onMessage={setMessage}
+              onLoadData={loadData}
+              onUnitUpdated={updates => setSelectedUnit(prev => prev ? { ...prev, ...updates } : null)}
+              onClose={closeUnit}
+            />
 
             {selectedUnit.status === 'Needs Approval' ? (
               // One unified card while a decision is pending - previously
