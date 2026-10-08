@@ -8,7 +8,6 @@ import LastViewedBanner from './components/LastViewedBanner'
 import ScrollToOpenUnit from './components/ScrollToOpenUnit'
 import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
-import NotesForm from './components/NotesForm'
 import ThumbnailForm from './components/ThumbnailForm'
 import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
@@ -22,9 +21,12 @@ import {
   equipmentGroup,
   groupLabel,
   PRIORITY_FEE,
+  groupUnitsByCustomer,
 } from '@/lib/units'
 import { formatDate, formatShortDate } from '@/lib/dates'
-import { hexToRgba } from '@/lib/color'
+import { SAVAGE_BRAND_COLOR } from '@/lib/color'
+import CustomerGroupHeader from './components/CustomerGroupHeader'
+import GroupedActionList from './components/GroupedActionList'
 import CreateCustomerLoginForm from './components/CreateCustomerLoginForm'
 import DeleteCustomerLoginForm from './components/DeleteCustomerLoginForm'
 import CreateReferralSourceLoginForm from './components/CreateReferralSourceLoginForm'
@@ -64,10 +66,7 @@ import {
   returnToFleet,
   markPickedUp,
   updateStatus,
-  markDecisionSeen,
-  snoozeUnit,
   nudgeUnit,
-  updateNotes,
   updateThumbnail,
 } from './actions/unitWorkflow'
 
@@ -284,75 +283,9 @@ export default async function Home({
   const repairUnits = sortStaleFirst(units?.filter(u => u.status !== 'Fleet') || [])
 
 
-  function ActionCard({ unit, borderColor, children }: { unit: any; borderColor: string; children?: React.ReactNode }) {
-    return (
-      <div className={`px-4 sm:px-6 py-3 hover:bg-zinc-800/40 transition border-l-4 ${borderColor}`}>
-        <div className="flex items-start gap-3">
-          <Link href={`/?customer=${unit.customer_id}&open=${unit.id}`} className="flex gap-3 sm:gap-4 flex-1 min-w-0">
-            <UnitPhoto unit={unit} size="h-14 w-14 sm:h-24 sm:w-24" emptyContent="No photo" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-base sm:text-xl font-semibold truncate">{unitLabel(unit)}</p>
-                {unit.is_priority && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-orange-500 text-black">PRIORITY</span>
-                )}
-                {isStaleInStatus(unit) && (
-                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-600 text-white">
-                    NEEDS ATTENTION - {daysInStatus(unit)}d
-                  </span>
-                )}
-                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                  unit.status === 'Needs Approval' || unit.status === 'Repair Requested' ? 'bg-yellow-500/20 text-yellow-400'
-                    : unit.status === 'Ready for Pickup' ? 'bg-green-500/20 text-green-400'
-                    : unit.status === 'In Repair' ? 'bg-blue-500/20 text-blue-400'
-                    : unit.status === 'Fleet' ? 'bg-zinc-600 text-gray-300'
-                    : 'bg-orange-500/20 text-orange-400'
-                }`}>{unit.status}</span>
-              </div>
-              <p className="text-sm text-gray-400">
-                Serial: {unit.serial_number || '-'}
-                {unit.nickname ? ` - ${unit.nickname}` : ''}
-              </p>
-              {children}
-              <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 mt-0.5">
-                <span>Checked in: {formatDate(unit.created_at)}</span>
-                {unit.hour_meter && <span>Hours: {unit.hour_meter}</span>}
-              </div>
-              <p className="text-xs text-orange-400 mt-2">Tap card to open unit {'->'}</p>
-            </div>
-          </Link>
-          <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <form action={snoozeUnit}>
-              <input type="hidden" name="id" value={unit.id} />
-              <input type="hidden" name="days" value="7" />
-              <button type="submit" className="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Delay 7 Days</button>
-            </form>
-            {(approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)) && (
-              <form action={markDecisionSeen}>
-                <input type="hidden" name="id" value={unit.id} />
-                <button type="submit" className="bg-zinc-600 hover:bg-zinc-500 text-white text-sm px-3 py-1.5 rounded-lg transition whitespace-nowrap">Mark Seen</button>
-              </form>
-            )}
-            <DeleteUnitButton id={unit.id} />
-          </div>
-        </div>
-        <details className="mt-2 group/notes ml-[calc(3.5rem+0.75rem)] sm:ml-[calc(6rem+1rem)]">
-          <summary className="text-xs text-orange-400 hover:text-orange-300 cursor-pointer list-none select-none">
-            Notes {unit.notes ? `- has notes${unit.notes_updated_at ? ` (updated ${formatShortDate(unit.notes_updated_at)})` : ''}` : ''}
-          </summary>
-          <NotesForm unitId={unit.id} initialNotes={unit.notes || ''} action={updateNotes} />
-        </details>
-      </div>
-    )
-  }
+  const isUnitDecided = (unit: { id: string }) =>
+    approvedDecisions.some(d => d.id === unit.id) || deniedDecisions.some(d => d.id === unit.id)
 
-
-  // Admin-only. Generates a PDF invoice on demand via /api/invoice - line
-  // items are entered fresh each time (not stored), since not every job is
-  // billed the same. The first labor line defaults its price to the unit's
-  // most recent logged service cost as a starting point, left fully
-  // editable; parts have no price data to draw from (Parts & SKUs tracks
-  // name/SKU/OEM-Aftermarket only, no pricing) so they're always blank.
   // The full editable unit panel - status dropdown, priority/fee/cost,
   // notes, invoice upload, withdraw/pickup, nudge, history, photos, parts,
   // service history. Shared between the per-customer "All Units - Repair
@@ -562,85 +495,6 @@ export default async function Home({
     )
   }
 
-  // Falls back to the Savage Chainsaws brand orange for any customer who
-  // hasn't set their own brand_color (paired with their logo on the
-  // customer portal) - used to box off each customer's units on this page.
-  const SAVAGE_BRAND_COLOR = '#ea580c'
-
-  function groupUnitsByCustomer(unitList: any[]) {
-    const groups = new Map<string, { customer: any; units: any[] }>()
-    for (const unit of unitList) {
-      const key = unit.customer_id || 'unknown'
-      if (!groups.has(key)) {
-        groups.set(key, { customer: customers?.find(c => c.id === unit.customer_id) || null, units: [] })
-      }
-      groups.get(key)!.units.push(unit)
-    }
-    return Array.from(groups.values()).sort((a, b) => {
-      if (b.units.length !== a.units.length) return b.units.length - a.units.length
-      return (a.customer?.name || 'Unknown').localeCompare(b.customer?.name || 'Unknown')
-    })
-  }
-
-  function CustomerGroupHeader({ customer, count }: { customer: any; count: number }) {
-    const accent = customer?.brand_color || SAVAGE_BRAND_COLOR
-    return (
-      <div
-        className="flex items-center gap-3 px-4 sm:px-6 py-2.5 border-b"
-        style={{ backgroundColor: hexToRgba(accent, 0.16), borderBottomColor: hexToRgba(accent, 0.4) }}
-      >
-        {customer?.logo_url ? (
-          <img
-            src={customer.logo_url}
-            alt={customer.name}
-            className="h-9 w-9 rounded-lg object-contain bg-zinc-900 border border-zinc-700 shrink-0"
-          />
-        ) : null}
-        <h3 className="text-lg sm:text-xl font-bold text-white truncate">{customer?.name || 'Unknown Customer'}</h3>
-        {customer?.referral_source_id && (
-          <span
-            title="Referred customer - premier welcome + first-service discount"
-            className="shrink-0 flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40"
-          >
-            ★ Referred
-          </span>
-        )}
-        <span className="text-xs text-gray-400 shrink-0 ml-auto">{count} unit{count !== 1 ? 's' : ''}</span>
-      </div>
-    )
-  }
-
-  function GroupedActionList({
-    units: list,
-    borderColor,
-    renderExtra,
-  }: {
-    units: any[]
-    borderColor: string
-    renderExtra?: (unit: any) => React.ReactNode
-  }) {
-    return (
-      <>
-        {groupUnitsByCustomer(list).map(group => (
-          <div
-            key={group.customer?.id || 'unknown'}
-            className="rounded-lg overflow-hidden"
-            style={{ border: `2px solid ${group.customer?.brand_color || SAVAGE_BRAND_COLOR}` }}
-          >
-            <CustomerGroupHeader customer={group.customer} count={group.units.length} />
-            <div className="divide-y divide-zinc-800/60">
-              {group.units.map(unit => (
-                <ActionCard key={unit.id} unit={unit} borderColor={borderColor}>
-                  {renderExtra?.(unit)}
-                </ActionCard>
-              ))}
-            </div>
-          </div>
-        ))}
-      </>
-    )
-  }
-
   let lastGroup = 0
 
   const tiles = [
@@ -795,7 +649,7 @@ export default async function Home({
               <p className="px-4 sm:px-6 py-5 text-gray-500 text-sm">No units found.</p>
             ) : (
               <div className="p-3 sm:p-4 space-y-4">
-                {groupUnitsByCustomer(statusFilteredUnits).map(group => (
+                {groupUnitsByCustomer(statusFilteredUnits, customers).map(group => (
                   <div
                     key={group.customer?.id || 'unknown'}
                     className="rounded-lg overflow-hidden"
@@ -822,6 +676,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={priorityUnits}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-orange-500"
                     renderExtra={unit => (
                       <p className="text-sm text-orange-300">{unit.expedite_fee ? `Expedite fee: $${Number(unit.expedite_fee).toFixed(2)}` : 'Priority flag set'}</p>
@@ -836,6 +694,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={readyForPickupUnits}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-green-400"
                     renderExtra={unit => (
                       <p className="text-sm text-green-300">{unit.notes || 'Ready for customer pickup'}</p>
@@ -850,6 +712,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={repairRequestedUnits}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-blue-400"
                     renderExtra={unit => (
                       <p className="text-sm text-blue-300">{unit.notes || unit.problem_type || 'Customer requested repair'}</p>
@@ -864,6 +730,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={diagnosingUnits}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-orange-500"
                     renderExtra={unit => (
                       <p className="text-sm text-orange-300">{unit.problem_type || unit.notes || 'In diagnosis'}</p>
@@ -881,6 +751,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={staleUnits}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-red-500"
                     renderExtra={unit => (
                       <p className="text-sm text-red-400 font-medium">No action for {unit.daysSinceCheckIn} days</p>
@@ -895,6 +769,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={approvedDecisions}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-green-500"
                     renderExtra={unit => (
                       <p className="text-sm text-green-300 font-medium">{unit.notes}</p>
@@ -909,6 +787,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={deniedDecisions}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-red-500"
                     renderExtra={unit => (
                       <p className="text-sm text-red-300 font-medium">{unit.notes}</p>
@@ -925,6 +807,10 @@ export default async function Home({
                 <div className="p-3 sm:p-4 space-y-4">
                   <GroupedActionList
                     units={waitingOnCustomer}
+                    customers={customers}
+                    isStaleInStatus={isStaleInStatus}
+                    daysInStatus={daysInStatus}
+                    isDecided={isUnitDecided}
                     borderColor="border-yellow-500"
                     renderExtra={() => (
                       <p className="text-sm text-yellow-300">Waiting for customer decision</p>
