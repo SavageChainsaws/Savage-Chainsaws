@@ -16,9 +16,11 @@ import MediaLightbox from '../components/MediaLightbox'
 import LogoSettingsCard from '../components/LogoSettingsCard'
 import AccountSettingsCard from '../components/AccountSettingsCard'
 import AddToFleetForm from '../components/AddToFleetForm'
+import CustomerCheckInForm from '../components/CustomerCheckInForm'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
+import { notifyAdminPush } from '@/lib/notifyAdminPush'
 import { liveTitleCase, toTitleCase } from '@/lib/text'
-import { isUnderWarranty, isIdentifyingSerial, escapeLikePattern, STIHL_PREFIX_MAP, EQUIPMENT_CATEGORIES } from '@/lib/units'
+import { isUnderWarranty, STIHL_PREFIX_MAP, EQUIPMENT_CATEGORIES } from '@/lib/units'
 import { formatShortDate } from '@/lib/dates'
 
 const supabase = createClient()
@@ -168,20 +170,6 @@ const ACTIVE_STATUSES = [
   'Ready for Pickup',
 ]
 
-// Fires the admin-facing push for an event this page just wrote to
-// Supabase directly (client-side, under RLS) - the actual send needs the
-// VAPID private key, which only the server route holds. Best-effort: the
-// unit change itself already succeeded by the time this is called, so a
-// failed/slow push here should never block or error out the customer's
-// own flow.
-function notifyAdminPush(event: 'service_request' | 'decision' | 'message', unitId: string, decision?: 'approve' | 'deny') {
-  fetch('/api/push/notify-admin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event, unitId, decision }),
-  }).catch(() => {})
-}
-
 export default function CustomerPortal() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -198,7 +186,6 @@ export default function CustomerPortal() {
   const [showArchivedInvoices, setShowArchivedInvoices] = useState(false)
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryEntry[]>([])
@@ -247,17 +234,6 @@ export default function CustomerPortal() {
   const [privateNoteBusy, setPrivateNoteBusy] = useState(false)
   const [replyBusy, setReplyBusy] = useState(false)
 
-  const [serial, setSerial] = useState('')
-  const [model, setModel] = useState('')
-  const [unitType, setUnitType] = useState('')
-  const [customUnitType, setCustomUnitType] = useState('')
-  const [unitTypeManuallySet, setUnitTypeManuallySet] = useState(false)
-  const [hours, setHours] = useState('')
-  const [problem, setProblem] = useState('')
-  const [scheduled, setScheduled] = useState('')
-  const [notes, setNotes] = useState('')
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-
   const [editNickname, setEditNickname] = useState('')
   const [editSerial, setEditSerial] = useState('')
   const [editModel, setEditModel] = useState('')
@@ -269,19 +245,6 @@ export default function CustomerPortal() {
   const [thumbPreview, setThumbPreview] = useState<string | null>(null)
   const [serviceNote, setServiceNote] = useState('')
   const [detailBusy, setDetailBusy] = useState(false)
-
-  function handleModelChange(value: string) {
-    const upper = value.toUpperCase()
-    setModel(upper)
-    if (unitTypeManuallySet) return
-    const prefix = upper.trim().slice(0, 2)
-    setUnitType(STIHL_PREFIX_MAP[prefix] || (upper.trim() ? 'Other' : ''))
-  }
-
-  function handleUnitTypeChange(value: string) {
-    setUnitTypeManuallySet(true)
-    setUnitType(value)
-  }
 
   function handleEditModelChange(value: string) {
     const upper = value.toUpperCase()
@@ -446,98 +409,6 @@ export default function CustomerPortal() {
     if (error) throw error
     const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
     return publicUrl
-  }
-
-  async function handleCheckIn(e: React.FormEvent) {
-    e.preventDefault()
-    if (!customer || !serial.trim()) return
-    setSubmitting(true)
-    setMessage(null)
-    try {
-      let photoUrl: string | null = null
-      if (photoFile) photoUrl = await uploadFile(photoFile, customer.id)
-      const createdAt = scheduled
-        ? new Date(scheduled).toISOString()
-        : new Date().toISOString()
-      const finalUnitType = unitType === 'Other' && customUnitType.trim() ? customUnitType.trim() : unitType
-      const trimmedSerial = serial.trim()
-
-      // A unit already on this customer's fleet (same serial) gets linked
-      // and its status updated instead of creating a second, duplicate row.
-      // Skipped for placeholder serials ("Unknown", "N/A", ...) since those
-      // aren't unique to one physical unit.
-      let existingUnit: { id: string } | null = null
-      if (isIdentifyingSerial(trimmedSerial)) {
-        const { data: existingMatches } = await supabase
-          .from('units')
-          .select('id')
-          .eq('customer_id', customer.id)
-          .ilike('serial_number', escapeLikePattern(trimmedSerial))
-          .order('created_at', { ascending: false })
-          .limit(1)
-        existingUnit = existingMatches?.[0] || null
-      }
-
-      const checkInFields = {
-        serial_number: trimmedSerial,
-        model: model.trim() || null,
-        equipment_type: finalUnitType || null,
-        hour_meter: unitType === 'Riding Lawn Mower' ? (hours.trim() || null) : null,
-        problem_type: problem.trim() || null,
-        notes: notes.trim() || null,
-        notes_updated_at: new Date().toISOString(),
-        status: 'Repair Requested',
-        status_since: createdAt,
-        decision_seen: true,
-        archived: false,
-        created_at: createdAt,
-      }
-
-      const { data: mutatedUnit, error } = existingUnit
-        ? await supabase
-            .from('units')
-            .update({
-              ...checkInFields,
-              ...(photoUrl ? { photo_url: photoUrl, thumbnail_url: photoUrl } : {}),
-            })
-            .eq('id', existingUnit.id)
-            .select('id')
-            .single()
-        : await supabase
-            .from('units')
-            .insert({
-              ...checkInFields,
-              photo_url: photoUrl,
-              thumbnail_url: photoUrl,
-              customer_id: customer.id,
-            })
-            .select('id')
-            .single()
-      if (error) {
-        console.error(error)
-        setMessage('Could not check in this unit. Let Jesse know if this keeps happening.')
-        setSubmitting(false)
-        return
-      }
-      notifyAdminPush('service_request', mutatedUnit.id)
-      setSerial('')
-      setModel('')
-      setUnitType('')
-      setCustomUnitType('')
-      setUnitTypeManuallySet(false)
-      setHours('')
-      setProblem('')
-      setScheduled('')
-      setNotes('')
-      setPhotoFile(null)
-      setShowCheckIn(false)
-      setMessage('Unit checked in. Jesse will see it shortly.')
-      await loadData()
-    } catch (err) {
-      console.error(err)
-      setMessage('Could not check in this unit. Let Jesse know if this keeps happening.')
-    }
-    setSubmitting(false)
   }
 
   function openUnit(unit: Unit) {
@@ -1515,111 +1386,14 @@ export default function CustomerPortal() {
         )}
 
         {showCheckIn && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5">
-            <h2 className="text-lg font-semibold text-orange-400 mb-1">Check In a Unit</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Tell us what's coming in. Jesse can correct any details after pickup.
-            </p>
-            <form onSubmit={handleCheckIn} className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Model</label>
-                <input
-                  value={model}
-                  onChange={e => handleModelChange(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  placeholder="e.g. MS 462"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Serial Number *</label>
-                <input
-                  required
-                  value={serial}
-                  onChange={e => setSerial(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Unit Type</label>
-                <select
-                  value={unitType}
-                  onChange={e => handleUnitTypeChange(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">Select equipment type</option>
-                  {EQUIPMENT_CATEGORIES.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-                {unitType === 'Other' && (
-                  <input
-                    value={customUnitType}
-                    onChange={e => setCustomUnitType(e.target.value)}
-                    placeholder="Describe equipment type (e.g. battery unit)"
-                    className="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  />
-                )}
-              </div>
-              {unitType === 'Riding Lawn Mower' && (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Hour meter (optional)</label>
-                  <input
-                    value={hours}
-                    onChange={e => setHours(e.target.value)}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                    placeholder="e.g. 142.5"
-                    inputMode="decimal"
-                  />
-                </div>
-              )}
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">What's wrong</label>
-                <input
-                  value={problem}
-                  onChange={e => setProblem(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Won't start, tune-up, etc."
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Scheduled drop-off (optional)</label>
-                <input
-                  type="datetime-local"
-                  value={scheduled}
-                  onChange={e => setScheduled(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Photo of unit / serial plate</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={e => setPhotoFile(e.target.files?.[0] || null)}
-                  className="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-orange-600 file:text-white"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Notes</label>
-                <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  rows={2}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Anything else we should know..."
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition"
-                >
-                  {submitting ? 'Checking in...' : 'Check In Unit'}
-                </button>
-              </div>
-            </form>
-          </div>
+          <CustomerCheckInForm
+            customerId={customer.id}
+            onMessage={setMessage}
+            onCheckedIn={async () => {
+              setShowCheckIn(false)
+              await loadData()
+            }}
+          />
         )}
 
         {showSettings && (
