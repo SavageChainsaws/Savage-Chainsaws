@@ -14,7 +14,6 @@ import CheckInForm from './components/CheckInForm'
 import { UnitPhoto } from './components/UnitPhoto'
 import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
-import { resolveUnitParts } from '@/lib/parts'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
 import {
   unitLabel,
@@ -35,8 +34,6 @@ import CopyInstantSignupLink from './components/CopyInstantSignupLink'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import ShopSettingsForm from './components/ShopSettingsForm'
 import EditCustomerButton from './components/EditCustomerButton'
-import CreateUnitInvoiceForm from './components/CreateUnitInvoiceForm'
-import EditInvoiceForm from './components/EditInvoiceForm'
 import TitleCaseInput from './components/TitleCaseInput'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
 import { UnitIdentityProvider, UnitDescriptionField, UnitIdentityBox, WarrantyBox } from './components/UnitIdentityFields'
@@ -51,7 +48,9 @@ import UnitPhotosSection from './components/UnitPhotosSection'
 import ServiceHistorySection from './components/ServiceHistorySection'
 import UnitPartsSection from './components/UnitPartsSection'
 import UnitOrderSheetSection from './components/UnitOrderSheetSection'
-import { getDefaultTaxRatePercent, parseInvoiceLineItemsForEdit } from '@/lib/billing'
+import CreateInvoiceSection from './components/CreateInvoiceSection'
+import EditInvoiceSection from './components/EditInvoiceSection'
+import { getDefaultTaxRatePercent } from '@/lib/billing'
 import { updateShopSetting, regenerateInstantSignupToken } from './actions/shopSettings'
 import {
   createCustomerLogin,
@@ -354,110 +353,6 @@ export default async function Home({
   // most recent logged service cost as a starting point, left fully
   // editable; parts have no price data to draw from (Parts & SKUs tracks
   // name/SKU/OEM-Aftermarket only, no pricing) so they're always blank.
-  function CreateInvoiceSection({ unit }: { unit: any }) {
-    const unitCustomer = (customers || []).find(c => c.id === unit.customer_id)
-    const parts = resolveUnitParts(unit, modelPartsAll || [], unitOverridesAll || [])
-    const history = (serviceHistoryAll || []).filter(e => e.unit_id === unit.id)
-    const latestCost = history[0]?.cost ?? ''
-    const orderSheetItems = (orderSheetItemsAll || []).filter(i => i.unit_id === unit.id)
-    // Retail price is what the customer pays - cost stays Order-Sheet-only,
-    // for Jesse's own reference when he's at the store buying the parts.
-    const defaultPartsItems = orderSheetItems.map(i => ({
-      description: `${i.description} (${i.sku})`,
-      price: (Number(i.retail_price) || 0).toFixed(2),
-      quantity: String(i.quantity),
-    }))
-    return (
-      <details className="group/invoice-panel">
-        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-orange-600 hover:bg-orange-500 text-white text-sm px-4 py-1.5 rounded-lg">
-          Create Invoice
-          <span className="text-xs group-open/invoice-panel:rotate-180 transition">v</span>
-        </summary>
-        {/* id lives on this inner, closed-by-default div (not the <details>
-            itself) - a <details>'s own visibility never depends on its open
-            state (the summary always shows), so a fragment link targeting
-            the <details> tag directly doesn't qualify for the browser's
-            auto-open-closed-ancestor-details behavior and just scrolls to
-            the still-collapsed header. Targeting genuinely hidden content
-            instead makes the browser open this <details> for us - see the
-            "Generate Invoice from Order Sheet" link in
-            UnitOrderSheetSection above. */}
-        <div id={`create-invoice-${unit.id}`} className="w-full mt-2">
-          <CreateUnitInvoiceForm
-            unitId={unit.id}
-            defaultLaborPrice={latestCost}
-            defaultPriorityFee={unit.is_priority ? PRIORITY_FEE : ''}
-            defaultTaxRatePercent={defaultTaxRatePercent}
-            defaultPartsItems={defaultPartsItems}
-            customerPaymentPlansEnabled={!!unitCustomer?.payment_plans_enabled}
-          />
-          <p className="text-xs text-gray-600 mt-1.5">
-            {orderSheetItems.length > 0
-              ? `${orderSheetItems.length} part${orderSheetItems.length === 1 ? '' : 's'} loaded from the Order Sheet at retail price - just add labor below.`
-              : parts.length > 0
-              ? `${parts.length} part${parts.length === 1 ? '' : 's'} on file for this model - add them to Parts above if used on this job.`
-              : 'No parts on file for this unit - the invoice will still generate.'}
-          </p>
-        </div>
-      </details>
-    )
-  }
-
-  // Lets Jesse handle a mid-service change request (customer calls asking
-  // for a chain added, a part removed, a price corrected) against the
-  // unit's most recent invoice without creating a whole new one - reopens
-  // that invoice's Parts/Labor lines, recalculates tax + surcharge off the
-  // edited subtotal on save, and regenerates the same invoice/PDF in
-  // place. Only rendered when a real invoices row exists for this unit
-  // (see latestInvoiceByUnit above) - a unit whose only "invoice" is a
-  // manually uploaded photo/PDF (see updateStatus's invoice-upload field)
-  // has no row to edit here.
-  function EditInvoiceSection({ unit }: { unit: any }) {
-    const invoice = latestInvoiceByUnit.get(unit.id)
-    if (!invoice) return null
-    const parsed = parseInvoiceLineItemsForEdit(invoice.line_items)
-    const hasParts = parsed.partsItems.some((it: { description: string }) => it.description.trim().length > 0)
-    return (
-      <details className="group/edit-invoice">
-        <summary className="inline-flex items-center gap-1.5 cursor-pointer list-none select-none bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-4 py-1.5 rounded-lg whitespace-nowrap">
-          Edit Invoice {invoice.invoice_number}
-          <span className="text-xs group-open/edit-invoice:rotate-180 transition">v</span>
-        </summary>
-        <div className="w-full mt-2 space-y-2">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-gray-500">Current total:</span>
-            <span className="font-bold text-orange-400">${Number(invoice.amount).toFixed(2)}</span>
-            {invoice.paid_at ? (
-              <span className="px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400">
-                Already Paid - editing still allowed, but double-check with the customer first
-              </span>
-            ) : (invoice.square_payment_link_url || invoice.stripe_payment_link_url) ? (
-              <span className="px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/20 text-yellow-400">
-                Has a Payment Link - saving will clear it so a fresh one matches the new total
-              </span>
-            ) : null}
-          </div>
-          <EditInvoiceForm
-            invoiceId={invoice.id}
-            hasUnitId
-            customers={[]}
-            initialCustomerId={null}
-            initialCustomerName={currentCustomer?.name || ''}
-            initialCustomerEmail={currentCustomer?.email || ''}
-            initialPartsItems={parsed.partsItems}
-            initialLaborItems={parsed.laborItems}
-            initialPriorityFee={parsed.priorityFee}
-            initialReferralDiscountAmount={parsed.referralDiscountAmount}
-            initialNotes={invoice.notes || ''}
-            taxRatePercent={invoice.sales_tax_rate ?? defaultTaxRatePercent}
-            includeCardSurcharge={Number(invoice.card_surcharge_amount) > 0}
-            laborType={(invoice.labor_type as 'STLA' | 'NTSTLA') || (hasParts ? 'STLA' : 'NTSTLA')}
-          />
-        </div>
-      </details>
-    )
-  }
-
   // The full editable unit panel - status dropdown, priority/fee/cost,
   // notes, invoice upload, withdraw/pickup, nudge, history, photos, parts,
   // service history. Shared between the per-customer "All Units - Repair
@@ -556,7 +451,15 @@ export default async function Home({
                     </details>
                   )}
 
-                  <CreateInvoiceSection unit={unit} />
+                  <CreateInvoiceSection
+                    unit={unit}
+                    customers={customers || []}
+                    modelPartsAll={modelPartsAll || []}
+                    unitOverridesAll={unitOverridesAll || []}
+                    serviceHistoryAll={serviceHistoryAll || []}
+                    orderSheetItemsAll={orderSheetItemsAll || []}
+                    defaultTaxRatePercent={defaultTaxRatePercent}
+                  />
 
                   <form action={nudgeUnit}>
                     <input type="hidden" name="id" value={unit.id} />
@@ -620,7 +523,12 @@ export default async function Home({
                   {unit.invoice_url && (
                     <a href={unit.invoice_url} target="_blank" rel="noreferrer" className="text-xs text-orange-400 hover:text-orange-300">View current invoice/quote {'->'}</a>
                   )}
-                  <EditInvoiceSection unit={unit} />
+                  <EditInvoiceSection
+                    unit={unit}
+                    latestInvoiceByUnit={latestInvoiceByUnit}
+                    currentCustomer={currentCustomer}
+                    defaultTaxRatePercent={defaultTaxRatePercent}
+                  />
                   <DiagnosisFindingsSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
                   <UnitBeforeAfterCompareSection unit={unit} unitPhotosAll={unitPhotosAll || []} />
                   <UnitPartsSection unit={unit} modelPartsAll={modelPartsAll || []} unitOverridesAll={unitOverridesAll || []} />
@@ -1260,7 +1168,15 @@ export default async function Home({
                               <UnitPartsSection unit={unit} modelPartsAll={modelPartsAll || []} unitOverridesAll={unitOverridesAll || []} />
                               <UnitOrderSheetSection unit={unit} orderSheetItemsAll={orderSheetItemsAll || []} />
                               <ServiceHistorySection unit={unit} serviceHistoryAll={serviceHistoryAll || []} />
-                              <CreateInvoiceSection unit={unit} />
+                              <CreateInvoiceSection
+                                unit={unit}
+                                customers={customers || []}
+                                modelPartsAll={modelPartsAll || []}
+                                unitOverridesAll={unitOverridesAll || []}
+                                serviceHistoryAll={serviceHistoryAll || []}
+                                orderSheetItemsAll={orderSheetItemsAll || []}
+                                defaultTaxRatePercent={defaultTaxRatePercent}
+                              />
 
                               {unit.status === 'Fleet' && (
                                 <form action={scheduleFleetService} className="border-t border-zinc-800 pt-3 space-y-2">
