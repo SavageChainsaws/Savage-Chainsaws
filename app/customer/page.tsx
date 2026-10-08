@@ -24,7 +24,7 @@ import UnitsSummaryHeader from '../components/UnitsSummaryHeader'
 import InvoiceListPanel from '../components/InvoiceListPanel'
 import PrivateNoteEditor from '../components/PrivateNoteEditor'
 import UnitDetailActions from '../components/UnitDetailActions'
-import UnitMessageThread from '../components/UnitMessageThread'
+import DiagnosisDecisionCard from '../components/DiagnosisDecisionCard'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { notifyAdminPush } from '@/lib/notifyAdminPush'
 import { isUnderWarranty, unitLabel, warrantyCountdown, ACTIVE_STATUSES } from '@/lib/units'
@@ -822,187 +822,21 @@ export default function CustomerPortal() {
               onClose={closeUnit}
             />
 
-            {selectedUnit.status === 'Needs Approval' ? (
-              // One unified card while a decision is pending - previously
-              // this was two separately-styled, stacked boxes (a Diagnosis
-              // Notes card and a "Repair decision needed" card) that
-              // largely repeated the same diagnosis text/estimate link,
-              // reading as disconnected. Now every piece of the decision -
-              // findings, photos, the number, and the actions - lives in
-              // one card.
-              <div className="border border-yellow-500/30 rounded-xl bg-yellow-500/10 p-3 sm:p-4 space-y-3">
-                <p className="text-xs text-yellow-400 uppercase tracking-wider">Repair decision needed</p>
-
-                {selectedUnit.diagnosis_notes ? (
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
-                      {selectedUnit.diagnosis_notes_updated_at && (
-                        <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
-                          Updated {formatShortDate(selectedUnit.diagnosis_notes_updated_at)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-200">
-                    {selectedUnit.notes || 'Jesse has a repair recommendation for this unit.'}
-                  </p>
-                )}
-
-                {selectedUnit.diagnosis_notes && selectedUnit.notes && (
-                  <div>
-                    <p className="text-sm font-bold text-blue-300 mb-1">Your Reported Issue</p>
-                    <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedUnit.notes}</p>
-                  </div>
-                )}
-
-                {(() => {
-                  const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
-                  if (diagnosisMedia.length === 0) return null
-                  const shown = diagnosisMedia.slice(0, 4)
-                  const remaining = diagnosisMedia.length - shown.length
-                  return (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <UnitPhotoGallery
-                        size="sm"
-                        photos={shown.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
-                        onPhotoClick={p => setLightboxMedia({ url: p.url, isVideo: p.mediaType === 'video', caption: p.caption ?? null })}
-                      />
-                      {remaining > 0 && (
-                        <span className="text-xs text-gray-500">+{remaining} more</span>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                {invoiceTotals[selectedUnit.id] != null && (
-                  <p className="text-sm font-bold text-yellow-300">
-                    Estimate total: ${invoiceTotals[selectedUnit.id].toFixed(2)}
-                  </p>
-                )}
-                {/* invoicePdfUrls (the actual generated invoice, read straight
-                    from the invoices table) takes priority over the older
-                    units.invoice_url - that field needs a separate manual
-                    upload step to ever get set, so relying on it alone left
-                    this link missing on an otherwise perfectly normal
-                    generated invoice. Styled as a real button, same weight
-                    as Approve/Deny below - a judgment call needs the actual
-                    line-itemized invoice in front of someone, not a small
-                    underlined link easy to scroll past. */}
-                {(invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url) && (
-                  <a
-                    href={invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url || undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                  >
-                    📄 View Full Invoice (PDF) {'->'}
-                  </a>
-                )}
-
-                <UnitMessageThread
-                  key={selectedUnit.id}
-                  unitId={selectedUnit.id}
-                  customerId={customer.id}
-                  customerName={customer.name || userEmail || 'Customer'}
-                  onMessage={setMessage}
-                  inputRef={replyInputRef}
-                  highlighted={askingQuestion}
-                />
-
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    onClick={() => handleDecision(selectedUnit.id, 'approve')}
-                    className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm('Deny this repair? A $49.99 diagnosis fee will be charged.')) {
-                        handleDecision(selectedUnit.id, 'deny')
-                      }
-                    }}
-                    className="bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                  >
-                    Deny ($49.99 diag)
-                  </button>
-                  <button
-                    onClick={askQuestion}
-                    className="bg-zinc-700 hover:bg-zinc-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
-                  >
-                    Ask a Question
-                  </button>
-                </div>
-              </div>
-            ) : (
-              selectedUnit.diagnosis_notes && (
-                <div className="border border-orange-500/30 rounded-xl bg-orange-500/[0.03] p-3 sm:p-4 space-y-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm font-bold text-orange-300">Diagnosis Notes</p>
-                      {selectedUnit.diagnosis_notes_updated_at && (
-                        <span className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
-                          Updated {formatShortDate(selectedUnit.diagnosis_notes_updated_at)}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{selectedUnit.diagnosis_notes}</p>
-                  </div>
-
-                  {selectedUnit.notes && (
-                    <div>
-                      <p className="text-sm font-bold text-blue-300 mb-1">Your Reported Issue</p>
-                      <p className="text-sm text-blue-100 whitespace-pre-wrap">{selectedUnit.notes}</p>
-                    </div>
-                  )}
-
-                  {(invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url) && (
-                    <a
-                      href={invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url || undefined}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-block text-sm text-orange-400 hover:text-orange-300 underline"
-                    >
-                      View Estimate / Quote (PDF) {'->'}
-                    </a>
-                  )}
-
-                  {(() => {
-                    const diagnosisMedia = unitPhotos.filter(p => p.stage === 'diagnosis')
-                    if (diagnosisMedia.length === 0) return null
-                    return (
-                      <div className="space-y-2">
-                        {/* Deliberately loud - easy to overlook as plain text,
-                            so it gets the same highlighted-box treatment as
-                            the admin side. */}
-                        <div className="flex items-center gap-2 bg-orange-500/15 border border-orange-500/40 rounded-lg px-3 py-2.5">
-                          <span className="text-sm font-bold text-orange-300 uppercase tracking-wide">
-                            Diagnosis Findings - Photos &amp; Videos
-                          </span>
-                          <span className="text-xs bg-orange-500 text-black font-bold rounded-full px-2 py-0.5">{diagnosisMedia.length}</span>
-                        </div>
-                        <UnitPhotoGallery
-                          photos={diagnosisMedia.map(p => ({ id: p.id, url: p.url, caption: p.caption, mediaType: p.media_type }))}
-                        />
-                      </div>
-                    )
-                  })()}
-
-                  <UnitMessageThread
-                    key={selectedUnit.id}
-                    unitId={selectedUnit.id}
-                    customerId={customer.id}
-                    customerName={customer.name || userEmail || 'Customer'}
-                    onMessage={setMessage}
-                    inputRef={replyInputRef}
-                    highlighted={askingQuestion}
-                  />
-                </div>
-              )
-            )}
+            <DiagnosisDecisionCard
+              unit={selectedUnit}
+              unitPhotos={unitPhotos}
+              estimateTotal={invoiceTotals[selectedUnit.id] ?? null}
+              pdfUrl={invoicePdfUrls[selectedUnit.id] || selectedUnit.invoice_url || null}
+              customerId={customer.id}
+              customerName={customer.name || userEmail || 'Customer'}
+              onMessage={setMessage}
+              inputRef={replyInputRef}
+              highlighted={askingQuestion}
+              onLightboxOpen={setLightboxMedia}
+              onApprove={() => handleDecision(selectedUnit.id, 'approve')}
+              onDeny={() => handleDecision(selectedUnit.id, 'deny')}
+              onAskQuestion={askQuestion}
+            />
 
             <div className="border-t border-zinc-800 pt-3">
               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Photos</p>
