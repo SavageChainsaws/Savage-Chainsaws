@@ -15,6 +15,7 @@ import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
 import MediaLightbox from '../components/MediaLightbox'
+import LogoSettingsCard from '../components/LogoSettingsCard'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { normalizeEmail, liveTitleCase, toTitleCase } from '@/lib/text'
 import { isUnderWarranty, isIdentifyingSerial, escapeLikePattern } from '@/lib/units'
@@ -311,13 +312,6 @@ export default function CustomerPortal() {
   const [serviceNote, setServiceNote] = useState('')
   const [detailBusy, setDetailBusy] = useState(false)
 
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
-  const [logoBusy, setLogoBusy] = useState(false)
-
-  const [brandColor, setBrandColor] = useState('#ea580c')
-  const [brandColorBusy, setBrandColorBusy] = useState(false)
-
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -434,7 +428,6 @@ export default function CustomerPortal() {
 
     setCustomer(cust)
     setSecondaryEmail(cust.secondary_email || '')
-    setBrandColor(cust.brand_color || '#ea580c')
 
     // One-time branded welcome moment for a customer referred by a partner -
     // fetched here (rather than joined into the customers select above)
@@ -519,88 +512,6 @@ export default function CustomerPortal() {
     if (error) throw error
     const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
     return publicUrl
-  }
-
-  function onLogoPick(file: File | null) {
-    setLogoFile(file)
-    if (logoPreview) URL.revokeObjectURL(logoPreview)
-    setLogoPreview(file ? URL.createObjectURL(file) : null)
-  }
-
-  async function saveLogo() {
-    if (!customer || !logoFile) return
-    setLogoBusy(true)
-    setMessage(null)
-    try {
-      const url = await uploadFile(logoFile, `logo-${customer.id}`)
-      const { error } = await supabase
-        .from('customers')
-        .update({ logo_url: url })
-        .eq('id', customer.id)
-      if (error) throw error
-      setCustomer(prev => prev ? { ...prev, logo_url: url } : null)
-      onLogoPick(null)
-      setShowLogoUpload(false)
-      setMessage('Company logo updated.')
-    } catch (err) {
-      console.error(err)
-      setMessage('Could not upload logo. Try a smaller image (JPG/PNG).')
-    }
-    setLogoBusy(false)
-  }
-
-  async function removeLogo() {
-    if (!customer) return
-    if (!confirm('Remove your company logo?')) return
-    setLogoBusy(true)
-    const { error } = await supabase
-      .from('customers')
-      .update({ logo_url: null })
-      .eq('id', customer.id)
-    setLogoBusy(false)
-    if (error) {
-      setMessage('Could not remove logo.')
-      return
-    }
-    setCustomer(prev => prev ? { ...prev, logo_url: null } : null)
-    setMessage('Company logo removed.')
-  }
-
-  // Lets a customer pair a brand color with their logo - shown alongside
-  // it here since the two travel together everywhere they're used (e.g.
-  // the admin Repair Flow page boxes off each customer's units using this
-  // color, falling back to the Savage Chainsaws orange when unset).
-  async function saveBrandColor() {
-    if (!customer) return
-    setBrandColorBusy(true)
-    const { error } = await supabase
-      .from('customers')
-      .update({ brand_color: brandColor })
-      .eq('id', customer.id)
-    setBrandColorBusy(false)
-    if (error) {
-      setMessage('Could not save brand color.')
-      return
-    }
-    setCustomer(prev => prev ? { ...prev, brand_color: brandColor } : null)
-    setMessage('Brand color saved.')
-  }
-
-  async function resetBrandColor() {
-    if (!customer) return
-    setBrandColorBusy(true)
-    const { error } = await supabase
-      .from('customers')
-      .update({ brand_color: null })
-      .eq('id', customer.id)
-    setBrandColorBusy(false)
-    if (error) {
-      setMessage('Could not reset brand color.')
-      return
-    }
-    setCustomer(prev => prev ? { ...prev, brand_color: null } : null)
-    setBrandColor('#ea580c')
-    setMessage('Brand color reset to default.')
   }
 
   // Same validation as /reset-password (the flow this replaces the need
@@ -1781,79 +1692,12 @@ export default function CustomerPortal() {
         )}
 
         {showLogoUpload && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 space-y-3">
-            <h2 className="text-lg font-semibold text-orange-400">Company Logo</h2>
-            <p className="text-sm text-gray-500">
-              Upload your logo. It appears at the top of your portal.
-            </p>
-            <div className="flex items-center gap-4">
-              <img
-                src={logoPreview || customer.logo_url || '/images/logo.png'}
-                alt="Logo preview"
-                className="h-16 w-16 object-contain rounded-lg border border-zinc-700 bg-zinc-950"
-              />
-              <div className="space-y-2">
-                <label className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded-lg cursor-pointer">
-                  Choose Logo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => onLogoPick(e.target.files?.[0] || null)}
-                  />
-                </label>
-                {logoFile && (
-                  <button
-                    onClick={saveLogo}
-                    disabled={logoBusy}
-                    className="block bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                  >
-                    {logoBusy ? 'Uploading...' : 'Save Logo'}
-                  </button>
-                )}
-                {customer.logo_url && !logoFile && (
-                  <button
-                    onClick={removeLogo}
-                    disabled={logoBusy}
-                    className="block text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
-                  >
-                    Remove logo
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t border-zinc-800 pt-3 space-y-2">
-              <p className="text-sm font-medium text-white">Brand Color</p>
-              <p className="text-xs text-gray-500">
-                Used to box off your units on our end - defaults to Savage Chainsaws orange if you skip this.
-              </p>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={brandColor}
-                  onChange={e => setBrandColor(e.target.value)}
-                  className="h-9 w-14 bg-zinc-900 border border-zinc-700 rounded-lg cursor-pointer"
-                />
-                <button
-                  onClick={saveBrandColor}
-                  disabled={brandColorBusy}
-                  className="bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                >
-                  {brandColorBusy ? 'Saving...' : 'Save Color'}
-                </button>
-                {customer.brand_color && (
-                  <button
-                    onClick={resetBrandColor}
-                    disabled={brandColorBusy}
-                    className="text-sm text-red-400 hover:text-red-300 disabled:opacity-50"
-                  >
-                    Reset to default
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <LogoSettingsCard
+            customer={customer}
+            onUpdate={updates => setCustomer(prev => prev ? { ...prev, ...updates } : null)}
+            onMessage={setMessage}
+            onSaved={() => setShowLogoUpload(false)}
+          />
         )}
 
         {showAddFleet && (
