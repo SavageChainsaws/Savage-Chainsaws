@@ -38,6 +38,34 @@ export const EQUIPMENT_CATEGORIES = [
   'Other',
 ]
 
+// Statuses considered "currently in for service" - shared by the customer
+// portal's unit groupings and maintenance-reminder check below.
+export const ACTIVE_STATUSES = [
+  'Received',
+  'Diagnosing',
+  'Needs Approval',
+  'In Repair',
+  'Repair Requested',
+  'Ready for Pickup',
+]
+
+// A unit currently checked in doesn't need a reminder - it's already being
+// serviced - and one with no service history yet has nothing to measure
+// from, so neither case shows the indicator.
+export function needsMaintenanceReminder(unit: { status: string; last_service_date: string | null }): boolean {
+  if (ACTIVE_STATUSES.includes(unit.status)) return false
+  if (!unit.last_service_date) return false
+  const fourMonthsAgo = new Date()
+  fourMonthsAgo.setMonth(fourMonthsAgo.getMonth() - 4)
+  return new Date(unit.last_service_date) < fourMonthsAgo
+}
+
+export function monthsSince(dateString: string): number {
+  const then = new Date(dateString)
+  const now = new Date()
+  return (now.getFullYear() - then.getFullYear()) * 12 + (now.getMonth() - then.getMonth())
+}
+
 // Model - Type first - never lead with serial
 export function unitLabel(unit: { model?: string | null; equipment_type?: string | null; nickname?: string | null; serial_number?: string | null }) {
   const model = (unit.model || '').trim()
