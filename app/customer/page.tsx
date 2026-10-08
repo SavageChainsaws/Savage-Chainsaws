@@ -22,6 +22,7 @@ import UnitCard from '../components/UnitCard'
 import MyFleetTable from '../components/MyFleetTable'
 import UnitsSummaryHeader from '../components/UnitsSummaryHeader'
 import InvoiceListPanel from '../components/InvoiceListPanel'
+import PrivateNoteEditor from '../components/PrivateNoteEditor'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { notifyAdminPush } from '@/lib/notifyAdminPush'
 import { liveTitleCase, toTitleCase } from '@/lib/text'
@@ -161,13 +162,6 @@ export default function CustomerPortal() {
   // owe anything without opening email at all.
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
 
-  // Private, customer-only reference note per unit (e.g. "hard time
-  // starting") - lives in its own unit_customer_notes table with RLS that
-  // grants only the owning customer access, so it's genuinely never
-  // visible to the admin, not just hidden in the admin UI.
-  const [privateNote, setPrivateNote] = useState('')
-  const [privateNoteSavedNote, setPrivateNoteSavedNote] = useState('')
-  const [privateNoteBusy, setPrivateNoteBusy] = useState(false)
   const [replyBusy, setReplyBusy] = useState(false)
 
   const [editNickname, setEditNickname] = useState('')
@@ -402,18 +396,6 @@ export default function CustomerPortal() {
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitReplies(data || []))
-
-    setPrivateNote('')
-    setPrivateNoteSavedNote('')
-    supabase
-      .from('unit_customer_notes')
-      .select('notes')
-      .eq('unit_id', unit.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        setPrivateNote(data?.notes || '')
-        setPrivateNoteSavedNote(data?.notes || '')
-      })
   }
 
   function closeUnit() {
@@ -427,25 +409,6 @@ export default function CustomerPortal() {
     setUnitReplies([])
     setReplyText('')
     setAskingQuestion(false)
-    setPrivateNote('')
-    setPrivateNoteSavedNote('')
-  }
-
-  async function savePrivateNote() {
-    if (!selectedUnit) return
-    setPrivateNoteBusy(true)
-    const trimmed = privateNote.trim()
-    const { error } = await supabase
-      .from('unit_customer_notes')
-      .upsert({ unit_id: selectedUnit.id, notes: trimmed || null, updated_at: new Date().toISOString() }, { onConflict: 'unit_id' })
-    setPrivateNoteBusy(false)
-    if (error) {
-      console.error(error)
-      setMessage('Could not save your private note.')
-      return
-    }
-    setPrivateNoteSavedNote(trimmed)
-    setMessage('Private note saved.')
   }
 
   // Scrolls the detail panel into view whenever a unit is opened, from any
@@ -1083,25 +1046,7 @@ export default function CustomerPortal() {
             )}
 
             {canEditDetails && (
-              <div className="border-t border-zinc-800 pt-3">
-                <label className="block text-xs text-gray-500 mb-1">
-                  Private Notes <span className="text-zinc-600">(only visible to you, not Jesse)</span>
-                </label>
-                <textarea
-                  value={privateNote}
-                  onChange={e => setPrivateNote(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. This unit has a hard time starting..."
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <button
-                  onClick={savePrivateNote}
-                  disabled={privateNoteBusy || privateNote === privateNoteSavedNote}
-                  className="mt-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
-                >
-                  {privateNoteBusy ? 'Saving...' : 'Save Private Note'}
-                </button>
-              </div>
+              <PrivateNoteEditor key={selectedUnit.id} unitId={selectedUnit.id} onMessage={setMessage} />
             )}
 
             {canEditDetails && (
