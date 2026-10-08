@@ -4,16 +4,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getDefaultTaxRatePercent } from '@/lib/billing'
 import { unitLabel } from '@/lib/units'
-import SendInvoiceButton from '../components/SendInvoiceButton'
-import DeleteInvoiceButton from '../components/DeleteInvoiceButton'
-import InvoicePaymentActions from '../components/InvoicePaymentActions'
-import MarkPaidToggle from '../components/MarkPaidToggle'
-import ArchiveToggle from '../components/ArchiveToggle'
 import CreateInvoiceButton from '../components/CreateInvoiceButton'
-import EditInvoiceButton from '../components/EditInvoiceButton'
+import InvoiceActionButtons from '../components/InvoiceActionButtons'
 import PaymentPlanSection from '../components/PaymentPlanSection'
-import { toggleManualPaid, toggleArchived, deleteInvoice } from '../actions/invoiceLifecycle'
-import { sendInvoiceEmail } from '../actions/sendInvoiceEmail'
 import {
   startPaymentPlan,
   offerPaymentPlan,
@@ -21,7 +14,6 @@ import {
   checkInstallmentPaymentStatus,
   toggleInstallmentManualPaid,
 } from '../actions/paymentPlans'
-import { generatePaymentLink, checkPaymentStatus } from '../actions/paymentLinks'
 
 // Admin-only running record of every invoice ever generated (per-unit and
 // standalone), for the admin's own tax/bookkeeping use - a plain list
@@ -43,6 +35,7 @@ export default async function InvoicesPage({
   // CreateCustomInvoiceForm) - same shape/fields as the dashboard's own
   // fetch for the same form (app/page.tsx).
   const { data: customers } = await supabase.from('customers').select('id, name, email, phone').order('name')
+  const mappedCustomers = (customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))
   const defaultTaxRatePercent = await getDefaultTaxRatePercent(supabase)
 
   const { data: invoices } = await supabase
@@ -199,7 +192,7 @@ export default async function InvoicesPage({
           </div>
           <div className="flex items-center gap-2">
             <CreateInvoiceButton
-              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+              customers={mappedCustomers}
               defaultTaxRatePercent={defaultTaxRatePercent}
             />
             <Link
@@ -361,64 +354,7 @@ export default async function InvoicesPage({
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <div className="flex flex-wrap items-start justify-end gap-1.5">
-                        {r.pdfUrl ? (
-                          <a
-                            href={r.pdfUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-orange-400 hover:text-orange-300 pt-1"
-                          >
-                            PDF
-                          </a>
-                        ) : (
-                          <span className="text-xs text-gray-600 pt-1">No PDF</span>
-                        )}
-                        <EditInvoiceButton
-                          invoiceId={r.id}
-                          invoiceNumber={r.invoiceNumber}
-                          amount={r.amount}
-                          lineItems={r.lineItems}
-                          taxRatePercent={r.taxRatePercent}
-                          includeCardSurcharge={r.cardSurchargeAmount > 0}
-                          laborType={r.laborType}
-                          isPaid={!!r.paidAt}
-                          hasPaymentLink={!!r.paymentLinkUrl}
-                          unitLabel={r.unitLabel}
-                          unitId={r.unitId}
-                          customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
-                          customerId={r.customerId}
-                          customerName={r.customerName}
-                          customerEmail={r.defaultEmail}
-                          notes={r.notes}
-                        />
-                        {r.pdfUrl && (
-                          <SendInvoiceButton
-                            invoiceId={r.id}
-                            defaultEmail={r.defaultEmail}
-                            alreadySent={!!r.sentAt}
-                            action={sendInvoiceEmail}
-                          />
-                        )}
-                        <InvoicePaymentActions
-                          invoiceId={r.id}
-                          paymentLinkUrl={r.paymentLinkUrl}
-                          isPaid={!!r.paidAt}
-                          generateAction={generatePaymentLink}
-                          checkStatusAction={checkPaymentStatus}
-                        />
-                        <MarkPaidToggle invoiceId={r.id} isPaid={!!r.paidAt} action={toggleManualPaid} />
-                        {/* Only offered for unpaid invoices - a paid one is already
-                            archived by its paid_at, and un-archiving it here would
-                            do nothing (it'd still show as archived via paid_at),
-                            which is confusing. "Mark Unpaid" is the real undo for those. */}
-                        {!r.paidAt && (
-                          <ArchiveToggle invoiceId={r.id} isArchived={!!r.archivedAt} action={toggleArchived} />
-                        )}
-                        <DeleteInvoiceButton
-                          invoiceId={r.id}
-                          invoiceNumber={r.invoiceNumber}
-                          action={deleteInvoice}
-                        />
+                        <InvoiceActionButtons invoice={r} customers={mappedCustomers} />
                       </div>
                     </td>
                   </tr>
@@ -513,60 +449,7 @@ export default async function InvoicesPage({
                 </div>
 
                 <div className="flex flex-wrap items-start gap-1.5 pt-1">
-                  {r.pdfUrl ? (
-                    <a
-                      href={r.pdfUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-orange-400 hover:text-orange-300 pt-1"
-                    >
-                      PDF
-                    </a>
-                  ) : (
-                    <span className="text-xs text-gray-600 pt-1">No PDF</span>
-                  )}
-                  <EditInvoiceButton
-                    invoiceId={r.id}
-                    invoiceNumber={r.invoiceNumber}
-                    amount={r.amount}
-                    lineItems={r.lineItems}
-                    taxRatePercent={r.taxRatePercent}
-                    includeCardSurcharge={r.cardSurchargeAmount > 0}
-                    laborType={r.laborType}
-                    isPaid={!!r.paidAt}
-                    hasPaymentLink={!!r.paymentLinkUrl}
-                    unitLabel={r.unitLabel}
-                    unitId={r.unitId}
-                    customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
-                    customerId={r.customerId}
-                    customerName={r.customerName}
-                    customerEmail={r.defaultEmail}
-                    notes={r.notes}
-                  />
-                  {r.pdfUrl && (
-                    <SendInvoiceButton
-                      invoiceId={r.id}
-                      defaultEmail={r.defaultEmail}
-                      alreadySent={!!r.sentAt}
-                      action={sendInvoiceEmail}
-                    />
-                  )}
-                  <InvoicePaymentActions
-                    invoiceId={r.id}
-                    paymentLinkUrl={r.paymentLinkUrl}
-                    isPaid={!!r.paidAt}
-                    generateAction={generatePaymentLink}
-                    checkStatusAction={checkPaymentStatus}
-                  />
-                  <MarkPaidToggle invoiceId={r.id} isPaid={!!r.paidAt} action={toggleManualPaid} />
-                  {!r.paidAt && (
-                    <ArchiveToggle invoiceId={r.id} isArchived={!!r.archivedAt} action={toggleArchived} />
-                  )}
-                  <DeleteInvoiceButton
-                    invoiceId={r.id}
-                    invoiceNumber={r.invoiceNumber}
-                    action={deleteInvoice}
-                  />
+                  <InvoiceActionButtons invoice={r} customers={mappedCustomers} />
                 </div>
 
                 {(r.paymentPlan || r.paymentPlansEnabledForCustomer) && (
