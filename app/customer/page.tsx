@@ -14,6 +14,7 @@ import PaymentPlanCard from '../components/PaymentPlanCard'
 import ContactLinksBar from '../components/ContactLinksBar'
 import SiteFooter from '../components/SiteFooter'
 import ReferralWelcomeScreen from '../components/ReferralWelcomeScreen'
+import MediaLightbox from '../components/MediaLightbox'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { normalizeEmail, liveTitleCase, toTitleCase } from '@/lib/text'
 import { isUnderWarranty, isIdentifyingSerial, escapeLikePattern } from '@/lib/units'
@@ -2650,37 +2651,7 @@ export default function CustomerPortal() {
           </div>
         )}
 
-        {lightboxMedia && (
-          <div
-            onClick={() => setLightboxMedia(null)}
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
-          >
-            <button
-              type="button"
-              onClick={() => setLightboxMedia(null)}
-              className="absolute top-4 right-4 text-white text-2xl leading-none h-10 w-10 flex items-center justify-center rounded-full bg-zinc-800/80 hover:bg-zinc-700"
-              aria-label="Close preview"
-            >
-              &times;
-            </button>
-            {lightboxMedia.isVideo ? (
-              <video
-                src={lightboxMedia.url}
-                controls
-                autoPlay
-                onClick={e => e.stopPropagation()}
-                className="max-h-[85vh] max-w-full rounded-lg"
-              />
-            ) : (
-              <img
-                src={lightboxMedia.url}
-                alt={lightboxMedia.caption || 'Diagnosis photo'}
-                onClick={e => e.stopPropagation()}
-                className="max-h-[85vh] max-w-full object-contain rounded-lg"
-              />
-            )}
-          </div>
-        )}
+        <MediaLightbox media={lightboxMedia} onClose={() => setLightboxMedia(null)} />
 
         <div ref={unitsTopRef} className="bg-zinc-900 border border-zinc-800 border-l-4 border-l-orange-500 rounded-xl overflow-hidden">
           <div className="px-4 sm:px-6 py-3 border-b border-zinc-800 bg-orange-500/10">
