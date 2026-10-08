@@ -24,6 +24,7 @@ import UnitsSummaryHeader from '../components/UnitsSummaryHeader'
 import InvoiceListPanel from '../components/InvoiceListPanel'
 import PrivateNoteEditor from '../components/PrivateNoteEditor'
 import UnitDetailActions from '../components/UnitDetailActions'
+import UnitMessageThread from '../components/UnitMessageThread'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { notifyAdminPush } from '@/lib/notifyAdminPush'
 import { isUnderWarranty, unitLabel, warrantyCountdown, ACTIVE_STATUSES } from '@/lib/units'
@@ -72,18 +73,6 @@ type UnitPhotoEntry = {
   created_at: string
 }
 
-// A customer's written reply about a unit's diagnosis/quote - reuses the
-// previously-unused messages table (scoped here via unit_id) rather than a
-// new table. Not a full chat thread, just a way to leave a question or
-// concern in writing before approving/denying.
-type UnitReply = {
-  id: string
-  message: string
-  created_at: string
-  customer_name: string | null
-  is_admin: boolean
-}
-
 type Customer = {
   id: string
   name: string
@@ -128,8 +117,6 @@ export default function CustomerPortal() {
   const [serviceHistory, setServiceHistory] = useState<ServiceHistoryEntry[]>([])
   const [serviceHistoryLoading, setServiceHistoryLoading] = useState(false)
   const [unitPhotos, setUnitPhotos] = useState<UnitPhotoEntry[]>([])
-  const [unitReplies, setUnitReplies] = useState<UnitReply[]>([])
-  const [replyText, setReplyText] = useState('')
   const [askingQuestion, setAskingQuestion] = useState(false)
   const detailRef = useRef<HTMLDivElement | null>(null)
   const replyInputRef = useRef<HTMLInputElement | null>(null)
@@ -161,8 +148,6 @@ export default function CustomerPortal() {
   // the unpaid-count badge, so a customer can tell at a glance whether they
   // owe anything without opening email at all.
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
-
-  const [replyBusy, setReplyBusy] = useState(false)
 
   const [detailBusy, setDetailBusy] = useState(false)
 
@@ -339,23 +324,12 @@ export default function CustomerPortal() {
       .eq('unit_id', unit.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => setUnitPhotos(data || []))
-
-    setUnitReplies([])
-    setReplyText('')
-    supabase
-      .from('messages')
-      .select('id, message, created_at, customer_name, is_admin')
-      .eq('unit_id', unit.id)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => setUnitReplies(data || []))
   }
 
   function closeUnit() {
     setSelectedUnit(null)
     setServiceHistory([])
     setUnitPhotos([])
-    setUnitReplies([])
-    setReplyText('')
     setAskingQuestion(false)
   }
 
@@ -368,33 +342,10 @@ export default function CustomerPortal() {
     }
   }, [selectedUnit?.id])
 
-  async function submitReply() {
-    if (!selectedUnit || !customer || !replyText.trim()) return
-    setReplyBusy(true)
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        unit_id: selectedUnit.id,
-        customer_id: customer.id,
-        customer_name: customer.name || userEmail || 'Customer',
-        message: replyText.trim(),
-      })
-      .select('id, message, created_at, customer_name, is_admin')
-      .single()
-    setReplyBusy(false)
-    if (error) {
-      setMessage('Could not send your reply. Try again.')
-      return
-    }
-    setUnitReplies(prev => [...prev, data])
-    setReplyText('')
-    notifyAdminPush('message', selectedUnit.id)
-  }
-
-  // "Ask a Question" on the Needs Approval prompt reuses this same
-  // reply/message field (tied to the unit via unitReplies/submitReply)
-  // rather than a separate mechanism - it just brings the existing field
-  // into view and focus, and highlights it briefly.
+  // "Ask a Question" on the Needs Approval prompt reuses the same
+  // reply/message thread (see UnitMessageThread) rather than a separate
+  // mechanism - it just brings the existing field into view and focus,
+  // and highlights it briefly.
   function askQuestion() {
     setAskingQuestion(true)
     replyInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -951,43 +902,15 @@ export default function CustomerPortal() {
                   </a>
                 )}
 
-                <div className="space-y-2">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">
-                    {unitReplies.length > 0 ? 'Messages' : 'Have a question about this?'}
-                  </p>
-                  {unitReplies.map(r => (
-                    <div
-                      key={r.id}
-                      className={`border rounded-lg px-3 py-2 ${
-                        r.is_admin ? 'bg-orange-500/10 border-orange-500/30' : 'bg-zinc-800/60 border-zinc-700'
-                      }`}
-                    >
-                      <p className="text-xs text-gray-500">
-                        {r.is_admin ? 'Savage Chainsaws' : 'You'} -{' '}
-                        {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                      </p>
-                      <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{r.message}</p>
-                    </div>
-                  ))}
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      ref={replyInputRef}
-                      value={replyText}
-                      onChange={e => setReplyText(e.target.value)}
-                      placeholder="Ask a question about the diagnosis or quote..."
-                      className={`flex-1 bg-zinc-800 border rounded-lg px-3 py-2 text-sm ${
-                        askingQuestion ? 'border-orange-500 ring-1 ring-orange-500/50' : 'border-zinc-700'
-                      }`}
-                    />
-                    <button
-                      onClick={submitReply}
-                      disabled={replyBusy || !replyText.trim()}
-                      className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0"
-                    >
-                      {replyBusy ? 'Sending...' : 'Send Reply'}
-                    </button>
-                  </div>
-                </div>
+                <UnitMessageThread
+                  key={selectedUnit.id}
+                  unitId={selectedUnit.id}
+                  customerId={customer.id}
+                  customerName={customer.name || userEmail || 'Customer'}
+                  onMessage={setMessage}
+                  inputRef={replyInputRef}
+                  highlighted={askingQuestion}
+                />
 
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
@@ -1068,43 +991,15 @@ export default function CustomerPortal() {
                     )
                   })()}
 
-                  <div className="space-y-2">
-                    <p className="text-xs text-gray-500 uppercase tracking-wider">
-                      {unitReplies.length > 0 ? 'Messages' : 'Have a question about this?'}
-                    </p>
-                    {unitReplies.map(r => (
-                      <div
-                        key={r.id}
-                        className={`border rounded-lg px-3 py-2 ${
-                          r.is_admin ? 'bg-orange-500/10 border-orange-500/30' : 'bg-zinc-800/60 border-zinc-700'
-                        }`}
-                      >
-                        <p className="text-xs text-gray-500">
-                          {r.is_admin ? 'Savage Chainsaws' : 'You'} -{' '}
-                          {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                        </p>
-                        <p className="text-sm text-gray-200 whitespace-pre-wrap mt-0.5">{r.message}</p>
-                      </div>
-                    ))}
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        ref={replyInputRef}
-                        value={replyText}
-                        onChange={e => setReplyText(e.target.value)}
-                        placeholder="Ask a question about the diagnosis or quote..."
-                        className={`flex-1 bg-zinc-800 border rounded-lg px-3 py-2 text-sm ${
-                          askingQuestion ? 'border-orange-500 ring-1 ring-orange-500/50' : 'border-zinc-700'
-                        }`}
-                      />
-                      <button
-                        onClick={submitReply}
-                        disabled={replyBusy || !replyText.trim()}
-                        className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0"
-                      >
-                        {replyBusy ? 'Sending...' : 'Send Reply'}
-                      </button>
-                    </div>
-                  </div>
+                  <UnitMessageThread
+                    key={selectedUnit.id}
+                    unitId={selectedUnit.id}
+                    customerId={customer.id}
+                    customerName={customer.name || userEmail || 'Customer'}
+                    onMessage={setMessage}
+                    inputRef={replyInputRef}
+                    highlighted={askingQuestion}
+                  />
                 </div>
               )
             )}
