@@ -17,10 +17,12 @@ import LogoSettingsCard from '../components/LogoSettingsCard'
 import AccountSettingsCard from '../components/AccountSettingsCard'
 import AddToFleetForm from '../components/AddToFleetForm'
 import CustomerCheckInForm from '../components/CustomerCheckInForm'
+import WarrantyShieldIcon from '../components/WarrantyShieldIcon'
+import UnitCard from '../components/UnitCard'
 import { notifyAuthChangedAcrossTabs } from '@/lib/authTabSync'
 import { notifyAdminPush } from '@/lib/notifyAdminPush'
 import { liveTitleCase, toTitleCase } from '@/lib/text'
-import { isUnderWarranty, STIHL_PREFIX_MAP, EQUIPMENT_CATEGORIES } from '@/lib/units'
+import { isUnderWarranty, STIHL_PREFIX_MAP, EQUIPMENT_CATEGORIES, unitLabel, warrantyCountdown } from '@/lib/units'
 import { formatShortDate } from '@/lib/dates'
 
 const supabase = createClient()
@@ -46,47 +48,6 @@ type Unit = {
   hour_meter: string | null
   warranty_end: string | null
   last_service_date: string | null
-}
-
-// Read-only shield indicator, reusing the same isUnderWarranty()/
-// warranty_end data as the admin side's Fleet Units icon - sized larger
-// (h-5 w-5 vs admin's h-4 w-4) since customer screens benefit from more
-// visibility here than a dense admin list does.
-function WarrantyShieldIcon({ underWarranty }: { underWarranty: boolean }) {
-  return (
-    <span
-      title={underWarranty ? 'Under warranty' : 'Not under warranty'}
-      className={`shrink-0 ${underWarranty ? 'text-blue-400' : 'text-zinc-600'}`}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill={underWarranty ? 'currentColor' : 'none'}
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-5 w-5"
-      >
-        <path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z" />
-        {underWarranty && <path d="m9 12 2 2 4-4" stroke="#09090b" />}
-      </svg>
-    </span>
-  )
-}
-
-// A live, color-coded countdown - never a bare negative number, and never
-// silently disappears once the end date has passed, so a customer can't
-// mistake "no warning shown" for "still covered."
-function warrantyCountdown(warrantyEnd: string | null): { label: string; colorClass: string } | null {
-  if (!warrantyEnd) return null
-  const end = new Date(`${warrantyEnd}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const daysLeft = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-  if (daysLeft < 0) return { label: 'Expired', colorClass: 'text-red-400' }
-  if (daysLeft === 0) return { label: 'Expires today', colorClass: 'text-red-400' }
-  if (daysLeft <= 30) return { label: `${daysLeft} days left`, colorClass: 'text-amber-400' }
-  return { label: `${daysLeft} days left`, colorClass: 'text-green-400' }
 }
 
 // Mirrors the admin dashboard's last_service_date convention (stamped
@@ -829,88 +790,6 @@ export default function CustomerPortal() {
     return u.nickname || [u.model, u.equipment_type].filter(Boolean).join(' - ') || null
   }
 
-  function displayName(u: Unit) {
-    const model = (u.model || '').trim()
-    const type = (u.equipment_type || '').trim()
-    if (model && type) return `${model} - ${type}`
-    if (model) return model
-    if (type) return type
-    return u.nickname || u.serial_number || 'No model'
-  }
-
-  function UnitCard({ unit }: { unit: Unit }) {
-    return (
-      <button
-        type="button"
-        onClick={() => openUnit(unit)}
-        className="w-full text-left bg-zinc-900 border border-zinc-800 hover:border-orange-500/50 rounded-xl p-3 flex gap-3 transition"
-      >
-        <UnitPhoto unit={unit} size="h-14 w-14 sm:h-16 sm:w-16" />
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-0.5">
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <p className="font-semibold text-base sm:text-lg truncate">{displayName(unit)}</p>
-              <span
-                className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                  unit.status === 'Needs Approval'
-                    ? 'bg-yellow-500/20 text-yellow-400'
-                    : unit.status === 'Fleet'
-                    ? 'bg-zinc-600 text-gray-300'
-                    : unit.status === 'Ready for Pickup'
-                    ? 'bg-green-500/20 text-green-400'
-                    : unit.status === 'In Repair'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'bg-orange-500/20 text-orange-400'
-                }`}
-              >
-                {unit.status}
-              </span>
-              {unit.diagnosis_notes && (
-                <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-500/20 text-orange-300">
-                  Diagnosis Updated
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-zinc-700 text-gray-300">
-                Serial: {unit.serial_number || '-'}
-              </span>
-              <WarrantyShieldIcon underWarranty={isUnderWarranty(unit)} />
-            </div>
-          </div>
-          {(() => {
-            const countdown = warrantyCountdown(unit.warranty_end)
-            if (!countdown) return null
-            return (
-              <p className={`text-xs ${countdown.colorClass}`}>
-                Warranty: {countdown.label} (ends {formatShortDate(unit.warranty_end)})
-              </p>
-            )
-          })()}
-          {(unit.nickname || unit.hour_meter) && (
-            <p className="text-sm text-gray-400">
-              {unit.nickname || ''}
-              {unit.nickname && unit.hour_meter ? ' - ' : ''}
-              {unit.hour_meter ? `${unit.hour_meter} hrs` : ''}
-            </p>
-          )}
-          {unit.problem_type && unit.status !== 'Fleet' && (
-            <p className="text-sm text-gray-500 mt-0.5">Problem: {unit.problem_type}</p>
-          )}
-          {unit.status === 'Needs Approval' && (
-            <p className="text-xs text-yellow-400 mt-1">Tap to approve or decide {'->'}</p>
-          )}
-          {unit.status === 'Fleet' && (
-            <p className="text-xs text-gray-500 mt-1">Tap to edit or schedule service {'->'}</p>
-          )}
-          {(unit.status === 'Repair Requested' || unit.status === 'Received' || unit.status === 'Diagnosing') && (
-            <p className="text-xs text-gray-500 mt-1">Tap to view or withdraw service {'->'}</p>
-          )}
-        </div>
-      </button>
-    )
-  }
-
   if (loading) {
     return (
       <main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">
@@ -1410,7 +1289,7 @@ export default function CustomerPortal() {
               <div className="flex gap-3 min-w-0">
                 <UnitPhoto unit={selectedUnit} size="h-16 w-16" />
                 <div className="min-w-0">
-                  <p className="font-semibold text-lg truncate">{displayName(selectedUnit)}</p>
+                  <p className="font-semibold text-lg truncate">{unitLabel(selectedUnit)}</p>
                   {selectedUnit.nickname && (
                     <p className="text-sm text-gray-400">{selectedUnit.nickname}</p>
                   )}
@@ -1930,7 +1809,7 @@ export default function CustomerPortal() {
             ) : (
               <div className="space-y-2">
                 {activeUnits.map(unit => (
-                  <UnitCard key={unit.id} unit={unit} />
+                  <UnitCard key={unit.id} unit={unit} onOpen={openUnit} />
                 ))}
               </div>
             )}
@@ -1967,7 +1846,7 @@ export default function CustomerPortal() {
                 No fleet units yet. Use <strong>Add to Fleet</strong> to register equipment.
               </p>
             ) : (
-              fleetUnits.map(unit => <UnitCard key={unit.id} unit={unit} />)
+              fleetUnits.map(unit => <UnitCard key={unit.id} unit={unit} onOpen={openUnit} />)
             )}
           </div>
         </details>
@@ -1983,7 +1862,7 @@ export default function CustomerPortal() {
             {otherUnits.length === 0 ? (
               <p className="text-gray-500 text-sm px-1">No completed or other units.</p>
             ) : (
-              otherUnits.map(unit => <UnitCard key={unit.id} unit={unit} />)
+              otherUnits.map(unit => <UnitCard key={unit.id} unit={unit} onOpen={openUnit} />)
             )}
           </div>
         </details>

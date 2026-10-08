@@ -61,6 +61,22 @@ export function isUnderWarranty(unit: { warranty_end: string | null }): boolean 
   return unit.warranty_end >= today
 }
 
+// A live, color-coded countdown - never a bare negative number, and never
+// silently disappears once the end date has passed, so a customer can't
+// mistake "no warning shown" for "still covered." Shared by the customer
+// portal's UnitCard and selected-unit detail panel.
+export function warrantyCountdown(warrantyEnd: string | null): { label: string; colorClass: string } | null {
+  if (!warrantyEnd) return null
+  const end = new Date(`${warrantyEnd}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const daysLeft = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  if (daysLeft < 0) return { label: 'Expired', colorClass: 'text-red-400' }
+  if (daysLeft === 0) return { label: 'Expires today', colorClass: 'text-red-400' }
+  if (daysLeft <= 30) return { label: `${daysLeft} days left`, colorClass: 'text-amber-400' }
+  return { label: `${daysLeft} days left`, colorClass: 'text-green-400' }
+}
+
 // Fleet Units list color coding - previously a private closure in
 // app/page.tsx (admin-only; the customer portal has no equivalent).
 export function getFleetColor(unit: { status: string; last_service_date: string | null; purchase_date: string | null }): 'red' | 'green' | 'orange' {
