@@ -4,9 +4,11 @@ import InvoicePaymentActions from './InvoicePaymentActions'
 import MarkPaidToggle from './MarkPaidToggle'
 import ArchiveToggle from './ArchiveToggle'
 import DeleteInvoiceButton from './DeleteInvoiceButton'
+import ZelleVerifyActions from './ZelleVerifyActions'
 import { toggleManualPaid, toggleArchived, deleteInvoice } from '../actions/invoiceLifecycle'
 import { sendInvoiceEmail } from '../actions/sendInvoiceEmail'
 import { generatePaymentLink, checkPaymentStatus } from '../actions/paymentLinks'
+import { verifyZellePayment } from '../actions/zelleClaims'
 
 type ActionsCustomer = { id: string; name: string; email: string | null; phone: string | null }
 
@@ -29,6 +31,7 @@ type ActionsInvoice = {
   notes: string | null
   pdfUrl: string | null
   sentAt: string | null
+  zelleClaimReference: string | null
 }
 
 // Same action row for both the Active/Archived Invoices desktop table and
@@ -88,6 +91,9 @@ export default function InvoiceActionButtons({
         generateAction={generatePaymentLink}
         checkStatusAction={checkPaymentStatus}
       />
+      {r.zelleClaimReference && !r.paidAt && (
+        <ZelleVerifyActions invoiceId={r.id} reference={r.zelleClaimReference} action={verifyZellePayment} />
+      )}
       <MarkPaidToggle invoiceId={r.id} isPaid={!!r.paidAt} action={toggleManualPaid} />
       {/* Only offered for unpaid invoices - a paid one is already
           archived by its paid_at, and un-archiving it here would
