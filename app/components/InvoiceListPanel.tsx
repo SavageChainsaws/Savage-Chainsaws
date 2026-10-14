@@ -1,3 +1,6 @@
+import ZelleClaimForm from './ZelleClaimForm'
+import { claimZellePayment } from '../actions/zelleClaims'
+
 type PanelInvoice = {
   id: string
   invoice_number: string | null
@@ -6,6 +9,7 @@ type PanelInvoice = {
   pdf_url: string | null
   created_at: string
   unit_id: string | null
+  zelle_claim_reference: string | null
 }
 
 type PanelUnit = {
@@ -22,10 +26,12 @@ export default function InvoiceListPanel({
   invoices,
   units,
   mode,
+  onClaimed,
 }: {
   invoices: PanelInvoice[]
   units: PanelUnit[]
   mode: 'active' | 'archived'
+  onClaimed: () => void
 }) {
   function invoiceUnitLabel(inv: PanelInvoice) {
     const u = inv.unit_id ? units.find(u => u.id === inv.unit_id) : null
@@ -33,7 +39,12 @@ export default function InvoiceListPanel({
     return u.nickname || [u.model, u.equipment_type].filter(Boolean).join(' - ') || null
   }
 
-  const list = mode === 'active' ? invoices.filter(i => !i.paid_at) : invoices.filter(i => i.paid_at)
+  // A Zelle claim pulls an invoice out of "still owed" the moment it's
+  // submitted, same as an actual Stripe/Square payment - it isn't really
+  // Paid yet (paid_at stays null until Jesse verifies it), but from the
+  // customer's side there's nothing left to do, so it reads the same way.
+  const isResolved = (inv: PanelInvoice) => !!inv.paid_at || !!inv.zelle_claim_reference
+  const list = mode === 'active' ? invoices.filter(i => !isResolved(i)) : invoices.filter(isResolved)
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
@@ -62,10 +73,17 @@ export default function InvoiceListPanel({
                   <span className="text-gray-500"> - {new Date(inv.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                   {label && <span className="text-gray-500"> - {label}</span>}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                   <span className="font-medium">${Number(inv.amount).toFixed(2)}</span>
                   {inv.paid_at ? (
                     <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400">Paid</span>
+                  ) : inv.zelle_claim_reference ? (
+                    <span
+                      className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-300"
+                      title={`Zelle confirmation #${inv.zelle_claim_reference} - Jesse will verify and finalize shortly`}
+                    >
+                      Paid - Verifying
+                    </span>
                   ) : (
                     <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-yellow-500/20 text-yellow-400">Unpaid</span>
                   )}
@@ -78,6 +96,9 @@ export default function InvoiceListPanel({
                     >
                       View PDF
                     </a>
+                  )}
+                  {!inv.paid_at && !inv.zelle_claim_reference && (
+                    <ZelleClaimForm invoiceId={inv.id} action={claimZellePayment} onClaimed={onClaimed} />
                   )}
                 </div>
               </div>

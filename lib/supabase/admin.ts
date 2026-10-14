@@ -1,8 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Service-role client for privileged auth operations (creating a customer's
-// login account) that the anon-key client can't perform under RLS. Only
-// ever call this from server actions already gated by isAdmin - never
+// Service-role client for privileged operations (creating a customer's
+// login account, webhook handlers with no logged-in user at all) that the
+// anon-key client can't perform under RLS. Only ever call this from a
+// server action already gated by isAdmin, or - for a customer-initiated
+// write like claimZellePayment - one that's first confirmed ownership of
+// the row via a plain RLS-scoped select on the regular client. Never
 // import it into client components, since the service role key must never
 // reach the browser bundle.
 export function createAdminClient() {

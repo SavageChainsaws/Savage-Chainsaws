@@ -38,19 +38,21 @@ export async function POST(request: NextRequest) {
     if (session.payment_status === 'paid' && session.id) {
       const admin = createAdminClient()
       if (admin) {
-        await admin
+        const { error: invoiceError } = await admin
           .from('invoices')
           .update({ paid_at: new Date().toISOString(), paid_via: 'stripe' })
           .eq('stripe_checkout_session_id', session.id)
           .is('paid_at', null)
+        if (invoiceError) console.error('[stripe webhook] invoices update failed:', invoiceError.message)
         // Rentals reuse the same stripe_checkout_session_id/paid_at shape
         // as invoices (see app/rentals/page.tsx) for whichever charge cycle
         // is currently outstanding - pickup charge or post-return balance.
-        await admin
+        const { error: rentalError } = await admin
           .from('rentals')
           .update({ paid_at: new Date().toISOString(), paid_via: 'stripe' })
           .eq('stripe_checkout_session_id', session.id)
           .is('paid_at', null)
+        if (rentalError) console.error('[stripe webhook] rentals update failed:', rentalError.message)
 
         // A payment plan installment (see app/invoices/page.tsx) - once
         // every installment on the plan clears, the parent invoice itself

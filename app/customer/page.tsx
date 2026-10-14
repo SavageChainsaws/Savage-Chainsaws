@@ -93,6 +93,7 @@ type InvoiceRow = {
   pdf_url: string | null
   created_at: string
   unit_id: string | null
+  zelle_claim_reference: string | null
 }
 
 export default function CustomerPortal() {
@@ -263,7 +264,7 @@ export default function CustomerPortal() {
 
     const { data: allInvoices } = await supabase
       .from('invoices')
-      .select('id, invoice_number, amount, paid_at, pdf_url, created_at, unit_id')
+      .select('id, invoice_number, amount, paid_at, pdf_url, created_at, unit_id, zelle_claim_reference')
       .eq('customer_id', cust.id)
       .order('created_at', { ascending: false })
     setInvoices((allInvoices as InvoiceRow[]) || [])
@@ -465,7 +466,7 @@ export default function CustomerPortal() {
 
   const needsApproval = units.filter(u => u.status === 'Needs Approval').length
 
-  const activeInvoices = invoices.filter(i => !i.paid_at)
+  const activeInvoices = invoices.filter(i => !i.paid_at && !i.zelle_claim_reference)
 
   if (loading) {
     return (
@@ -703,10 +704,10 @@ export default function CustomerPortal() {
         </div>
 
         {showActiveInvoices && (
-          <InvoiceListPanel invoices={invoices} units={units} mode="active" />
+          <InvoiceListPanel invoices={invoices} units={units} mode="active" onClaimed={loadData} />
         )}
         {showArchivedInvoices && (
-          <InvoiceListPanel invoices={invoices} units={units} mode="archived" />
+          <InvoiceListPanel invoices={invoices} units={units} mode="archived" onClaimed={loadData} />
         )}
 
         {showMyFleet && (

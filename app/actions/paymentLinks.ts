@@ -96,7 +96,11 @@ export async function checkPaymentStatus(_prevState: CheckStatusState, formData:
 
   if (result.paid) {
     const paidVia = invoice.stripe_checkout_session_id ? 'stripe' : 'square'
-    await supabase.from('invoices').update({ paid_at: new Date().toISOString(), paid_via: paidVia }).eq('id', invoiceId)
+    const { error } = await supabase
+      .from('invoices')
+      .update({ paid_at: new Date().toISOString(), paid_via: paidVia })
+      .eq('id', invoiceId)
+    if (error) return { success: false, message: `Payment confirmed by ${paidVia === 'stripe' ? 'Stripe' : 'Square'}, but could not save: ${error.message}` }
     revalidatePath('/invoices')
     return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
   }
