@@ -37,7 +37,7 @@ export async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: F
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, invoice_number, amount, pdf_url, customer_name, customer_id, square_payment_link_url, stripe_payment_link_url, paid_at')
+    .select('id, invoice_number, amount, pdf_url, customer_name, customer_id, square_payment_link_url, stripe_payment_link_url, paid_at, payment_plan_offered, invoice_payment_plans(id)')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
@@ -58,11 +58,28 @@ export async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: F
        <p style="margin: 0 0 20px; font-size: 12px; color: #666666;">${CARD_SURCHARGE_DISCLOSURE}</p>`
     : ''
 
+  // Jesse offering a payment plan (see "Let Customer Choose" in
+  // app/invoices/page.tsx) used to be invisible outside the app - the
+  // customer had no way to find out unless they happened to log into the
+  // portal and look. This surfaces it right in the same email that
+  // otherwise only shows the full-amount Pay Now button, so "pay it all at
+  // once" is never the only option the customer sees. Skipped once a plan
+  // already exists (the invoice_payment_plans join below) - at that point
+  // the customer already chose, so repeating the offer would be confusing.
+  const hasPlanAlready = ((invoice.invoice_payment_plans as { id: string }[] | null) || []).length > 0
+  const planOfferBlock = invoice.payment_plan_offered && !hasPlanAlready && !invoice.paid_at
+    ? `<p style="margin: 16px 0; padding: 14px 16px; background-color:#eff6ff; border:1px solid #93c5fd; border-radius:8px; font-size:14px; color:#1e3a8a;">
+         Prefer to split this into smaller payments instead of paying it all at once?
+         <a href="https://app.savagechainsaws.com/customer" style="color:#1d4ed8;font-weight:bold;text-decoration:underline;">Log in to set up a payment plan</a>.
+       </p>`
+    : ''
+
   const html = `
     <p>Hi ${greetingName},</p>
     <p>Please find your invoice attached from Savage Chainsaws.</p>
     <p><strong>Invoice ${invoiceNumber}</strong><br/>Total due: <strong>$${total.toFixed(2)}</strong></p>
     ${payNowButton}
+    ${planOfferBlock}
     <p>If you have any questions, just reply to this email.</p>
     <p>Thanks for choosing Savage Chainsaws!</p>
   `

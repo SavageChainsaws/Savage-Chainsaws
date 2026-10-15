@@ -340,25 +340,41 @@ export default async function InvoicesPage({
                       )}
                     </td>
                     <td className="px-2 py-2 whitespace-nowrap">
-                      {r.paidAt ? (
-                        <span
-                          className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
-                          title={r.paidVia === 'stripe' ? 'Paid online via Stripe' : r.paidVia === 'square' ? 'Paid online via Square' : r.paidVia === 'zelle' ? 'Paid via Zelle, verified' : 'Marked paid manually'}
-                        >
-                          Paid
-                        </span>
-                      ) : r.zelleClaimReference ? (
-                        <span
-                          className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-300"
-                          title={`Customer claims paid via Zelle, ref ${r.zelleClaimReference} - needs verification`}
-                        >
-                          Zelle - Pending
-                        </span>
-                      ) : (
-                        <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-zinc-700 text-gray-300">
-                          Unpaid
-                        </span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {r.paidAt ? (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-green-500/20 text-green-400"
+                            title={r.paidVia === 'stripe' ? 'Paid online via Stripe' : r.paidVia === 'square' ? 'Paid online via Square' : r.paidVia === 'zelle' ? 'Paid via Zelle, verified' : 'Marked paid manually'}
+                          >
+                            Paid
+                          </span>
+                        ) : r.zelleClaimReference ? (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-blue-500/20 text-blue-300"
+                            title={`Customer claims paid via Zelle, ref ${r.zelleClaimReference} - needs verification`}
+                          >
+                            Zelle - Pending
+                          </span>
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-zinc-700 text-gray-300">
+                            Unpaid
+                          </span>
+                        )}
+                        {/* Surfaced here too (not just in the expandable
+                            Payment Plan row below) so it's visible without
+                            opening the row - this is exactly the status
+                            Reliable Lawn Services' invoice email failed to
+                            mention (see sendInvoiceEmail.ts), so it should
+                            never be easy to overlook on this side either. */}
+                        {!r.paidAt && r.paymentPlanOffered && !r.paymentPlan && (
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-purple-500/20 text-purple-300"
+                            title="Customer was offered a payment plan on this invoice and hasn't chosen a schedule yet"
+                          >
+                            Plan Offered
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <div className="flex flex-wrap items-start justify-end gap-1.5">
@@ -460,6 +476,14 @@ export default async function InvoicesPage({
                     </span>
                   ) : (
                     <span className="px-1.5 py-0.5 rounded-full font-medium bg-zinc-700 text-gray-300">Unpaid</span>
+                  )}
+                  {!r.paidAt && r.paymentPlanOffered && !r.paymentPlan && (
+                    <span
+                      className="px-1.5 py-0.5 rounded-full font-medium bg-purple-500/20 text-purple-300"
+                      title="Customer was offered a payment plan on this invoice and hasn't chosen a schedule yet"
+                    >
+                      Plan Offered
+                    </span>
                   )}
                 </div>
 
