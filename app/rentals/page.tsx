@@ -3,7 +3,7 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSquareOrderPaidStatus } from '@/lib/square'
-import { createStripeCheckoutSession, getStripeSessionPaidStatus } from '@/lib/stripe'
+import { createStripeCheckoutSession, getStripeSessionStatus } from '@/lib/stripe'
 import { DEFAULT_DAILY_RATE, DEFAULT_WEEKLY_RATE, DEFAULT_SECURITY_DEPOSIT, DEFAULT_DAMAGE_CAP } from '@/lib/rentals'
 import CreateRentalForm from '../components/CreateRentalForm'
 import RentalReturnButton from '../components/RentalReturnButton'
@@ -12,7 +12,7 @@ import MarkPaidToggle from '../components/MarkPaidToggle'
 import UppercaseInput from '../components/UppercaseInput'
 
 type GenerateLinkState = { success: boolean; message: string; url?: string } | null
-type CheckStatusState = { success: boolean; message: string; paid?: boolean } | null
+type CheckStatusState = { success: boolean; message: string; paid?: boolean; url?: string } | null
 type MarkPaidState = { success: boolean; message: string } | null
 
 async function addRentalUnit(formData: FormData) {
@@ -116,15 +116,21 @@ async function generateRentalPaymentLink(_prevState: GenerateLinkState, formData
 
   const { data: rental } = await supabase
     .from('rentals')
-    .select('id, total_owed, customer_id, renter_name, renter_email, square_payment_link_url, stripe_payment_link_url')
+    .select('id, total_owed, customer_id, renter_name, renter_email, square_payment_link_url, stripe_payment_link_url, stripe_checkout_session_id')
     .eq('id', rentalId)
     .maybeSingle()
   if (!rental) return { success: false, message: 'Rental not found.' }
   if (rental.square_payment_link_url) {
     return { success: true, message: 'Payment link already exists.', url: rental.square_payment_link_url }
   }
-  if (rental.stripe_payment_link_url) {
-    return { success: true, message: 'Payment link already exists.', url: rental.stripe_payment_link_url }
+  // Same freshness check as generatePaymentLink (app/actions/paymentLinks.ts)
+  // - a Checkout Session always expires, so a stored link only gets reused
+  // once confirmed still open.
+  if (rental.stripe_payment_link_url && rental.stripe_checkout_session_id) {
+    const status = await getStripeSessionStatus(rental.stripe_checkout_session_id)
+    if (status.ok && status.open) {
+      return { success: true, message: 'Payment link already exists.', url: rental.stripe_payment_link_url }
+    }
   }
 
   const amountCents = Math.round((Number(rental.total_owed) || 0) * 100)
@@ -165,7 +171,7 @@ async function checkRentalPaymentStatus(_prevState: CheckStatusState, formData: 
 
   const { data: rental } = await supabase
     .from('rentals')
-    .select('id, square_order_id, stripe_checkout_session_id, paid_at')
+    .select('id, total_owed, customer_id, renter_email, square_order_id, stripe_checkout_session_id, paid_at')
     .eq('id', rentalId)
     .maybeSingle()
   if (!rental) return { success: false, message: 'Rental not found.' }
@@ -175,7 +181,7 @@ async function checkRentalPaymentStatus(_prevState: CheckStatusState, formData: 
   }
 
   const result = rental.stripe_checkout_session_id
-    ? await getStripeSessionPaidStatus(rental.stripe_checkout_session_id)
+    ? await getStripeSessionStatus(rental.stripe_checkout_session_id)
     : await getSquareOrderPaidStatus(rental.square_order_id as string)
   if (!result.ok) return { success: false, message: result.error }
 
@@ -185,6 +191,35 @@ async function checkRentalPaymentStatus(_prevState: CheckStatusState, formData: 
     revalidatePath('/rentals')
     return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
   }
+
+  // Recovery path for an expired Stripe link - see checkPaymentStatus in
+  // app/actions/paymentLinks.ts for the full reasoning.
+  if (rental.stripe_checkout_session_id && 'open' in result && !result.open) {
+    const amountCents = Math.round((Number(rental.total_owed) || 0) * 100)
+    if (amountCents <= 0) return { success: false, message: 'Nothing currently due for this rental.' }
+
+    let buyerEmail: string | null = rental.renter_email
+    if (!buyerEmail && rental.customer_id) {
+      const { data: customer } = await supabase.from('customers').select('email').eq('id', rental.customer_id).maybeSingle()
+      buyerEmail = customer?.email ?? null
+    }
+
+    const fresh = await createStripeCheckoutSession({
+      invoiceNumber: `Rental-${rentalId.slice(0, 8)}`,
+      amountCents,
+      buyerEmail,
+      redirectUrl: 'https://app.savagechainsaws.com/rentals',
+    })
+    if (!fresh.ok) return { success: false, message: `Old payment link expired, and a new one could not be generated: ${fresh.error}` }
+
+    await supabase
+      .from('rentals')
+      .update({ stripe_checkout_session_id: fresh.sessionId, stripe_payment_link_url: fresh.url })
+      .eq('id', rentalId)
+    revalidatePath('/rentals')
+    return { success: true, message: 'The old payment link had expired - generated a fresh one below.', paid: false, url: fresh.url }
+  }
+
   return { success: true, message: 'Not paid yet.', paid: false }
 }
 

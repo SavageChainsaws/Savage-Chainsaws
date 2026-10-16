@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from 'react'
 
 type LinkState = { success: boolean; message: string; url?: string } | null
-type StatusState = { success: boolean; message: string; paid?: boolean } | null
+type StatusState = { success: boolean; message: string; paid?: boolean; url?: string } | null
 
 // Stripe Checkout Sessions are generated on demand only (never
 // automatically when an invoice is created) - this renders "Generate
@@ -28,7 +28,13 @@ export default function InvoicePaymentActions({
   const [checkState, checkAction, checkPending] = useActionState(checkStatusAction, null)
   const [copied, setCopied] = useState(false)
 
-  const currentUrl = genState?.url || paymentLinkUrl
+  // checkState.url shows up when Check Status found the stored link's
+  // Stripe session had expired and generated a fresh one in its place (see
+  // checkPaymentStatus in app/actions/paymentLinks.ts) - swaps the Pay Now
+  // button over to it the same way a freshly-generated link from genState
+  // already does, so there's never a stretch where this still points at a
+  // dead "session timed out" page.
+  const currentUrl = genState?.url || checkState?.url || paymentLinkUrl
 
   // Auto-copy the instant a link is freshly generated - one click on "Get
   // Link" leaves it already on the clipboard, ready to paste into a text,
@@ -137,7 +143,7 @@ export default function InvoicePaymentActions({
         <p className="text-xs max-w-[220px] text-right text-red-400">{genState.message}</p>
       )}
       {checkState && (
-        <p className={`text-xs max-w-[220px] text-right ${checkState.paid ? 'text-green-400' : 'text-gray-400'}`}>
+        <p className={`text-xs max-w-[220px] text-right ${checkState.paid ? 'text-green-400' : checkState.url ? 'text-orange-400' : 'text-gray-400'}`}>
           {checkState.message}
         </p>
       )}

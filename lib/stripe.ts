@@ -91,6 +91,30 @@ export async function getStripeSessionPaidStatus(sessionId: string): Promise<Ses
   }
 }
 
+type SessionStatusSnapshot =
+  | { ok: true; paid: boolean; open: boolean }
+  | { ok: false; error: string }
+
+// Checkout Sessions in payment mode always expire - Stripe caps it at 24h
+// after creation, with no way to extend or keep one open longer - so
+// anything that might hand back a previously-generated link needs to check
+// `open` here first, not just whether a stored url/session id exists.
+// `paid` alongside it lets a caller tell "still open, waiting on the
+// customer" apart from "expired/cancelled with nothing paid" in one round
+// trip, rather than treating every non-paid status as reusable.
+export async function getStripeSessionStatus(sessionId: string): Promise<SessionStatusSnapshot> {
+  const stripe = client()
+  if (!stripe) {
+    return { ok: false, error: 'Stripe is not configured yet - STRIPE_SECRET_KEY is missing.' }
+  }
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId)
+    return { ok: true, paid: session.payment_status === 'paid', open: session.status === 'open' }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Unknown Stripe API error' }
+  }
+}
+
 export function stripeWebhookClient(): Stripe | null {
   return client()
 }
