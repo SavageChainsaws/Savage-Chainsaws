@@ -5,6 +5,7 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { CARD_SURCHARGE_DISCLOSURE } from '@/lib/billing'
 import { sendPushToCustomer } from '@/lib/push'
+import { createStripeCheckoutSession, getStripeSessionStatus } from '@/lib/stripe'
 
 type SendInvoiceState = { success: boolean; message: string } | null
 
@@ -37,7 +38,7 @@ export async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: F
 
   const { data: invoice } = await supabase
     .from('invoices')
-    .select('id, invoice_number, amount, pdf_url, customer_name, customer_id, square_payment_link_url, stripe_payment_link_url, paid_at, payment_plan_offered, invoice_payment_plans(id)')
+    .select('id, invoice_number, amount, pdf_url, customer_name, customer_id, customer_email, square_payment_link_url, stripe_payment_link_url, stripe_checkout_session_id, paid_at, payment_plan_offered, invoice_payment_plans(id)')
     .eq('id', invoiceId)
     .maybeSingle()
   if (!invoice) return { success: false, message: 'Invoice not found.' }
@@ -51,8 +52,48 @@ export async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: F
   // Only included if a payment link was already generated (never auto-
   // generated here) and the invoice isn't already marked paid - a real
   // tappable button in the email body, not just something inside the PDF
-  // attachment.
-  const paymentLinkUrl = invoice.square_payment_link_url || invoice.stripe_payment_link_url
+  // attachment. A stored Stripe link gets a freshness check first - Checkout
+  // Sessions in payment mode always expire (Stripe caps it at 24h after
+  // creation, no way to extend), so an invoice sent once and resent later
+  // (exactly what triggered this - see Reliable Lawn Services) would
+  // otherwise embed a link that's already dead, landing the customer on
+  // Stripe's "session timed out" page with no way to pay at all. A fresh
+  // session is generated and saved back to the invoice in that case, same
+  // as checkPaymentStatus already does for the admin's own Check Status
+  // button.
+  let stripePaymentLinkUrl = invoice.stripe_payment_link_url
+  if (invoice.stripe_payment_link_url && invoice.stripe_checkout_session_id && !invoice.paid_at) {
+    const status = await getStripeSessionStatus(invoice.stripe_checkout_session_id)
+    if (!status.ok || !status.open) {
+      const amountCents = Math.round(total * 100)
+      let buyerEmail = invoice.customer_email
+      if (!buyerEmail && invoice.customer_id) {
+        const { data: customer } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).maybeSingle()
+        buyerEmail = customer?.email ?? null
+      }
+      const fresh = amountCents > 0
+        ? await createStripeCheckoutSession({
+            invoiceNumber,
+            amountCents,
+            buyerEmail,
+            redirectUrl: 'https://app.savagechainsaws.com/invoices',
+          })
+        : { ok: false as const, error: 'No positive total to charge.' }
+      if (fresh.ok) {
+        await supabase
+          .from('invoices')
+          .update({ stripe_checkout_session_id: fresh.sessionId, stripe_payment_link_url: fresh.url })
+          .eq('id', invoiceId)
+        stripePaymentLinkUrl = fresh.url
+      } else {
+        // Falls through with the stale link rather than blocking the send
+        // entirely - the PDF/total still go out, and Check Status on the
+        // invoice remains available to regenerate it by hand.
+        console.error('[sendInvoiceEmail] could not refresh expired Stripe link:', fresh.error)
+      }
+    }
+  }
+  const paymentLinkUrl = invoice.square_payment_link_url || stripePaymentLinkUrl
   const payNowButton = paymentLinkUrl && !invoice.paid_at
     ? `<p style="margin: 20px 0;"><a href="${paymentLinkUrl}" style="background-color:#ea580c;color:#ffffff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Pay Now - $${total.toFixed(2)}</a></p>
        <p style="margin: 0 0 20px; font-size: 12px; color: #666666;">${CARD_SURCHARGE_DISCLOSURE}</p>`

@@ -3,11 +3,11 @@
 import { revalidatePath } from 'next/cache'
 import { getSessionInfo } from '@/lib/supabase/server'
 import { getSquareOrderPaidStatus } from '@/lib/square'
-import { createStripeCheckoutSession, getStripeSessionPaidStatus } from '@/lib/stripe'
+import { createStripeCheckoutSession, getStripeSessionStatus } from '@/lib/stripe'
 import { computeInstallmentAmounts, computeDueDates, type PlanFrequency } from '@/lib/paymentPlans'
 
 type GenerateLinkState = { success: boolean; message: string; url?: string } | null
-type CheckStatusState = { success: boolean; message: string; paid?: boolean } | null
+type CheckStatusState = { success: boolean; message: string; paid?: boolean; url?: string } | null
 type MarkPaidState = { success: boolean; message: string } | null
 type PlanState = { success: boolean; message: string } | null
 
@@ -139,15 +139,21 @@ export async function generateInstallmentPaymentLink(_prevState: GenerateLinkSta
 
   const { data: inst } = await supabase
     .from('invoice_installments')
-    .select('id, amount, sequence, invoice_id, square_payment_link_url, stripe_payment_link_url, invoices(invoice_number, customer_email, customer_id)')
+    .select('id, amount, sequence, invoice_id, square_payment_link_url, stripe_payment_link_url, stripe_checkout_session_id, invoices(invoice_number, customer_email, customer_id)')
     .eq('id', installmentId)
     .maybeSingle()
   if (!inst) return { success: false, message: 'Installment not found.' }
   if (inst.square_payment_link_url) {
     return { success: true, message: 'Payment link already exists.', url: inst.square_payment_link_url }
   }
-  if (inst.stripe_payment_link_url) {
-    return { success: true, message: 'Payment link already exists.', url: inst.stripe_payment_link_url }
+  // Same freshness check as generatePaymentLink (app/actions/paymentLinks.ts)
+  // - a Checkout Session always expires, so a stored link only gets reused
+  // once confirmed still open.
+  if (inst.stripe_payment_link_url && inst.stripe_checkout_session_id) {
+    const status = await getStripeSessionStatus(inst.stripe_checkout_session_id)
+    if (status.ok && status.open) {
+      return { success: true, message: 'Payment link already exists.', url: inst.stripe_payment_link_url }
+    }
   }
 
   const invoice = inst.invoices as unknown as { invoice_number: string | null; customer_email: string | null; customer_id: string | null } | null
@@ -180,7 +186,10 @@ export async function generateInstallmentPaymentLink(_prevState: GenerateLinkSta
 
 // Checks whichever processor this installment's link was actually created
 // through - Stripe for anything generated after the cutover, Square only
-// for a link that was already outstanding before it.
+// for a link that was already outstanding before it. Also the recovery
+// path for an expired Stripe link (see checkPaymentStatus in
+// app/actions/paymentLinks.ts for the full reasoning) - a Checkout Session
+// always expires, so finding a dead one here regenerates it on the spot.
 export async function checkInstallmentPaymentStatus(_prevState: CheckStatusState, formData: FormData): Promise<CheckStatusState> {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) throw new Error('Not authorized')
@@ -190,7 +199,7 @@ export async function checkInstallmentPaymentStatus(_prevState: CheckStatusState
 
   const { data: inst } = await supabase
     .from('invoice_installments')
-    .select('id, square_order_id, stripe_checkout_session_id, paid_at, plan_id, invoice_id')
+    .select('id, amount, sequence, square_order_id, stripe_checkout_session_id, paid_at, plan_id, invoice_id, invoices(invoice_number, customer_email, customer_id)')
     .eq('id', installmentId)
     .maybeSingle()
   if (!inst) return { success: false, message: 'Installment not found.' }
@@ -200,7 +209,7 @@ export async function checkInstallmentPaymentStatus(_prevState: CheckStatusState
   }
 
   const result = inst.stripe_checkout_session_id
-    ? await getStripeSessionPaidStatus(inst.stripe_checkout_session_id)
+    ? await getStripeSessionStatus(inst.stripe_checkout_session_id)
     : await getSquareOrderPaidStatus(inst.square_order_id as string)
   if (!result.ok) return { success: false, message: result.error }
 
@@ -211,6 +220,35 @@ export async function checkInstallmentPaymentStatus(_prevState: CheckStatusState
     revalidatePath('/invoices')
     return { success: true, message: 'Payment confirmed - marked Paid.', paid: true }
   }
+
+  if (inst.stripe_checkout_session_id && 'open' in result && !result.open) {
+    const invoice = inst.invoices as unknown as { invoice_number: string | null; customer_email: string | null; customer_id: string | null } | null
+    const amountCents = Math.round((Number(inst.amount) || 0) * 100)
+    if (amountCents <= 0) return { success: false, message: 'Nothing due for this installment.' }
+
+    let buyerEmail = invoice?.customer_email || null
+    if (!buyerEmail && invoice?.customer_id) {
+      const { data: customer } = await supabase.from('customers').select('email').eq('id', invoice.customer_id).maybeSingle()
+      buyerEmail = customer?.email ?? null
+    }
+
+    const invoiceNumber = invoice?.invoice_number || inst.invoice_id.slice(0, 8)
+    const fresh = await createStripeCheckoutSession({
+      invoiceNumber: `${invoiceNumber}-${inst.sequence}`,
+      amountCents,
+      buyerEmail,
+      redirectUrl: 'https://app.savagechainsaws.com/invoices',
+    })
+    if (!fresh.ok) return { success: false, message: `Old payment link expired, and a new one could not be generated: ${fresh.error}` }
+
+    await supabase
+      .from('invoice_installments')
+      .update({ stripe_checkout_session_id: fresh.sessionId, stripe_payment_link_url: fresh.url })
+      .eq('id', installmentId)
+    revalidatePath('/invoices')
+    return { success: true, message: 'The old payment link had expired - generated a fresh one below.', paid: false, url: fresh.url }
+  }
+
   return { success: true, message: 'Not paid yet.', paid: false }
 }
 
