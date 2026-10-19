@@ -90,39 +90,6 @@ body {
   padding: 20px;
 }
 
-/* Subtle photo backdrop - a real action shot (grinding a bar at a STIHL
-   event) instead of a generic texture, kept low-opacity and faded into
-   the theme's own background at the top/bottom via ::after so the link
-   cards stay fully legible - meant to read as atmosphere, not compete
-   with the content. ::before/::after are fixed (not background-attachment:
-   fixed on body itself, which mobile Safari ignores) so it holds steady
-   as the page scrolls. Ordinary in-flow content (.hero, .links-container,
-   etc.) always paints above a negative z-index descendant in the same
-   stacking context, so nothing extra is needed to keep them on top. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url('/images/linktree-bg.jpg');
-  /* "cover" was cropping hard into a tall, narrow mobile viewport -
-     the photo is portrait but not as tall/narrow as a phone screen, so
-     covering edge-to-edge zoomed into a thin vertical sliver and lost
-     most of the actual scene (the banner, the saw, the sparks). "contain"
-     shows the whole frame instead. */
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center top;
-  opacity: var(--bg-photo-opacity);
-  z-index: -2;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: linear-gradient(to bottom, var(--bg) 0%, transparent 20%, transparent 55%, var(--bg) 100%);
-  z-index: -1;
-}
 
 /* Hero section */
 .hero {
