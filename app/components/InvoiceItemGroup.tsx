@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { liveTitleCase } from '@/lib/text'
 import { LABOR_RATE_PER_MINUTE } from '@/lib/billing'
 
@@ -72,6 +72,33 @@ export default function InvoiceItemGroup({
 }) {
   const [lookingUp, setLookingUp] = useState<number | null>(null)
 
+  // Focuses the new line's description field the instant one appears -
+  // whether that's from clicking "+ Add X Line", a quickAdd button, or
+  // Enter in an existing line (see handleKeyDown below). Keyed off
+  // items.length rather than called directly from onAdd/handleKeyDown
+  // because the new line doesn't exist as a DOM node (and so can't be
+  // focused) until after the state update it triggers actually re-renders -
+  // this effect runs on the render where it first does.
+  const descRefs = useRef<(HTMLInputElement | null)[]>([])
+  const prevLength = useRef(items.length)
+  useEffect(() => {
+    if (items.length > prevLength.current) {
+      descRefs.current[items.length - 1]?.focus()
+    }
+    prevLength.current = items.length
+  }, [items.length])
+
+  // Enter anywhere in a line adds a new one instead of submitting the whole
+  // invoice form - without this, Enter in a Parts/Labor field falls through
+  // to the browser's default "submit the form" behavior, generating the
+  // invoice on a stray keypress mid-entry.
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onAdd()
+    }
+  }
+
   function handleMinutesChange(i: number, value: string) {
     onUpdate(i, 'minutes', value)
     const minutes = Number(value)
@@ -114,10 +141,12 @@ export default function InvoiceItemGroup({
         {items.map((item, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
             <input
+              ref={el => { descRefs.current[i] = el }}
               name={descriptionField}
               value={item.description}
               onChange={e => onUpdate(i, 'description', skuLookup ? e.target.value : liveTitleCase(e.target.value))}
               onBlur={e => handleBlur(i, e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder={lookingUp === i ? 'Looking up...' : placeholder}
               className="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
             />
@@ -128,6 +157,7 @@ export default function InvoiceItemGroup({
                 min="1"
                 value={item.quantity ?? '1'}
                 onChange={e => onUpdate(i, 'quantity', e.target.value)}
+                onKeyDown={handleKeyDown}
                 title="Quantity"
                 className="w-16 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
               />
@@ -139,6 +169,7 @@ export default function InvoiceItemGroup({
                 min="0"
                 value={item.minutes ?? ''}
                 onChange={e => handleMinutesChange(i, e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="Min"
                 title="Minutes of labor"
                 className="w-20 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm"
@@ -151,6 +182,7 @@ export default function InvoiceItemGroup({
               min="0"
               value={item.price}
               onChange={e => onUpdate(i, 'price', e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder={quantityField ? '0.00 ea' : '0.00'}
               title={quantityField ? 'Price per unit' : minutesField ? 'Line total' : undefined}
               className="w-28 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm"
