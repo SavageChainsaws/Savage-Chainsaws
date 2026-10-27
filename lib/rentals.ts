@@ -3,8 +3,8 @@
 // what the customer actually signed.
 export type RentalType = 'daily' | 'weekly'
 
-export const DEFAULT_DAILY_RATE = 40
-export const DEFAULT_WEEKLY_RATE = 120
+export const DEFAULT_DAILY_RATE = 70
+export const DEFAULT_WEEKLY_RATE = 210
 export const DEFAULT_SECURITY_DEPOSIT = 150
 export const DEFAULT_DAMAGE_CAP = 300
 export const LATE_FEE_PER_DAY = 10
