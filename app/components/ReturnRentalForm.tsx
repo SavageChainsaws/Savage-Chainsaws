@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import RentalPhotoUpload from './RentalPhotoUpload'
+import DictateTextarea from './DictateTextarea'
 
 // Closes out a rental: after-condition photos, fuel status, and any
 // damage found (capped client-side too, though /api/rental/return is the
@@ -87,7 +88,7 @@ export default function ReturnRentalForm({
 
       <div>
         <label className="block text-xs text-gray-500 mb-1">Return Condition Notes</label>
-        <textarea
+        <DictateTextarea
           name="return_condition_notes"
           value={returnConditionNotes}
           onChange={e => setReturnConditionNotes(e.target.value)}

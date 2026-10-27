@@ -10,6 +10,7 @@ import AdminLogout from './components/AdminLogout'
 import DeleteUnitButton from './components/DeleteUnitButton'
 import ThumbnailForm from './components/ThumbnailForm'
 import CheckInForm from './components/CheckInForm'
+import DictateTextarea from './components/DictateTextarea'
 import { UnitPhoto } from './components/UnitPhoto'
 import ContactLinksBar from './components/ContactLinksBar'
 import SiteFooter from './components/SiteFooter'
@@ -428,7 +429,7 @@ export default async function Home({
                     )}
                   </div>
                   <p className="text-xs text-gray-600 mb-1">What the customer reported at check-in.</p>
-                  <textarea
+                  <DictateTextarea
                     form={formId}
                     name="notes"
                     defaultValue={unit.notes || ''}
@@ -925,7 +926,7 @@ export default async function Home({
                     </div>
                     <div className="sm:col-span-2 lg:col-span-3">
                       <label className="block text-xs text-gray-500 mb-1">Fleet Notes</label>
-                      <textarea name="fleet_notes" rows={2} placeholder="Anything about this unit..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                      <DictateTextarea name="fleet_notes" rows={2} placeholder="Anything about this unit..." className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                     </div>
                     <div className="sm:col-span-2 lg:col-span-3">
                       <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg">Add to Fleet</button>
@@ -1026,7 +1027,7 @@ export default async function Home({
                                 </div>
                                 <div>
                                   <label className="block text-xs text-gray-500 mb-1">Fleet Notes</label>
-                                  <textarea name="fleet_notes" rows={2} defaultValue={unit.fleet_notes || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                                  <DictateTextarea name="fleet_notes" rows={2} defaultValue={unit.fleet_notes || ''} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                                 </div>
                                 <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
                                   <input

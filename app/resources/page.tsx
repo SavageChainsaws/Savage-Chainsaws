@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import DictateTextarea from '../components/DictateTextarea'
 
 const supabase = createClient()
 
@@ -173,7 +174,7 @@ export default function ResourcesPage() {
               required
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
             />
-            <textarea
+            <DictateTextarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Short description (optional)"

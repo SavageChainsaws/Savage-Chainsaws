@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import DictateTextarea from '../components/DictateTextarea'
 
 const supabase = createClient()
 
@@ -225,7 +226,7 @@ export default function InventoryClient() {
             </div>
             <div className="sm:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Description</label>
-              <textarea
+              <DictateTextarea
                 value={description}
                 onChange={e => setDescription(e.target.value)}
                 rows={2}

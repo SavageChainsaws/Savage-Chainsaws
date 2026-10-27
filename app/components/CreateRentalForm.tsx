@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import RentalPhotoUpload from './RentalPhotoUpload'
+import DictateTextarea from './DictateTextarea'
 import { liveTitleCase } from '@/lib/text'
 import { computeRentalDays, computeRentalCharge, type RentalType } from '@/lib/rentals'
 
@@ -269,7 +270,7 @@ export default function CreateRentalForm({
 
       <div>
         <label className="block text-xs text-gray-500 mb-1">Pre-Existing Damage (noted before renter takes possession)</label>
-        <textarea
+        <DictateTextarea
           value={preExistingDamageNotes}
           onChange={e => setPreExistingDamageNotes(e.target.value)}
           rows={2}

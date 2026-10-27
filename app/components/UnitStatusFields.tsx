@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useState, type ReactNode } from 'react'
+import DictateTextarea from './DictateTextarea'
 
 // Diagnosis Notes (what was actually found wrong) is required before a
 // unit can move past Diagnosing into Needs Approval or In Repair, so its
@@ -83,7 +84,7 @@ export function DiagnosisNotesField({ unit, formId }: { unit: StatusFieldsUnit; 
       <p className="text-xs text-gray-600 mb-1">
         What was actually found wrong - visible to the customer. Add any parts needed in Parts &amp; SKUs below.
       </p>
-      <textarea
+      <DictateTextarea
         form={formId}
         name="diagnosis_notes"
         defaultValue={unit.diagnosis_notes || ''}

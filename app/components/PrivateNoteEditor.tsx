@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import DictateTextarea from './DictateTextarea'
 
 const supabase = createClient()
 
@@ -58,7 +59,7 @@ export default function PrivateNoteEditor({
       <label className="block text-xs text-gray-500 mb-1">
         Private Notes <span className="text-zinc-600">(only visible to you, not Jesse)</span>
       </label>
-      <textarea
+      <DictateTextarea
         value={note}
         onChange={e => setNote(e.target.value)}
         rows={2}
