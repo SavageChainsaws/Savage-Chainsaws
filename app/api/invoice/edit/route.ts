@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existingInvoice } = await supabase
     .from('invoices')
-    .select('id, unit_id, customer_id, customer_name, customer_email, invoice_number, paid_at, square_payment_link_url, stripe_payment_link_url')
+    .select('id, unit_id, customer_id, customer_name, customer_email, invoice_number, paid_at, square_payment_link_url, stripe_payment_link_url, unit_model, unit_serial')
     .eq('id', invoiceId)
     .single()
   if (!existingInvoice) {
@@ -121,6 +121,8 @@ export async function POST(request: NextRequest) {
   let customerIdToSave = existingInvoice.customer_id
   let customerNameToSave = existingInvoice.customer_name
   let customerEmailToSave = existingInvoice.customer_email
+  let unitModelToSave = existingInvoice.unit_model
+  let unitSerialToSave = existingInvoice.unit_serial
 
   if (unitId) {
     const customerIdForLookup = unit?.customer_id || existingInvoice.customer_id
@@ -151,6 +153,8 @@ export async function POST(request: NextRequest) {
     customerIdToSave = submittedCustomerId
     customerNameToSave = pdfCustomerName
     customerEmailToSave = pdfCustomerEmail
+    unitModelToSave = ((formData.get('unit_model') as string) || '').trim() || null
+    unitSerialToSave = ((formData.get('unit_serial') as string) || '').trim() || null
   }
 
   let resolvedParts: ResolvedPart[] = []
@@ -211,6 +215,8 @@ export async function POST(request: NextRequest) {
           nickname: unit.nickname,
           thumbnailUrl: unit.thumbnail_url || unit.photo_url || null,
         }
+      : unitModelToSave || unitSerialToSave
+      ? { model: unitModelToSave, serialNumber: unitSerialToSave, equipmentType: null }
       : null,
     partsLineItems,
     laborLineItems,
@@ -241,7 +247,13 @@ export async function POST(request: NextRequest) {
       // Only ever touched for a standalone invoice - a unit-linked one's
       // customer identity is never stored on the invoice row itself.
       ...(!unitId
-        ? { customer_id: customerIdToSave, customer_name: customerNameToSave, customer_email: customerEmailToSave }
+        ? {
+            customer_id: customerIdToSave,
+            customer_name: customerNameToSave,
+            customer_email: customerEmailToSave,
+            unit_model: unitModelToSave,
+            unit_serial: unitSerialToSave,
+          }
         : {}),
       ...(clearStalePaymentLink
         ? {

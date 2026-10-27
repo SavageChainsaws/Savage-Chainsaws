@@ -169,16 +169,20 @@ export default function CreateCustomInvoiceForm({
         </div>
       </div>
 
-      <details className="group/unit-fields">
-        <summary className="text-xs text-orange-400 cursor-pointer list-none select-none">
-          Unit Info (Optional) <span className="text-gray-600">- if this invoice relates to a piece of equipment</span>
-        </summary>
-        <div className="grid sm:grid-cols-3 gap-3 mt-2">
-          <input name="unit_model" placeholder="Model" className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-          <input name="unit_serial" placeholder="Serial Number" className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
-          <input name="unit_equipment_type" placeholder="Equipment Type" className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">
+          Unit (Optional) <span className="text-gray-600">- for a customer with no fleet unit on file, or a quick estimate not tied to one</span>
+        </label>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <input
+            name="unit_model"
+            placeholder="e.g. STIHL MS271 Chainsaw"
+            className="sm:col-span-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+          />
+          <input name="unit_serial" placeholder="Serial Number (optional)" className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
         </div>
-      </details>
+        <p className="text-xs text-gray-600 mt-1">Shows on the PDF right next to the customer&apos;s info - just type the whole thing in here, no need to split it up.</p>
+      </div>
 
       <InvoiceItemGroup
         title="Parts"

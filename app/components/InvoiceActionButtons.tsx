@@ -25,6 +25,8 @@ type ActionsInvoice = {
   paymentLinkUrl: string | null
   unitLabel: string | null
   unitId: string | null
+  unitModel: string | null
+  unitSerial: string | null
   customerId: string | null
   customerName: string
   defaultEmail: string
@@ -70,6 +72,8 @@ export default function InvoiceActionButtons({
         hasPaymentLink={!!r.paymentLinkUrl}
         unitLabel={r.unitLabel}
         unitId={r.unitId}
+        unitModel={r.unitModel}
+        unitSerial={r.unitSerial}
         customers={customers}
         customerId={r.customerId}
         customerName={r.customerName}

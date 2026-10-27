@@ -28,6 +28,8 @@ export default function EditInvoiceButton({
   customerId,
   customerName,
   customerEmail,
+  unitModel,
+  unitSerial,
   notes,
 }: {
   invoiceId: string
@@ -45,6 +47,8 @@ export default function EditInvoiceButton({
   customerId: string | null
   customerName: string
   customerEmail: string
+  unitModel?: string | null
+  unitSerial?: string | null
   notes: string | null
 }) {
   const [open, setOpen] = useState(false)
@@ -80,8 +84,11 @@ export default function EditInvoiceButton({
         // to it (a well-known flexbox+overflow trap), which is exactly why
         // this modal couldn't be scrolled once its content grew past one
         // screen (e.g. after adding a Qty field to every Parts line).
+        // No onClick-to-close here either, same reasoning as
+        // CreateInvoiceButton - a stray click on the backdrop shouldn't
+        // discard an in-progress edit. Only the X button and onSubmit
+        // close it.
         className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto"
-        onClick={() => setOpen(false)}
       >
         <div
           className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 sm:p-5 max-w-lg w-full my-8"
@@ -119,6 +126,8 @@ export default function EditInvoiceButton({
             initialCustomerId={customerId}
             initialCustomerName={customerName}
             initialCustomerEmail={customerEmail}
+            initialUnitModel={unitModel || ''}
+            initialUnitSerial={unitSerial || ''}
             initialPartsItems={parsed.partsItems}
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}

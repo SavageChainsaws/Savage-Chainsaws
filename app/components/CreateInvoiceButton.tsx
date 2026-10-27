@@ -40,8 +40,12 @@ export default function CreateInvoiceButton({
         <div
           // items-start, not sm:items-center - see EditInvoiceButton for why
           // centering here silently blocks scrolling to the rest of the modal.
+          // Deliberately no onClick-to-close here: a long invoice form loses
+          // everything typed into it the moment the modal unmounts, so a
+          // stray click on the backdrop (easy to do on a form this size)
+          // used to wipe out a half-filled invoice. Only the X button and
+          // onCreated (after a real submit) close it now.
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 overflow-y-auto"
-          onClick={() => setIsOpen(false)}
         >
           <div
             className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-2xl w-full shadow-2xl my-8"
