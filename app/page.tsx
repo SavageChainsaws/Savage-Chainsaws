@@ -36,6 +36,7 @@ import CopyReferralLink from './components/CopyReferralLink'
 import CopyInstantSignupLink from './components/CopyInstantSignupLink'
 import CreateCustomInvoiceForm from './components/CreateCustomInvoiceForm'
 import ShopSettingsForm from './components/ShopSettingsForm'
+import OwnerSignatureSetting from './components/OwnerSignatureSetting'
 import EditCustomerButton from './components/EditCustomerButton'
 import TitleCaseInput from './components/TitleCaseInput'
 import { UnitStatusProvider, StatusSelect, DiagnosisNotesField } from './components/UnitStatusFields'
@@ -54,6 +55,7 @@ import UnitOrderSheetSection from './components/UnitOrderSheetSection'
 import CreateInvoiceSection from './components/CreateInvoiceSection'
 import EditInvoiceSection from './components/EditInvoiceSection'
 import { getDefaultTaxRatePercent } from '@/lib/billing'
+import { getOwnerSignatureUrl } from '@/lib/multiUnitRentalAgreement'
 import { updateShopSetting, regenerateInstantSignupToken } from './actions/shopSettings'
 import {
   createCustomerLogin,
@@ -156,6 +158,7 @@ export default async function Home({
 
   const { data: customers } = await supabase.from('customers').select('*').order('name')
   const defaultTaxRatePercent = await getDefaultTaxRatePercent(supabase)
+  const ownerSignatureUrl = await getOwnerSignatureUrl(supabase)
   const { data: instantSignupSetting } = await supabase
     .from('shop_settings')
     .select('value')
@@ -1161,8 +1164,11 @@ export default async function Home({
             <h2 className="font-semibold text-orange-400">Shop Settings</h2>
             <span className="text-gray-500 text-sm group-open:rotate-180 transition">v</span>
           </summary>
-          <div className="border-t border-zinc-800 p-4 sm:p-6">
+          <div className="border-t border-zinc-800 p-4 sm:p-6 space-y-5">
             <ShopSettingsForm defaultTaxRatePercent={defaultTaxRatePercent} action={updateShopSetting} />
+            <div className="border-t border-zinc-800 pt-4">
+              <OwnerSignatureSetting currentUrl={ownerSignatureUrl} />
+            </div>
           </div>
         </details>
 
