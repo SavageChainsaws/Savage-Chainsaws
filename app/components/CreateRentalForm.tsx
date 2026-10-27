@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import RentalPhotoUpload from './RentalPhotoUpload'
 import DictateTextarea from './DictateTextarea'
@@ -65,6 +65,16 @@ export default function CreateRentalForm({
   const days = computeRentalDays(startDate, endDate)
   const rentalCharge = selectedUnit ? computeRentalCharge(rentalType, selectedUnit.dailyRate, selectedUnit.weeklyRate, days) : 0
   const estimatedDueAtPickup = rentalCharge + (selectedUnit?.securityDeposit || 0)
+
+  // Pre-fill renter details from the linked customer (also when opened from a customer page)
+  useEffect(() => {
+    if (!customerId) return
+    const c = customers.find(c => c.id === customerId)
+    if (!c) return
+    setRenterName(prev => prev || c.name || '')
+    setRenterPhone(prev => prev || c.phone || '')
+    setRenterEmail(prev => prev || c.email || '')
+  }, [customerId, customers])
 
   function handleSelectCustomer(id: string) {
     setCustomerId(id)
