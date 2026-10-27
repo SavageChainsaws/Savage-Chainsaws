@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import DictateTextarea from '../components/DictateTextarea'
 
 const supabase = createClient()
 
@@ -181,7 +182,7 @@ export default function FeedbackPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Message *</label>
-              <textarea
+              <DictateTextarea
                 required
                 value={message}
                 onChange={e => setMessage(e.target.value)}

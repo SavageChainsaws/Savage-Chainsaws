@@ -6,6 +6,7 @@ import { getSquareOrderPaidStatus } from '@/lib/square'
 import { createStripeCheckoutSession, getStripeSessionStatus } from '@/lib/stripe'
 import { DEFAULT_DAILY_RATE, DEFAULT_WEEKLY_RATE, DEFAULT_SECURITY_DEPOSIT, DEFAULT_DAMAGE_CAP } from '@/lib/rentals'
 import CreateRentalForm from '../components/CreateRentalForm'
+import DictateTextarea from '../components/DictateTextarea'
 import RentalReturnButton from '../components/RentalReturnButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
 import MarkPaidToggle from '../components/MarkPaidToggle'
@@ -425,7 +426,7 @@ export default async function RentalsPage({
                         </div>
                         <div className="sm:col-span-2 lg:col-span-3">
                           <label className="block text-xs text-gray-500 mb-1">Notes (bar size, accessories, condition, etc. - admin only)</label>
-                          <textarea name="condition_notes" defaultValue={u.condition_notes || ''} rows={2} placeholder="e.g. 18&quot; bar, comes with extra chain" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
+                          <DictateTextarea name="condition_notes" defaultValue={u.condition_notes || ''} rows={2} placeholder="e.g. 18&quot; bar, comes with extra chain" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm" />
                         </div>
                         <div className="sm:col-span-2 lg:col-span-3">
                           <button type="submit" className="bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-5 py-2 rounded-lg">Save Changes</button>

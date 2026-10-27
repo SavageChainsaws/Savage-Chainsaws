@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { STIHL_PREFIX_MAP, EQUIPMENT_CATEGORIES, isIdentifyingSerial, escapeLikePattern } from '@/lib/units'
 import { notifyAdminPush } from '@/lib/notifyAdminPush'
+import DictateTextarea from './DictateTextarea'
 
 const supabase = createClient()
 
@@ -238,7 +239,7 @@ export default function CustomerCheckInForm({
         </div>
         <div className="sm:col-span-2">
           <label className="block text-xs text-gray-500 mb-1">Notes</label>
-          <textarea
+          <DictateTextarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={2}

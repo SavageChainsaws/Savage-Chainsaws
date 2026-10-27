@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import InvoiceItemGroup, { type LineItem } from './InvoiceItemGroup'
+import DictateTextarea from './DictateTextarea'
 import TaxAndSurchargeFields from './TaxAndSurchargeFields'
 import { liveTitleCase } from '@/lib/text'
 import { SERVICE_CALL_DESCRIPTION, SERVICE_CALL_DEFAULT_AMOUNT } from '@/lib/billing'
@@ -288,7 +289,7 @@ export default function EditInvoiceForm({
 
       <div>
         <label className="block text-xs text-gray-500 mb-1">Notes (Optional)</label>
-        <textarea
+        <DictateTextarea
           name="notes"
           rows={2}
           value={notes}

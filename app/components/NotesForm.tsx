@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import DictateTextarea from './DictateTextarea'
 
 type NotesState = { savedAt: number } | null
 
@@ -18,7 +19,7 @@ export default function NotesForm({
   return (
     <form action={formAction} className="mt-2">
       <input type="hidden" name="id" value={unitId} />
-      <textarea
+      <DictateTextarea
         name="notes"
         defaultValue={initialNotes}
         rows={2}

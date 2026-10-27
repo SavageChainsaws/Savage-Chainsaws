@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resizeImage } from '@/lib/resizeImage'
+import DictateTextarea from './DictateTextarea'
 
 const supabase = createClient()
 
@@ -269,7 +270,7 @@ export default function CheckInForm({
 
       <div className="md:col-span-2 lg:col-span-3">
         <label className="block text-xs text-gray-500 mb-1">Customer Notes (optional)</label>
-        <textarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="What the customer said is wrong..." />
+        <DictateTextarea name="customer_notes" rows={2} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500" placeholder="What the customer said is wrong..." />
       </div>
 
       <div className="md:col-span-2 lg:col-span-3">
