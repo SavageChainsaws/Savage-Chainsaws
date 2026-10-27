@@ -6,6 +6,7 @@ import { getSquareOrderPaidStatus } from '@/lib/square'
 import { createStripeCheckoutSession, getStripeSessionStatus } from '@/lib/stripe'
 import { DEFAULT_DAILY_RATE, DEFAULT_WEEKLY_RATE, DEFAULT_SECURITY_DEPOSIT, DEFAULT_DAMAGE_CAP } from '@/lib/rentals'
 import CreateRentalForm from '../components/CreateRentalForm'
+import NewRentalAgreementButton from '../components/NewRentalAgreementButton'
 import DictateTextarea from '../components/DictateTextarea'
 import RentalReturnButton from '../components/RentalReturnButton'
 import InvoicePaymentActions from '../components/InvoicePaymentActions'
@@ -256,6 +257,11 @@ export default async function RentalsPage({
 
   const { data: customers } = await supabase.from('customers').select('id, name, email, phone').order('name')
   const { data: rentalUnits } = await supabase.from('rental_units').select('*').order('model')
+  const { data: rentalAgreements } = await supabase
+    .from('rental_agreements')
+    .select('id, renter_name, units, rental_start, due_back, rental_fee, deposit_amount, agreement_pdf_url, renter_signed_at, created_at')
+    .order('created_at', { ascending: false })
+    .limit(20)
 
   let rentalsQuery = supabase
     .from('rentals')
@@ -493,6 +499,56 @@ export default async function RentalsPage({
               defaultCustomerId={customerFilter || undefined}
             />
           </div>
+        </div>
+
+        {/* Multi-Unit Rental Agreement */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <div className="px-4 sm:px-6 py-4 border-b border-zinc-800 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-lg font-semibold text-orange-400">Rental Agreements</h2>
+              <p className="text-xs text-gray-500 mt-1">For a job going out with several saws at once - signed in person, emailed to both of you.</p>
+            </div>
+            <NewRentalAgreementButton
+              customers={(customers || []).map(c => ({ id: c.id, name: c.name, email: c.email, phone: c.phone }))}
+            />
+          </div>
+          {(rentalAgreements || []).length > 0 && (
+            <div className="p-4 sm:p-6 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 border-b border-zinc-800">
+                    <th className="pb-2 pr-3">Renter</th>
+                    <th className="pb-2 pr-3">Units</th>
+                    <th className="pb-2 pr-3">Period</th>
+                    <th className="pb-2 pr-3">Fee</th>
+                    <th className="pb-2 pr-3">Signed</th>
+                    <th className="pb-2">PDF</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(rentalAgreements || []).map(a => {
+                    const units = (a.units as { model: string }[]) || []
+                    return (
+                      <tr key={a.id} className="border-b border-zinc-800/60">
+                        <td className="py-2 pr-3">{a.renter_name}</td>
+                        <td className="py-2 pr-3 text-gray-400">{units.map(u => u.model).join(', ') || '-'}</td>
+                        <td className="py-2 pr-3 text-gray-400">{a.rental_start} &rarr; {a.due_back}</td>
+                        <td className="py-2 pr-3 text-gray-400">${Number(a.rental_fee).toFixed(2)}</td>
+                        <td className="py-2 pr-3 text-gray-400">{a.renter_signed_at ? new Date(a.renter_signed_at).toLocaleDateString() : '-'}</td>
+                        <td className="py-2">
+                          {a.agreement_pdf_url ? (
+                            <a href={a.agreement_pdf_url} target="_blank" rel="noreferrer" className="text-orange-400 hover:text-orange-300">PDF</a>
+                          ) : (
+                            <span className="text-gray-600">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Pending signature */}

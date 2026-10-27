@@ -32,6 +32,25 @@ export async function updateShopSetting(_prevState: UpdateShopSettingState, form
   return { success: true, message: `FL Sales Tax Rate updated to ${taxRate}%.` }
 }
 
+// Saves Jesse's own drawn signature (uploaded client-side beforehand - see
+// OwnerSignatureSetting) so every multi-unit rental agreement after this
+// auto-stamps it onto the Owner signature line instead of him re-signing
+// each one. Called directly from a client component, not bound to a form -
+// there's nothing else on that form to submit alongside it.
+export async function saveOwnerSignature(signatureUrl: string): Promise<{ success: boolean; message: string }> {
+  const { supabase, isAdmin } = await getSessionInfo()
+  if (!isAdmin) throw new Error('Not authorized')
+
+  const { error } = await supabase
+    .from('shop_settings')
+    .upsert({ key: 'owner_signature_url', value: signatureUrl, updated_at: new Date().toISOString() })
+  if (error) return { success: false, message: `Could not save: ${error.message}` }
+
+  revalidatePath('/')
+  revalidatePath('/rentals')
+  return { success: true, message: 'Saved - this will auto-stamp onto every new rental agreement.' }
+}
+
 // Rotates the secret that gates /join (see app/api/instant-signup/route.ts)
 // - anyone with the OLD link immediately loses access once this runs, since
 // the route compares against whatever's currently stored here. Use if a
