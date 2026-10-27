@@ -58,28 +58,33 @@ export function capDamageCharge(rawAmount: number, damageCapAmount: number): num
 export function rentalAgreementTerms(damageCap: number, securityDeposit: number): { title: string; body: string }[] {
   return [
     {
-      title: '1. Operator Responsibility',
-      body: 'Renter is responsible for proper operation per the STIHL manual. Fuel mixture: ONLY premium unleaded (91+ octane) with 2-stroke oil (50:1 ratio) - NO STRAIGHT FUEL. Renter assumes all liability for operator error and improper use.',
+      title: '1. Renter Responsibility',
+      body: 'Renter is solely responsible for all proper and safe use of the equipment, including felling, cutting, chain tension, bar and chain care, handling, and personal protective equipment. Renter will follow the STIHL owner\'s manual and all safety instructions and will not lend or sublet the equipment. Fuel: ONLY 50:1 premium gasoline mixed with 2-stroke oil. NO STRAIGHT FUEL.',
     },
     {
-      title: '2. Liability & Damage Cap',
-      body: `Renter is responsible for all damage except normal wear. Liability is capped at $${damageCap.toFixed(2)} maximum per rental. Renter's liability does NOT cover theft by third parties or acts of God. Security deposit of $${securityDeposit.toFixed(2)} is refundable and applied to the final bill if damage occurs.`,
+      title: '2. Damage and Liability',
+      body: `Renter assumes full responsibility for the equipment from pickup until return, including misuse, unsafe operation or handling, improper fuel, neglect, impact damage, and any other damage, whatever the cause. Renter pays the repair cost, including parts and labor, up to the damage cap for the unit, which is 75% of the current STIHL USA retail price of that unit (new). The security deposit of $${securityDeposit.toFixed(2)} is refundable and may be applied to damage or unpaid fees. The damage cap recorded for this rental is $${damageCap.toFixed(2)}.`,
     },
     {
-      title: '3. Maintenance During Rental',
-      body: 'Renter must maintain proper chain lubrication and return the unit with fuel tank empty, or will be charged for refueling. Any part failure from improper maintenance is the renter\'s responsibility.',
+      title: '3. Loss or Theft',
+      body: 'If the equipment is lost, stolen, or cannot be returned, Renter pays 75% of the current STIHL USA retail price of that unit (new), determined as of the date of loss. The security deposit may be applied toward this amount.',
     },
     {
-      title: '4. Return Conditions',
-      body: 'Unit must be returned by 5 PM on the rental end date, clean and in working condition. Late return: $10/day after the due date. If not returned within 7 days, the unit will be reported to police as theft.',
+      title: '4. Release and Indemnity',
+      body: 'To the fullest extent permitted by Florida law, Renter releases Savage Chainsaws LLC and its owner from all claims, losses, injuries, and damages arising from the use, handling, or possession of the equipment, and agrees to indemnify and hold Owner harmless from third-party claims arising from Renter\'s use. Renter acknowledges that chainsaws are inherently dangerous and that Owner does not provide training or supervision. This release does not apply to Owner\'s gross negligence or intentional wrongdoing, or to rights that cannot be waived under Florida law.',
     },
     {
-      title: '5. Cancellation & Modifications',
-      body: 'Cancellations 24+ hours before rental: full refund. Cancellations under 24 hours: 50% charge. Renter may extend the rental if equipment is available, at the continuing daily rate.',
+      title: '5. Return',
+      body: 'Unit must be returned by 5 PM on the rental end date, clean, with the same parts and accessories as at pickup. Late return: $10 per day after the due date. Renter remains responsible for rental charges until the equipment is returned.',
     },
     {
-      title: '6. Inspection & Acceptance',
-      body: 'Unit has been inspected and is in good working condition. Renter accepts the unit "as-is" and has tested it before taking possession.',
+      title: '6. Cancellation & Modifications',
+      body: 'Cancellations 24+ hours before rental: full refund. Cancellations under 24 hours: 50% charge. Renter may extend the rental if equipment is available, at the continuing rate.',
+    },
+    {
+      title: '7. Inspection & Acceptance',
+      body: 'Unit has been inspected and is in good working condition. Renter accepts the unit as-is and has tested it before taking possession.',
     },
   ]
 }
+
