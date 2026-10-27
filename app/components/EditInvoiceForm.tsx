@@ -23,6 +23,8 @@ export default function EditInvoiceForm({
   initialCustomerId,
   initialCustomerName,
   initialCustomerEmail,
+  initialUnitModel,
+  initialUnitSerial,
   initialPartsItems,
   initialLaborItems,
   initialPriorityFee,
@@ -44,6 +46,11 @@ export default function EditInvoiceForm({
   initialCustomerId: string | null
   initialCustomerName: string
   initialCustomerEmail: string
+  // Free-typed Unit/Serial text for a standalone invoice (see
+  // CreateCustomInvoiceForm) - undefined/empty for a unit-linked invoice,
+  // which has nothing of its own to show here (see hasUnitId above).
+  initialUnitModel?: string
+  initialUnitSerial?: string
   initialPartsItems: LineItem[]
   initialLaborItems: LineItem[]
   initialPriorityFee: number
@@ -67,6 +74,8 @@ export default function EditInvoiceForm({
   const [customerId, setCustomerId] = useState(initialCustomerId || '')
   const [customerName, setCustomerName] = useState(initialCustomerName)
   const [customerEmail, setCustomerEmail] = useState(initialCustomerEmail)
+  const [unitModel, setUnitModel] = useState(initialUnitModel || '')
+  const [unitSerial, setUnitSerial] = useState(initialUnitSerial || '')
   const [partsItems, setPartsItems] = useState<LineItem[]>(initialPartsItems)
   const [laborItems, setLaborItems] = useState<LineItem[]>(initialLaborItems)
   const [priorityFee, setPriorityFee] = useState(initialPriorityFee ? String(initialPriorityFee) : '')
@@ -190,6 +199,27 @@ export default function EditInvoiceForm({
                 value={customerEmail}
                 onChange={e => setCustomerEmail(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              Unit (Optional) <span className="text-gray-600">- for a customer with no fleet unit on file, or a quick estimate not tied to one</span>
+            </label>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <input
+                name="unit_model"
+                value={unitModel}
+                onChange={e => setUnitModel(e.target.value)}
+                placeholder="e.g. STIHL MS271 Chainsaw"
+                className="sm:col-span-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
+              />
+              <input
+                name="unit_serial"
+                value={unitSerial}
+                onChange={e => setUnitSerial(e.target.value)}
+                placeholder="Serial Number (optional)"
+                className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm"
               />
             </div>
           </div>

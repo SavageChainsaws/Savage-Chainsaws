@@ -28,6 +28,8 @@ export default function EditInvoiceButton({
   customerId,
   customerName,
   customerEmail,
+  unitModel,
+  unitSerial,
   notes,
 }: {
   invoiceId: string
@@ -45,6 +47,8 @@ export default function EditInvoiceButton({
   customerId: string | null
   customerName: string
   customerEmail: string
+  unitModel?: string | null
+  unitSerial?: string | null
   notes: string | null
 }) {
   const [open, setOpen] = useState(false)
@@ -122,6 +126,8 @@ export default function EditInvoiceButton({
             initialCustomerId={customerId}
             initialCustomerName={customerName}
             initialCustomerEmail={customerEmail}
+            initialUnitModel={unitModel || ''}
+            initialUnitSerial={unitSerial || ''}
             initialPartsItems={parsed.partsItems}
             initialLaborItems={parsed.laborItems}
             initialPriorityFee={parsed.priorityFee}

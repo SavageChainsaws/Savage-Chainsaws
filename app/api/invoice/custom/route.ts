@@ -156,6 +156,8 @@ export async function POST(request: NextRequest) {
         amount: invoiceTotal,
         description: `Invoice ${invoiceNumber}`,
         status: 'sent',
+        unit_model: unitModel,
+        unit_serial: unitSerial,
         sales_tax_rate: taxRatePercent,
         sales_tax_amount: billing.taxAmount,
         card_surcharge_amount: billing.surchargeAmount,
