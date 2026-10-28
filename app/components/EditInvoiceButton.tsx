@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import EditInvoiceForm from './EditInvoiceForm'
 import { parseInvoiceLineItemsForEdit, type BillingLine } from '@/lib/billing'
+import useLockBodyScroll from './useLockBodyScroll'
 
 // Lets Jesse edit an invoice's line items directly from the /invoices table
 // - the table-row counterpart to app/page.tsx's EditInvoiceSection (which
@@ -52,6 +53,7 @@ export default function EditInvoiceButton({
   notes: string | null
 }) {
   const [open, setOpen] = useState(false)
+  useLockBodyScroll(open)
 
   if (!open) {
     return (

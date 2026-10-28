@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import ReturnRentalForm from './ReturnRentalForm'
+import useLockBodyScroll from './useLockBodyScroll'
 
 // Modal wrapper for ReturnRentalForm - mirrors EditInvoiceButton's pattern
 // (a flat rentals list row has no room to expand a whole close-out form
@@ -16,6 +17,7 @@ export default function RentalReturnButton({
   damageCapAmount: number
 }) {
   const [open, setOpen] = useState(false)
+  useLockBodyScroll(open)
 
   return (
     <>
