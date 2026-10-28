@@ -52,9 +52,21 @@ export async function POST(request: NextRequest) {
   const fuelChargeAmount = fuelTankEmpty ? 0 : Math.max(0, fuelChargeRaw)
   const damageChargeAmount = capDamageCharge(damageChargeRaw, Number(rental.damage_cap_amount))
   const extraCharges = Math.round((lateFeeAmount + fuelChargeAmount + damageChargeAmount) * 100) / 100
+
+  // securityDeposit is the contractual amount (always shown as-agreed on
+  // the printed agreement below), but it's only something to net charges
+  // against if the pickup charge (rental fee + deposit, collected together
+  // as a single link) was actually paid - if it wasn't, no deposit is in
+  // hand to absorb anything, and the still-unpaid rental fee itself has to
+  // be billed now, alongside any late/fuel/damage charges, rather than
+  // silently dropped.
+  const pickupWasPaid = !!rental.paid_at
   const securityDeposit = Number(rental.security_deposit)
-  const balanceDue = Math.max(0, Math.round((extraCharges - securityDeposit) * 100) / 100)
-  const depositRefundDue = Math.max(0, Math.round((securityDeposit - extraCharges) * 100) / 100)
+  const depositAvailableToNet = pickupWasPaid ? securityDeposit : 0
+  const unpaidRentalCharge = pickupWasPaid ? 0 : Number(rental.rental_charge)
+  const newChargesTotal = Math.round((unpaidRentalCharge + extraCharges) * 100) / 100
+  const balanceDue = Math.max(0, Math.round((newChargesTotal - depositAvailableToNet) * 100) / 100)
+  const depositRefundDue = pickupWasPaid ? Math.max(0, Math.round((depositAvailableToNet - extraCharges) * 100) / 100) : 0
 
   // The pickup charge's payment fields are about to be reused for the
   // balance-due cycle (if any) - record what happened to it first so that
