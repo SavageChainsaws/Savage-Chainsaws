@@ -50,7 +50,7 @@ export default function RentalReturnButton({
                 &times;
               </button>
             </div>
-            <ReturnRentalForm rentalId={rentalId} damageCapAmount={damageCapAmount} />
+            <ReturnRentalForm rentalId={rentalId} damageCapAmount={damageCapAmount} onReturned={() => setOpen(false)} />
           </div>
         </div>
       )}

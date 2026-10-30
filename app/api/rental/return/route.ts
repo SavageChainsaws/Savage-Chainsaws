@@ -13,21 +13,30 @@ import { computeLateFee, capDamageCharge } from '@/lib/rentals'
 // Post-Rental Condition section filled in, and returns the rental unit to
 // the fleet (or Maintenance, if damage was found, so it isn't rented out
 // again before Jesse looks at it).
+//
+// Takes a JSON body and returns the PDF's storage URL rather than the raw
+// bytes - matches /api/rental (create) exactly, and for the same reason:
+// a plain <form target="_blank"> POST has no real "new tab" to open inside
+// an installed PWA (no browser chrome to hold one), so it was instead
+// replacing the whole standalone app window with the PDF and leaving no
+// way back. The caller opens its own tab with window.open() during the
+// click's user-activation window, then points it at this response's URL
+// once ready - see ReturnRentalForm.
 export async function POST(request: NextRequest) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   }
 
-  const formData = await request.formData()
-  const rentalId = (formData.get('rental_id') as string) || ''
-  const postPhotoUrls = (formData.getAll('post_photo_url') as string[]).filter(Boolean)
-  const returnConditionNotes = ((formData.get('return_condition_notes') as string) || '').trim() || null
-  const fuelTankEmpty = formData.get('fuel_tank_empty') === 'true'
-  const fuelChargeRaw = Number(formData.get('fuel_charge_amount')) || 0
-  const damageChargeRaw = Number(formData.get('damage_charge_amount')) || 0
+  const body = await request.json()
+  const rentalId = (body.rentalId as string) || ''
+  const postPhotoUrls: string[] = Array.isArray(body.postPhotoUrls) ? body.postPhotoUrls.filter(Boolean) : []
+  const returnConditionNotes = ((body.returnConditionNotes as string) || '').trim() || null
+  const fuelTankEmpty = !!body.fuelTankEmpty
+  const fuelChargeRaw = Number(body.fuelChargeAmount) || 0
+  const damageChargeRaw = Number(body.damageChargeAmount) || 0
   if (!rentalId) {
-    return NextResponse.json({ error: 'Missing rental_id' }, { status: 400 })
+    return NextResponse.json({ error: 'Missing rentalId' }, { status: 400 })
   }
 
   const { data: rental } = await supabase.from('rentals').select('*').eq('id', rentalId).single()
@@ -136,6 +145,7 @@ export async function POST(request: NextRequest) {
     logoUrl,
   })
 
+  let agreementPdfUrl: string | null = null
   try {
     const fileName = `${rental.id}.pdf`
     const { error: uploadError } = await supabase.storage
@@ -143,6 +153,7 @@ export async function POST(request: NextRequest) {
       .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true })
     if (!uploadError) {
       const { data: { publicUrl } } = supabase.storage.from('rentals').getPublicUrl(fileName)
+      agreementPdfUrl = publicUrl
       await supabase.from('rentals').update({ agreement_pdf_url: publicUrl }).eq('id', rental.id)
     }
   } catch (err) {
@@ -152,10 +163,5 @@ export async function POST(request: NextRequest) {
   revalidatePath('/rentals')
   revalidatePath('/')
 
-  return new NextResponse(new Uint8Array(pdfBuffer), {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="rental-agreement-${rental.id.slice(0, 8)}.pdf"`,
-    },
-  })
+  return NextResponse.json({ rental: { ...rental, status: 'Returned', total_owed: balanceDue, agreement_pdf_url: agreementPdfUrl } })
 }
