@@ -1,5 +1,7 @@
 'use client'
 
+import useLockBodyScroll from './useLockBodyScroll'
+
 // Quick zoomed-in preview overlay for the Diagnosis Findings thumbnails
 // shown in the customer portal's Repair Decision Needed card - lets a
 // customer see the damage/findings close up without navigating away.
@@ -10,6 +12,11 @@ export default function MediaLightbox({
   media: { url: string; isVideo: boolean; caption: string | null } | null
   onClose: () => void
 }) {
+  // Called unconditionally, before the early return below, per the Rules of
+  // Hooks - media flips null -> set -> null across renders of the same
+  // mounted component instance (see its one caller), not a fresh mount each
+  // time, so the hook can't live after a conditional return.
+  useLockBodyScroll(!!media)
   if (!media) return null
   return (
     <div

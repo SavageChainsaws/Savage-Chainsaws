@@ -11,20 +11,14 @@ const MAX_FILE_BYTES = 100 * 1024 * 1024
 
 // Condition-photo picker for the rental agreement PDF (before-pickup and
 // after-return sets both use this, distinguished only by filePrefix) -
-// uploads client-side straight to the 'rentals' bucket, then exposes the
-// URLs one of two ways depending on how the surrounding form submits:
-// - fieldName: a hidden input per URL, for a native FormData submit (see
-//   ReturnRentalForm) - the same array-of-hidden-inputs convention the
-//   invoice forms already use for repeated line items.
-// - onChange: the full URL array handed back directly, for a form that
-//   submits via a JSON fetch instead (see CreateRentalForm).
+// uploads client-side straight to the 'rentals' bucket, then hands the
+// full URL array back via onChange for the surrounding form's own JSON
+// fetch submit (see CreateRentalForm/ReturnRentalForm).
 export default function RentalPhotoUpload({
-  fieldName,
   label,
   filePrefix,
   onChange,
 }: {
-  fieldName?: string
   label: string
   filePrefix: string
   onChange?: (urls: string[]) => void
@@ -96,7 +90,6 @@ export default function RentalPhotoUpload({
           {photoUrls.map(url => (
             <div key={url} className="relative">
               <img src={url} alt="Preview" className="h-16 w-16 object-cover rounded-lg border border-zinc-700" />
-              {fieldName && <input type="hidden" name={fieldName} value={url} />}
               <button
                 type="button"
                 onClick={() => removePhoto(url)}
