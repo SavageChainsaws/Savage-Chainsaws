@@ -1,43 +1,87 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import RentalPhotoUpload from './RentalPhotoUpload'
 import DictateTextarea from './DictateTextarea'
 
 // Closes out a rental: after-condition photos, fuel status, and any
 // damage found (capped client-side too, though /api/rental/return is the
-// actual enforcement point - see lib/rentals.ts capDamageCharge). Submits
-// as a plain POST + target="_blank" so the updated agreement PDF (now with
-// the Post-Rental Condition section filled in) opens for printing.
+// actual enforcement point - see lib/rentals.ts capDamageCharge).
+//
+// Submits as a JSON fetch, not a form POST, opening its own tab via
+// window.open() synchronously in the click handler (so popup blockers
+// allow it) and pointing it at the resulting agreement_pdf_url once ready
+// - same pattern as CreateRentalForm, and for the same reason: a plain
+// <form target="_blank"> has no real new-tab destination inside an
+// installed PWA (no browser chrome to hold one), so it was instead taking
+// over the whole standalone app window to show the PDF with no way back
+// to the rentals list. onReturned closes the modal and refreshes the
+// underlying page once the fetch actually succeeds.
 export default function ReturnRentalForm({
   rentalId,
   damageCapAmount,
+  onReturned,
 }: {
   rentalId: string
   damageCapAmount: number
+  onReturned?: () => void
 }) {
+  const router = useRouter()
+  const [postPhotoUrls, setPostPhotoUrls] = useState<string[]>([])
   const [fuelEmpty, setFuelEmpty] = useState(true)
   const [fuelChargeAmount, setFuelChargeAmount] = useState('')
   const [damageChargeAmount, setDamageChargeAmount] = useState('')
   const [returnConditionNotes, setReturnConditionNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const damageOverCap = Number(damageChargeAmount) > damageCapAmount
 
-  return (
-    <form
-      action="/api/rental/return"
-      method="POST"
-      target="_blank"
-      onSubmit={() => {
-        setIsSubmitting(true)
-        window.setTimeout(() => setIsSubmitting(false), 3000)
-      }}
-      className="space-y-3"
-    >
-      <input type="hidden" name="rental_id" value={rentalId} />
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError(null)
+    setIsSubmitting(true)
+    // Opened synchronously, still inside the click's user-activation window,
+    // so popup blockers allow it - see CreateRentalForm for the same pattern.
+    const newTab = window.open('', '_blank')
+    try {
+      const res = await fetch('/api/rental/return', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rentalId,
+          postPhotoUrls,
+          returnConditionNotes,
+          fuelTankEmpty: fuelEmpty,
+          fuelChargeAmount: Number(fuelChargeAmount) || 0,
+          damageChargeAmount: Number(damageChargeAmount) || 0,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        newTab?.close()
+        setError(data?.error || `Could not process the return (${res.status}).`)
+        return
+      }
+      if (newTab && data?.rental?.agreement_pdf_url) {
+        newTab.location.href = data.rental.agreement_pdf_url
+      } else {
+        newTab?.close()
+      }
+      router.refresh()
+      onReturned?.()
+    } catch {
+      newTab?.close()
+      setError('Could not reach the server. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
-      <RentalPhotoUpload fieldName="post_photo_url" label="Condition Photos - After Return" filePrefix="rental-post" />
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <RentalPhotoUpload label="Condition Photos - After Return" filePrefix="rental-post" onChange={setPostPhotoUrls} />
 
       <div>
         <label className="flex items-center gap-2 text-sm">
@@ -49,7 +93,6 @@ export default function ReturnRentalForm({
           />
           Returned with fuel tank empty
         </label>
-        <input type="hidden" name="fuel_tank_empty" value={fuelEmpty ? 'true' : 'false'} />
       </div>
 
       {!fuelEmpty && (
@@ -103,6 +146,8 @@ export default function ReturnRentalForm({
         already collected is applied against any late/fuel/damage charges - a new payment link only appears if the
         total exceeds the deposit.
       </p>
+
+      {error && <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>}
 
       <button
         type="submit"

@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import useLockBodyScroll from './useLockBodyScroll'
 
 type State = { success: boolean; message: string } | null
 
@@ -18,6 +19,7 @@ export default function DeleteInvoiceButton({
 }) {
   const [state, formAction, isPending] = useActionState(action, null)
   const [confirming, setConfirming] = useState(false)
+  useLockBodyScroll(confirming)
 
   return (
     <>
