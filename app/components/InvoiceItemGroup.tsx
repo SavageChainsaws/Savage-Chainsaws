@@ -179,7 +179,11 @@ export default function InvoiceItemGroup({
               name={priceField}
               type="number"
               step="0.01"
-              min="0"
+              // No min here, deliberately - a negative price is a real line
+              // item (crediting back parts the customer already paid for
+              // elsewhere, a discount, etc.), not invalid input. A min="0"
+              // here made the browser's own number-input validation silently
+              // block the whole form's submission the moment one was typed.
               value={item.price}
               onChange={e => onUpdate(i, 'price', e.target.value)}
               onKeyDown={handleKeyDown}
