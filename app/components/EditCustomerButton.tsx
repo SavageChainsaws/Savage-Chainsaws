@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from 'react'
 import TitleCaseInput from './TitleCaseInput'
+import useLockBodyScroll from './useLockBodyScroll'
 
 type State = { success: boolean; message: string } | null
 
@@ -28,6 +29,7 @@ export default function EditCustomerButton({
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [state, formAction, isPending] = useActionState(action, null)
+  useLockBodyScroll(isOpen)
 
   // Closes itself once the save actually succeeds, so the admin lands back
   // on the (now-revalidated) profile showing the new values, rather than

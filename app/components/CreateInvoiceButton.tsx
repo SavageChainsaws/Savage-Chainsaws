@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import CreateCustomInvoiceForm from './CreateCustomInvoiceForm'
+import useLockBodyScroll from './useLockBodyScroll'
 
 type CustomerOption = {
   id: string
@@ -25,6 +26,7 @@ export default function CreateInvoiceButton({
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const router = useRouter()
+  useLockBodyScroll(isOpen)
 
   return (
     <>

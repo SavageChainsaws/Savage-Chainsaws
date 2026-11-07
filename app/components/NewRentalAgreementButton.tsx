@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import CreateRentalAgreementFlow from './CreateRentalAgreementFlow'
+import useLockBodyScroll from './useLockBodyScroll'
 
 type CustomerOption = { id: string; name: string; email: string | null; phone: string | null }
 
@@ -16,6 +17,7 @@ type CustomerOption = { id: string; name: string; email: string | null; phone: s
 // customer's in-progress signature.
 export default function NewRentalAgreementButton({ customers }: { customers: CustomerOption[] }) {
   const [isOpen, setIsOpen] = useState(false)
+  useLockBodyScroll(isOpen)
 
   return (
     <>
