@@ -87,7 +87,15 @@ export async function POST(request: NextRequest) {
           model: model ? toTitleCase(model) : null,
           equipment_type: equipmentType,
           nickname,
-          status: 'Received',
+          // 'Fleet' (not 'Received'/'Diagnosing' - those mean "physically
+          // checked in for a repair job right now", see
+          // app/actions/fleetCheckIn.ts's addUnit vs addFleetUnit) - a bot-
+          // created unit is a fleet/record registration (e.g. before
+          // logging a service record for work done elsewhere), not a shop
+          // drop-off, and 'Fleet' is what addFleetUnit itself sets for that
+          // exact case. It would otherwise wrongly show up as "currently in
+          // for service" on the admin repair queue.
+          status: 'Fleet',
         })
         .select('*')
         .single()

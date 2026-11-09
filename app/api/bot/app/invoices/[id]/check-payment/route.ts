@@ -38,17 +38,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     if (result.paid) {
-      // Never mark paid on the boolean alone - confirm the provider's own
-      // paid amount actually matches this invoice's current total first.
-      // A mismatch (e.g. the invoice was edited after the link was
-      // generated, or the link belongs to a different amount entirely)
-      // fails closed: nothing is written, and the mismatch is surfaced
-      // rather than silently accepted.
+      // Never mark paid on the boolean alone - require a CONFIRMED amount
+      // that matches this invoice's current total before trusting it.
+      // Square can report paid=true with no tenders (order.state ===
+      // 'COMPLETED' but tenderCount === 0 - an edge case, but a real one),
+      // which leaves paidAmountCents null; treating null the same as "no
+      // mismatch found" would silently mark an invoice paid on an unverified
+      // amount. An unknown amount fails closed exactly like a mismatched one.
       const invoiceAmountCents = Math.round(Number(invoice.amount) * 100)
       const paidAmountCents = 'amountTotalCents' in result ? result.amountTotalCents : 'paidAmountCents' in result ? result.paidAmountCents : null
-      if (paidAmountCents != null && paidAmountCents !== invoiceAmountCents) {
-        await logBotAction(admin, { botName, action: 'invoice_check_payment', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: 'amount_mismatch', invoiceAmountCents, paidAmountCents } })
-        return NextResponse.json({ paid: false, reason: 'amount_mismatch' }, { status: 409 })
+      if (paidAmountCents == null || paidAmountCents !== invoiceAmountCents) {
+        await logBotAction(admin, { botName, action: 'invoice_check_payment', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: paidAmountCents == null ? 'amount_unconfirmed' : 'amount_mismatch', invoiceAmountCents, paidAmountCents } })
+        return NextResponse.json({ paid: false, reason: paidAmountCents == null ? 'amount_unconfirmed' : 'amount_mismatch' }, { status: 409 })
       }
 
       const paidVia = invoice.stripe_checkout_session_id ? 'stripe' : 'square'

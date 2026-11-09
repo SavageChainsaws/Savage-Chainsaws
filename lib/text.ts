@@ -99,3 +99,16 @@ export function liveTitleCase(input: string): string {
 export function normalizeEmail(input: string): string {
   return input.trim().toLowerCase()
 }
+
+// Escapes the five HTML-significant characters - used when a value is
+// interpolated into an HTML email/template rather than passed to React
+// (which already escapes). & must be replaced first, or escaping the
+// others would double-escape the & it just introduced.
+export function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}

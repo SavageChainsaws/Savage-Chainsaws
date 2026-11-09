@@ -65,13 +65,35 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           ? Number(body.tax_rate_percent)
           : await getDefaultTaxRatePercent(admin)
         const includeCardSurcharge = body.include_card_surcharge === true
+
+        // Preserve any referral discount this draft already had - the
+        // same amount carries forward unchanged (same reasoning as the
+        // admin edit route, app/api/invoice/edit/route.ts: it's a one-time
+        // discount already applied/flagged at creation, never re-derived
+        // or dropped just because the line items changed). Reading it back
+        // off the invoice's own stored line_items (rather than trusting
+        // anything the request body says) is what "use the same billing
+        // math as create" means here - otherwise this silently erased the
+        // discount and overcharged the customer on every edit.
+        const existingDiscountLine = (invoice.line_items as { description: string; amount: number }[] | null || [])
+          .find(li => li.description.startsWith('Referral Discount'))
+        const referralDiscountAmount = existingDiscountLine ? Math.abs(existingDiscountLine.amount) : 0
+
         const taxableSubtotal = [...partsLineItems, ...laborLineItems].reduce((sum: number, li: { amount: number }) => sum + li.amount, 0)
-        const billing = computeInvoiceBilling({ taxableSubtotal, otherCharges: 0, hasParts, taxRatePercent, includeCardSurcharge })
-        const otherLineItems = [...(billing.taxLine ? [billing.taxLine] : []), ...(billing.surchargeLine ? [billing.surchargeLine] : [])]
+        const billing = computeInvoiceBilling({ taxableSubtotal, otherCharges: -referralDiscountAmount, hasParts, taxRatePercent, includeCardSurcharge })
+        const otherLineItems = [
+          ...(referralDiscountAmount > 0 ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
+          ...(billing.taxLine ? [billing.taxLine] : []),
+          ...(billing.surchargeLine ? [billing.surchargeLine] : []),
+        ]
         lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
+        const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
+        if (invoiceTotal < 0) {
+          return { status: 400, body: { error: 'Line items add up to a negative total - check the amounts.' } }
+        }
 
         update.line_items = lineItems
-        update.amount = lineItems.reduce((sum, li) => sum + li.amount, 0)
+        update.amount = invoiceTotal
         update.sales_tax_rate = taxRatePercent
         update.sales_tax_amount = billing.taxAmount
         update.card_surcharge_amount = billing.surchargeAmount
@@ -126,8 +148,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const { error: uploadError } = await admin.storage.from('invoices').upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true })
         if (!uploadError) {
           const { data: { publicUrl } } = admin.storage.from('invoices').getPublicUrl(fileName)
-          await admin.from('invoices').update({ pdf_url: publicUrl }).eq('id', updated.id)
-          updated.pdf_url = publicUrl
+          // Re-checked here too, not just on the line-items update above -
+          // the storage upload took real time, and if the invoice got
+          // emailed in that window this must not overwrite the PDF the
+          // customer was just sent. .is('sent_at', null) makes this a
+          // no-op rather than a silent overwrite if that happened.
+          const { data: pdfUpdateResult } = await admin.from('invoices').update({ pdf_url: publicUrl }).eq('id', updated.id).is('sent_at', null).select('id').maybeSingle()
+          if (pdfUpdateResult) updated.pdf_url = publicUrl
         }
       }
 

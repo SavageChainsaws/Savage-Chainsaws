@@ -6,6 +6,7 @@ import { canSendReminder, REMINDER_MIN_INTERVAL_DAYS } from '@/lib/bot/rules'
 import { getStripeSessionStatus, createStripeCheckoutSession } from '@/lib/stripe'
 import { getSquareOrderPaidStatus } from '@/lib/square'
 import { sendEmail } from '@/lib/email'
+import { escapeHtml } from '@/lib/text'
 
 // Only ever reminds about an invoice already emailed to the customer once
 // before (sent_at set - see lib/bot/rules.ts for why that, not `status`,
@@ -52,10 +53,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
         stripeOpen = check.open
         if (check.paid) {
+          // Require a CONFIRMED matching amount, not just "not mismatched" -
+          // an unknown amount (null) must fail closed exactly like a
+          // mismatched one, never be treated as "no problem found".
           const invoiceAmountCents = Math.round(Number(invoice.amount) * 100)
-          if (check.amountTotalCents != null && check.amountTotalCents !== invoiceAmountCents) {
-            await logBotAction(admin, { botName, action: 'invoice_send_reminder', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: 'amount_mismatch', invoiceAmountCents, paidAmountCents: check.amountTotalCents } })
-            return { status: 409, body: { error: 'Payment provider shows paid, but the amount does not match this invoice - nothing sent. Needs manual review.' } }
+          if (check.amountTotalCents == null || check.amountTotalCents !== invoiceAmountCents) {
+            await logBotAction(admin, { botName, action: 'invoice_send_reminder', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: check.amountTotalCents == null ? 'amount_unconfirmed' : 'amount_mismatch', invoiceAmountCents, paidAmountCents: check.amountTotalCents } })
+            return { status: 409, body: { error: 'Payment provider shows paid, but the amount could not be confirmed against this invoice - nothing sent. Needs manual review.' } }
           }
           paidVia = 'stripe'
           paidAt = new Date().toISOString()
@@ -68,10 +72,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           return { status: 502, body: { error: `Could not verify payment status - nothing sent. ${check.error}` } }
         }
         if (check.paid) {
+          // Same fail-closed-on-unknown-amount rule as above - Square can
+          // report paid=true with no tenders (order.state === 'COMPLETED'
+          // but tenderCount === 0), which leaves paidAmountCents null.
           const invoiceAmountCents = Math.round(Number(invoice.amount) * 100)
-          if (check.paidAmountCents != null && check.paidAmountCents !== invoiceAmountCents) {
-            await logBotAction(admin, { botName, action: 'invoice_send_reminder', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: 'amount_mismatch', invoiceAmountCents, paidAmountCents: check.paidAmountCents } })
-            return { status: 409, body: { error: 'Payment provider shows paid, but the amount does not match this invoice - nothing sent. Needs manual review.' } }
+          if (check.paidAmountCents == null || check.paidAmountCents !== invoiceAmountCents) {
+            await logBotAction(admin, { botName, action: 'invoice_send_reminder', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: check.paidAmountCents == null ? 'amount_unconfirmed' : 'amount_mismatch', invoiceAmountCents, paidAmountCents: check.paidAmountCents } })
+            return { status: 409, body: { error: 'Payment provider shows paid, but the amount could not be confirmed against this invoice - nothing sent. Needs manual review.' } }
           }
           paidVia = 'square'
           paidAt = new Date().toISOString()
@@ -150,10 +157,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       const dueDateLabel = new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      // Every interpolated value is HTML-escaped before going into the
+      // email body - invoice_number/paymentLink are server-generated, not
+      // customer input, but escaping costs nothing and means this template
+      // stays safe if a less-trusted field is ever added to it later.
       const emailResult = await sendEmail({
         to: recipient,
         subject: `Reminder: Invoice ${invoice.invoice_number} - Savage Chainsaws`,
-        html: `<p>This is a friendly reminder that invoice <strong>${invoice.invoice_number}</strong> for $${Number(invoice.amount).toFixed(2)}, due ${dueDateLabel}, is still unpaid.</p><p><a href="${paymentLink}">Pay now</a></p><p>Thanks,<br>Savage Chainsaws</p>`,
+        html: `<p>This is a friendly reminder that invoice <strong>${escapeHtml(invoice.invoice_number)}</strong> for $${Number(invoice.amount).toFixed(2)}, due ${escapeHtml(dueDateLabel)}, is still unpaid.</p><p><a href="${escapeHtml(paymentLink)}">Pay now</a></p><p>Thanks,<br>Savage Chainsaws</p>`,
         from: 'Savage Chainsaws <service@savagechainsaws.com>',
       })
       if (!emailResult.ok) {

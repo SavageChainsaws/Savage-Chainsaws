@@ -200,14 +200,22 @@ end;
 $$;
 
 -- 8. Duplicate-unit safeguard. Verified against live data before writing
--- this (2026-11-08, re-verified 2026-11-09 against this exact expression):
--- the only existing collisions on (customer_id, serial_number) are
--- placeholder values ("Unknown", "n/a") on real, different physical units
--- - see lib/units.ts's own NON_IDENTIFYING_SERIALS list, which this partial
--- index mirrors exactly. A unit with no real serial on file can still be
--- entered more than once per customer; two rows with the SAME real serial
--- for the same customer cannot. Indexed expression trims before lowercasing
--- (matching the WHERE clause) so "ABC123" and " ABC123 " collide as the
--- same serial rather than silently being treated as two different ones.
+-- this (2026-11-08, re-verified 2026-11-09 against this exact expression
+-- including the empty-string exclusion below): the only existing
+-- collisions on (customer_id, serial_number) are placeholder values
+-- ("Unknown", "n/a") on real, different physical units - see lib/units.ts's
+-- own NON_IDENTIFYING_SERIALS list, which this partial index mirrors,
+-- PLUS the empty string - units.serial_number is NOT NULL, and an empty
+-- string (never null) is the existing app-wide convention for "no real
+-- serial on file yet" (see app/actions/fleetCheckIn.ts, and
+-- app/api/bot/app/units/route.ts), so it needs excluding here exactly like
+-- every other placeholder - without it, a second serial-less unit for the
+-- same customer would violate this index and 500 instead of being allowed,
+-- same as a second "Unknown" one already correctly is. A unit with no real
+-- serial on file can still be entered more than once per customer; two
+-- rows with the SAME real serial for the same customer cannot. Indexed
+-- expression trims before lowercasing (matching the WHERE clause) so
+-- "ABC123" and " ABC123 " collide as the same serial rather than silently
+-- being treated as two different ones.
 create unique index units_customer_identifying_serial_key on public.units (customer_id, lower(trim(serial_number)))
-  where lower(trim(serial_number)) not in ('unknown', 'n/a', 'na', 'none', 'unk', 'tbd', '-', '--', '?');
+  where lower(trim(serial_number)) not in ('unknown', 'n/a', 'na', 'none', 'unk', 'tbd', '-', '--', '?', '');

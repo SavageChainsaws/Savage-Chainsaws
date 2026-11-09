@@ -27,14 +27,22 @@ export async function GET(request: NextRequest) {
 
     // archived_at is excluded from "outstanding" - an archived-but-unpaid
     // invoice is a write-off Jesse has already decided not to collect on,
-    // not real outstanding receivable.
+    // not real outstanding receivable. "Not a draft" can't be `status !=
+    // 'draft'` alone - status is set to 'sent' at PDF-creation time for the
+    // admin flows (before any email), but a bot-created draft only ever
+    // gets emailed via sendInvoiceEmail(), which sets sent_at (and, as of
+    // this fix, status too - but this OR covers any invoice where the two
+    // ever drift, rather than silently dropping it from "outstanding").
+    // This string is fully static - no request-derived value is
+    // interpolated into it, so there's no filter-injection risk the way
+    // there would be building this from user input.
     const [{ data: openInvoices, error: openError }, { data: paidInvoices, error: paidError }] = await Promise.all([
       admin
         .from('invoices')
         .select('id, customer_id, customer_name, amount, status, due_date, paid_at, created_at')
         .is('paid_at', null)
         .is('archived_at', null)
-        .neq('status', 'draft')
+        .or('status.neq.draft,sent_at.not.is.null')
         .limit(ROW_LIMIT),
       admin
         .from('invoices')

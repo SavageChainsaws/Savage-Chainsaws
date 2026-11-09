@@ -4,15 +4,15 @@ import { withIdempotency, requireIdempotencyKey } from './idempotency'
 // A minimal fake standing in for the real Supabase client - just enough of
 // the .from().insert()/.select()/.update()/.delete() chain shape
 // withIdempotency actually calls, with an in-memory "table" so claim/
-// replay/release behavior can be simulated without a live database.
+// replay/release/reclaim behavior can be simulated without a live database.
 function makeFakeAdmin() {
-  type Row = { response_status: number | null; response_body: unknown }
+  type Row = { response_status: number | null; response_body: unknown; created_at: string }
   let row: Row | null = null
   const admin = {
     from: vi.fn(() => ({
       insert: vi.fn(async () => {
         if (row) return { error: { message: 'duplicate key value violates unique constraint', code: '23505' } }
-        row = { response_status: null, response_body: null }
+        row = { response_status: null, response_body: null, created_at: new Date().toISOString() }
         return { error: null }
       }),
       select: vi.fn(() => ({
@@ -46,7 +46,7 @@ function makeFakeAdmin() {
       })),
     })),
   }
-  return { admin, getRow: () => row }
+  return { admin, getRow: () => row, setRow: (r: Row | null) => { row = r } }
 }
 
 describe('requireIdempotencyKey', () => {
@@ -70,7 +70,7 @@ describe('withIdempotency', () => {
     const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
     expect(run).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ status: 201, body: { id: 'new-1' }, replayed: false })
-    expect(getRow()).toEqual({ response_status: 201, response_body: { id: 'new-1' } })
+    expect(getRow()?.response_status).toBe(201)
   })
 
   it('a retried request with the same key, after the first finished, replays the stored response without re-running', async () => {
@@ -85,33 +85,39 @@ describe('withIdempotency', () => {
     expect(result).toEqual({ status: 201, body: { id: 'new-1' }, replayed: true })
   })
 
-  it('a concurrent request with the same key, while the first is still mid-flight, never runs the side effect and gets a 409 instead of a stale/empty replay', async () => {
-    const { admin } = makeFakeAdmin()
-    // Simulates: this call's own claim attempt loses the insert race to a
-    // request that is still running (not yet updated with a result) - the
-    // key exists but response_status is still null.
-    let insertCount = 0
-    admin.from = vi.fn(() => ({
-      insert: vi.fn(async () => {
-        insertCount++
-        return { error: { message: 'duplicate key value violates unique constraint', code: '23505' } }
-      }),
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({ data: { response_status: null, response_body: null } })),
-            })),
-          })),
-        })),
-      })),
-    })) as never
+  it('a concurrent request with the same key, while the first is genuinely still fresh/mid-flight, never runs the side effect and gets a 409', async () => {
+    const { admin, setRow } = makeFakeAdmin()
+    setRow({ response_status: null, response_body: null, created_at: new Date().toISOString() })
     const run = vi.fn()
     const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
     expect(run).not.toHaveBeenCalled()
-    expect(insertCount).toBe(1)
     expect(result.status).toBe(409)
     expect(result.replayed).toBe(true)
+  })
+
+  it('reclaims a stale claim (crashed mid-flight, past the staleness window) instead of locking that key out forever', async () => {
+    const { admin, getRow, setRow } = makeFakeAdmin()
+    // A claim from well over a minute ago that was never finalized or
+    // released - simulates a process that died before it could do either.
+    setRow({ response_status: null, response_body: null, created_at: new Date(Date.now() - 120_000).toISOString() })
+    const run = vi.fn().mockResolvedValue({ status: 201, body: { id: 'recovered' } })
+    const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ status: 201, body: { id: 'recovered' }, replayed: false })
+    expect(getRow()?.response_status).toBe(201)
+  })
+
+  it('a real insert error (not the idempotency-key conflict) is reported as an error, never mistaken for "already in progress"', async () => {
+    const admin = {
+      from: vi.fn(() => ({
+        insert: vi.fn(async () => ({ error: { message: 'relation "bot_idempotency_keys" does not exist', code: '42P01' } })),
+      })),
+    }
+    const run = vi.fn()
+    const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
+    expect(run).not.toHaveBeenCalled()
+    expect(result.status).toBe(500)
+    expect((result.body as { error: string }).error).toMatch(/does not exist/)
   })
 
   it('releases the claim (deletes the row) and does not cache a 5xx result, so a retry can actually re-run', async () => {
