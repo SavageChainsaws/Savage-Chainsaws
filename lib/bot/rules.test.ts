@@ -139,9 +139,13 @@ describe('forbiddenUnitPatchReason', () => {
   it('allows every field in the real allowlist', () => {
     expect(forbiddenUnitPatchReason({
       model: 'MS271', serial_number: '123', equipment_type: 'Chainsaw', hour_meter: '10',
-      part_number: 'a', part_numbers: 'a,b', nickname: 'Big Red', fleet_notes: 'note',
+      part_numbers: 'a,b', nickname: 'Big Red', fleet_notes: 'note',
       notes: 'note', purchase_date: '2026-01-01', last_service_date: '2026-01-01', customer_id: 'cust-1',
     })).toBeNull()
+  })
+
+  it('rejects part_number (singular) - a real but dead column nothing else in the app uses; only part_numbers (plural) is allowed', () => {
+    expect(forbiddenUnitPatchReason({ part_number: 'a' })).toBe('cannot_set_field_part_number')
   })
 
   it('rejects any field outside the allowlist - Unit Bot can never touch invoices/payments/contact info through this route', () => {

@@ -70,11 +70,20 @@ export async function POST(request: NextRequest) {
       if (!unit.last_service_date || serviceDate > unit.last_service_date) {
         unitUpdate.last_service_date = serviceDate
       }
+      let unitUpdateAudit: { before: Record<string, unknown>; after: Record<string, unknown> } | null = null
       if (Object.keys(unitUpdate).length > 0) {
         await admin.from('units').update(unitUpdate).eq('id', unitId)
+        // The unit's OWN previous values, not just the new ones being set -
+        // without this, "before" was missing from the audit entry entirely
+        // and only the new reading was ever recorded.
+        const before: Record<string, unknown> = {}
+        for (const field of Object.keys(unitUpdate)) {
+          before[field] = (unit as Record<string, unknown>)[field]
+        }
+        unitUpdateAudit = { before, after: unitUpdate }
       }
 
-      await logBotAction(admin, { botName, action: 'service_record_create', endpoint: ENDPOINT, targetTable: 'service_history', targetId: created.id, outcome: 'success', detail: { unit_update: unitUpdate } })
+      await logBotAction(admin, { botName, action: 'service_record_create', endpoint: ENDPOINT, targetTable: 'service_history', targetId: created.id, outcome: 'success', detail: { unit_update: unitUpdateAudit } })
       return { status: 201, body: { service_record: created } }
     })
 

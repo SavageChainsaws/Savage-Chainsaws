@@ -150,12 +150,16 @@ export async function customerExists(admin: AdminClient, customerId: string): Pr
 // rejected outright rather than silently ignored, so a typo'd or
 // unexpected key fails loudly instead of quietly doing nothing.
 // customer_id reassigns to an existing customer only - see customerExists.
+// `units.part_number` (singular) is a real column but a dead one - not
+// read or written anywhere else in this app (only `part_numbers`, plural,
+// is actually wired into the fleet forms/UI) - so it's deliberately left
+// out here too, rather than let Unit Bot write to a field nothing else
+// ever looks at.
 export const UNIT_BOT_PATCH_FIELDS = [
   'model',
   'serial_number',
   'equipment_type',
   'hour_meter',
-  'part_number',
   'part_numbers',
   'nickname',
   'fleet_notes',

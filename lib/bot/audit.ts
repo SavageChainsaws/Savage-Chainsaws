@@ -1,17 +1,23 @@
 import type { createAdminClient } from '@/lib/supabase/admin'
-import type { BotName } from './auth'
 
 type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
+
+// ANONYMOUS_BOT_LABEL is the one legitimate non-BotName value ever passed
+// as botName - see lib/bot/respond.ts for why a failed/unauthenticated
+// call is logged under this instead of the real bot_name it was aimed at.
+export const ANONYMOUS_BOT_LABEL = 'anonymous'
 
 // One row per bot action attempt, success or denied - `detail` must never
 // contain a token, Authorization header, or other secret. Best-effort:
 // a logging failure is swallowed (console.error only) rather than failing
 // the actual bot request, since the audit trail is observability, not a
-// correctness gate.
+// correctness gate. botName is a plain string, not BotName - this file is
+// the one place that's deliberate (see ANONYMOUS_BOT_LABEL above); every
+// other caller of this module still only ever passes a real BotName.
 export async function logBotAction(
   admin: AdminClient,
   entry: {
-    botName: BotName
+    botName: string
     action: string
     endpoint: string
     targetTable?: string | null
