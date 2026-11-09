@@ -7,11 +7,16 @@ import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
 import { toTitleCase } from '@/lib/text'
 
-// Edits a DRAFT invoice only - a non-draft (already sent) invoice can never
-// have its line items/amount changed here (forbiddenInvoicePatchReason is
-// checked independently of the draft-status gate below, as a second,
-// explicit guard against the exact things App Bot must never do: change
-// amounts on a sent invoice, mark paid by hand, or renumber it).
+// Edits a DRAFT invoice only - "draft" means status = 'draft' AND sent_at
+// is still null (status alone isn't enough: it's set to 'sent' at PDF-
+// creation time, before any email, so a draft that's somehow already been
+// emailed is not editable here either). forbiddenInvoicePatchReason is
+// checked independently of that gate, as a second, explicit guard against
+// the exact things App Bot must never do: change amounts on a sent
+// invoice, mark paid by hand, renumber it, or set its due_date (Jesse-only).
+// Both checks are re-enforced directly in the UPDATE's own .eq()/.is()
+// filter below, not just checked-then-trusted beforehand - a concurrent
+// send between this read and that write must not let the write through.
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const endpoint = `PATCH /api/bot/app/invoices/${id}`
@@ -24,18 +29,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (!invoice) return { status: 404, body: { error: 'Invoice not found.' } }
 
       const body = await request.json().catch(() => ({}))
-      const forbidden = forbiddenInvoicePatchReason(invoice, body)
+      const forbidden = forbiddenInvoicePatchReason({ status: invoice.status, sentAt: invoice.sent_at }, body)
       if (forbidden) {
         await logBotAction(admin, { botName, action: 'invoice_patch', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: forbidden } })
         return { status: 403, body: { error: `Forbidden: ${forbidden}` } }
       }
-      if (invoice.status !== 'draft') {
+      if (invoice.status !== 'draft' || invoice.sent_at) {
         await logBotAction(admin, { botName, action: 'invoice_patch', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: 'not_a_draft' } })
-        return { status: 403, body: { error: 'Only a draft invoice can be edited through this endpoint.' } }
+        return { status: 403, body: { error: 'Only a draft invoice that has not yet been emailed can be edited through this endpoint.' } }
       }
 
       const update: Record<string, unknown> = {}
-      if ('due_date' in body) update.due_date = (body.due_date || '').trim() || null
       if ('notes' in body) update.notes = (body.notes || '').trim() || null
 
       let lineItems = invoice.line_items as { description: string; amount: number }[] | null
@@ -75,10 +79,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         regeneratePdf = true
       }
 
-      const { data: updated, error } = await admin.from('invoices').update(update).eq('id', id).select('*').single()
-      if (error || !updated) {
-        await logBotAction(admin, { botName, action: 'invoice_patch', endpoint, targetTable: 'invoices', targetId: id, outcome: 'error', detail: { message: error?.message } })
-        return { status: 500, body: { error: error?.message || 'Could not update the invoice.' } }
+      const { data: updated, error } = await admin
+        .from('invoices')
+        .update(update)
+        .eq('id', id)
+        .eq('status', 'draft')
+        .is('sent_at', null)
+        .select('*')
+        .maybeSingle()
+      if (error) {
+        await logBotAction(admin, { botName, action: 'invoice_patch', endpoint, targetTable: 'invoices', targetId: id, outcome: 'error', detail: { message: error.message } })
+        return { status: 500, body: { error: error.message } }
+      }
+      if (!updated) {
+        // The invoice stopped being an editable draft between the read
+        // above and this write (e.g. it was just emailed) - the update
+        // matched zero rows rather than silently applying anyway.
+        await logBotAction(admin, { botName, action: 'invoice_patch', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: 'not_a_draft_race' } })
+        return { status: 409, body: { error: 'This invoice is no longer an editable draft - it may have just been sent.' } }
       }
 
       if (regeneratePdf) {

@@ -1,36 +1,52 @@
 import { describe, it, expect, vi } from 'vitest'
 import { withIdempotency, requireIdempotencyKey } from './idempotency'
 
-type Row = { response_status: number; response_body: unknown } | null
-
 // A minimal fake standing in for the real Supabase client - just enough of
-// the .from().select()... / .insert() chain shape withIdempotency actually
-// calls, with an in-memory "table" so a real retried request can be
-// simulated without a live database.
-function makeFakeAdmin(initial: Row = null) {
-  let stored: Row = initial
-  let insertShouldConflict = false
+// the .from().insert()/.select()/.update()/.delete() chain shape
+// withIdempotency actually calls, with an in-memory "table" so claim/
+// replay/release behavior can be simulated without a live database.
+function makeFakeAdmin() {
+  type Row = { response_status: number | null; response_body: unknown }
+  let row: Row | null = null
   const admin = {
     from: vi.fn(() => ({
+      insert: vi.fn(async () => {
+        if (row) return { error: { message: 'duplicate key value violates unique constraint', code: '23505' } }
+        row = { response_status: null, response_body: null }
+        return { error: null }
+      }),
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
           eq: vi.fn(() => ({
             eq: vi.fn(() => ({
-              maybeSingle: vi.fn(async () => ({ data: stored })),
+              maybeSingle: vi.fn(async () => ({ data: row })),
             })),
           })),
         })),
       })),
-      insert: vi.fn(async (row: { response_status: number; response_body: unknown }) => {
-        if (insertShouldConflict || stored) {
-          return { error: { message: 'duplicate key value violates unique constraint' } }
-        }
-        stored = { response_status: row.response_status, response_body: row.response_body }
-        return { error: null }
-      }),
+      update: vi.fn((patch: Partial<Row>) => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(async () => {
+              if (row) row = { ...row, ...patch }
+              return { error: null }
+            }),
+          })),
+        })),
+      })),
+      delete: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(async () => {
+              row = null
+              return { error: null }
+            }),
+          })),
+        })),
+      })),
     })),
   }
-  return { admin, forceConflict: (v: boolean) => { insertShouldConflict = v } }
+  return { admin, getRow: () => row }
 }
 
 describe('requireIdempotencyKey', () => {
@@ -48,49 +64,73 @@ describe('requireIdempotencyKey', () => {
 })
 
 describe('withIdempotency', () => {
-  it('runs the action on the first call', async () => {
-    const { admin } = makeFakeAdmin()
+  it('claims the key, runs the action, and stores the result on the first call', async () => {
+    const { admin, getRow } = makeFakeAdmin()
     const run = vi.fn().mockResolvedValue({ status: 201, body: { id: 'new-1' } })
     const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
     expect(run).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ status: 201, body: { id: 'new-1' }, replayed: false })
+    expect(getRow()).toEqual({ response_status: 201, response_body: { id: 'new-1' } })
   })
 
-  it('a retried request with the same key replays the stored response instead of re-running - never creates a second record', async () => {
-    const { admin } = makeFakeAdmin({ response_status: 201, response_body: { id: 'new-1' } })
-    const run = vi.fn().mockResolvedValue({ status: 201, body: { id: 'should-never-be-created' } })
-    const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
-    expect(run).not.toHaveBeenCalled()
+  it('a retried request with the same key, after the first finished, replays the stored response without re-running', async () => {
+    const { admin, getRow } = makeFakeAdmin()
+    const run = vi.fn().mockResolvedValue({ status: 201, body: { id: 'new-1' } })
+    await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
+    expect(getRow()?.response_status).toBe(201)
+
+    const run2 = vi.fn().mockResolvedValue({ status: 201, body: { id: 'should-never-be-created' } })
+    const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run2)
+    expect(run2).not.toHaveBeenCalled()
     expect(result).toEqual({ status: 201, body: { id: 'new-1' }, replayed: true })
   })
 
-  it('on a concurrent race (two requests, same key, both pass the lookup), the loser defers to whatever the winner stored', async () => {
-    // Simulates: this call's own lookup found nothing (so it proceeds to
-    // run and insert), but by the time it inserts, a concurrent request
-    // with the same key has already won - the insert conflicts, and the
-    // re-select after that conflict sees the winner's row.
-    let selectCallCount = 0
-    const admin = {
-      from: vi.fn(() => ({
-        select: vi.fn(() => {
-          selectCallCount++
-          const winnerRow = selectCallCount > 1 ? { response_status: 200, response_body: { id: 'winner' } } : null
-          return {
+  it('a concurrent request with the same key, while the first is still mid-flight, never runs the side effect and gets a 409 instead of a stale/empty replay', async () => {
+    const { admin } = makeFakeAdmin()
+    // Simulates: this call's own claim attempt loses the insert race to a
+    // request that is still running (not yet updated with a result) - the
+    // key exists but response_status is still null.
+    let insertCount = 0
+    admin.from = vi.fn(() => ({
+      insert: vi.fn(async () => {
+        insertCount++
+        return { error: { message: 'duplicate key value violates unique constraint', code: '23505' } }
+      }),
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
             eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  maybeSingle: vi.fn(async () => ({ data: winnerRow })),
-                })),
-              })),
+              maybeSingle: vi.fn(async () => ({ data: { response_status: null, response_body: null } })),
             })),
-          }
-        }),
-        insert: vi.fn(async () => ({ error: { message: 'duplicate key value violates unique constraint' } })),
+          })),
+        })),
       })),
-    }
-    const run = vi.fn().mockResolvedValue({ status: 201, body: { id: 'loser-attempt' } })
-
+    })) as never
+    const run = vi.fn()
     const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
-    expect(result).toEqual({ status: 200, body: { id: 'winner' }, replayed: true })
+    expect(run).not.toHaveBeenCalled()
+    expect(insertCount).toBe(1)
+    expect(result.status).toBe(409)
+    expect(result.replayed).toBe(true)
+  })
+
+  it('releases the claim (deletes the row) and does not cache a 5xx result, so a retry can actually re-run', async () => {
+    const { admin, getRow } = makeFakeAdmin()
+    const run = vi.fn().mockResolvedValue({ status: 502, body: { error: 'upstream down' } })
+    const result = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)
+    expect(result).toEqual({ status: 502, body: { error: 'upstream down' }, replayed: false })
+    expect(getRow()).toBeNull()
+
+    const run2 = vi.fn().mockResolvedValue({ status: 201, body: { id: 'succeeded-on-retry' } })
+    const retried = await withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run2)
+    expect(run2).toHaveBeenCalledTimes(1)
+    expect(retried).toEqual({ status: 201, body: { id: 'succeeded-on-retry' }, replayed: false })
+  })
+
+  it('releases the claim if the action throws, so a retry is not permanently blocked', async () => {
+    const { admin, getRow } = makeFakeAdmin()
+    const run = vi.fn().mockRejectedValue(new Error('boom'))
+    await expect(withIdempotency(admin as never, { botName: 'app_bot', endpoint: 'POST /x', idempotencyKey: 'k1' }, run)).rejects.toThrow('boom')
+    expect(getRow()).toBeNull()
   })
 })

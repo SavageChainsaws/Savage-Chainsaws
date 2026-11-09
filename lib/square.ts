@@ -101,7 +101,7 @@ export async function createSquarePaymentLink({
 }
 
 type OrderStatusResult =
-  | { ok: true; paid: boolean }
+  | { ok: true; paid: boolean; paidAmountCents: number | null }
   | { ok: false; error: string }
 
 // The Orders API is the source of truth for whether a Payment Links order
@@ -111,15 +111,20 @@ type OrderStatusResult =
 // quick_pay orders (what createSquarePaymentLink creates) have no
 // fulfillment at all, so a fully-paid quick_pay order stays OPEN forever.
 // A tender attached to the order is the real signal - Square only adds one
-// once a payment against that order actually succeeds.
+// once a payment against that order actually succeeds. `paidAmountCents`
+// sums every tender's amount - a caller marking an invoice paid should
+// compare this against the invoice's own amount, in case this order
+// doesn't actually correspond to the current invoice total.
 export async function getSquareOrderPaidStatus(orderId: string): Promise<OrderStatusResult> {
   const result = await squareFetch(`/v2/orders/${orderId}`, { method: 'GET' })
   if (!result.ok) return result
   const order = result.data?.order
-  const tenderCount = order?.tenders?.length ?? 0
+  const tenders = (order?.tenders ?? []) as { amount_money?: { amount?: number } }[]
+  const tenderCount = tenders.length
   const paid = order?.state === 'COMPLETED' || tenderCount > 0
-  console.log('Square order status check', { orderId, state: order?.state, tenders: tenderCount, paid })
-  return { ok: true, paid }
+  const paidAmountCents = tenderCount > 0 ? tenders.reduce((sum, t) => sum + (t.amount_money?.amount ?? 0), 0) : null
+  console.log('Square order status check', { orderId, state: order?.state, tenders: tenderCount, paid, paidAmountCents })
+  return { ok: true, paid, paidAmountCents }
 }
 
 export function isSquareConfigured(): boolean {

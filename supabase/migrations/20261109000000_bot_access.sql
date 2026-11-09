@@ -58,12 +58,15 @@ grant insert, update, delete on public.bot_audit_log to authenticated;
 -- endpoint, same key) replays the stored response instead of re-running
 -- the action, so a bot's retry after a dropped connection can never create
 -- a second invoice/service record/customer/unit or send a second reminder.
+-- response_status/response_body start NULL: the row is inserted (claiming
+-- the key) BEFORE the side effect runs, then filled in once it finishes -
+-- see lib/bot/idempotency.ts for why the claim has to come first.
 create table public.bot_idempotency_keys (
   id uuid primary key default gen_random_uuid(),
   bot_name text not null,
   endpoint text not null,
   idempotency_key text not null,
-  response_status int not null,
+  response_status int,
   response_body jsonb,
   created_at timestamptz not null default now(),
   unique (bot_name, endpoint, idempotency_key)
@@ -92,6 +95,70 @@ alter table public.invoice_reminders enable row level security;
 create policy "admins full access to invoice_reminders" on public.invoice_reminders for all using (is_admin());
 grant select on public.invoice_reminders to authenticated;
 grant insert, update, delete on public.invoice_reminders to authenticated;
+
+-- 4b. Atomic claim for the reminder throttle itself (one per invoice every
+-- REMINDER_MIN_INTERVAL_DAYS). Checking "has a reminder gone out recently"
+-- and then inserting a new row, as two separate app-level steps, has a
+-- race: two concurrent send-reminder calls for the same invoice (two
+-- different retries, or two different callers) could both pass the check
+-- before either inserts, sending two emails inside the 3-day window. This
+-- function does the check-and-insert as one atomic unit, serialized with a
+-- transaction-scoped advisory lock keyed on the invoice id, so only one of
+-- two concurrent callers ever gets claimed = true. The route releases the
+-- claim (deletes the row) if it fails to actually send after claiming, and
+-- finalizes it (sets sent_to) only once the send succeeds - see
+-- app/api/bot/app/invoices/[id]/send-reminder/route.ts.
+create or replace function public.claim_invoice_reminder(p_invoice_id uuid, p_bot_name text, p_min_interval_hours numeric default 72)
+returns table(claimed boolean, reminder_id uuid)
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+declare
+  v_last timestamptz;
+  v_id uuid;
+begin
+  if not (public.is_admin() or auth.role() = 'service_role') then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtext(p_invoice_id::text));
+  select sent_at into v_last from public.invoice_reminders where invoice_id = p_invoice_id order by sent_at desc limit 1;
+  if v_last is not null and v_last > now() - (p_min_interval_hours || ' hours')::interval then
+    return query select false, null::uuid;
+    return;
+  end if;
+  insert into public.invoice_reminders (invoice_id, bot_name, sent_at) values (p_invoice_id, p_bot_name, now()) returning invoice_reminders.id into v_id;
+  return query select true, v_id;
+end;
+$$;
+
+create or replace function public.release_invoice_reminder_claim(p_reminder_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+begin
+  if not (public.is_admin() or auth.role() = 'service_role') then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+  delete from public.invoice_reminders where id = p_reminder_id;
+end;
+$$;
+
+create or replace function public.finalize_invoice_reminder_claim(p_reminder_id uuid, p_sent_to text)
+returns void
+language plpgsql
+security definer
+set search_path = 'public'
+as $$
+begin
+  if not (public.is_admin() or auth.role() = 'service_role') then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+  update public.invoice_reminders set sent_to = p_sent_to where id = p_reminder_id;
+end;
+$$;
 
 -- 5. Invoice due dates. No backfill, no assumed NET 30 - existing invoices
 -- are left NULL on purpose; a NULL due_date blocks App Bot from sending a
@@ -133,11 +200,14 @@ end;
 $$;
 
 -- 8. Duplicate-unit safeguard. Verified against live data before writing
--- this (2026-11-08): the only existing collisions on (customer_id,
--- serial_number) are placeholder values ("Unknown", "n/a") on real,
--- different physical units - see lib/units.ts's own NON_IDENTIFYING_SERIALS
--- list, which this partial index mirrors exactly. A unit with no real
--- serial on file can still be entered more than once per customer; two
--- rows with the SAME real serial for the same customer cannot.
-create unique index units_customer_identifying_serial_key on public.units (customer_id, lower(serial_number))
+-- this (2026-11-08, re-verified 2026-11-09 against this exact expression):
+-- the only existing collisions on (customer_id, serial_number) are
+-- placeholder values ("Unknown", "n/a") on real, different physical units
+-- - see lib/units.ts's own NON_IDENTIFYING_SERIALS list, which this partial
+-- index mirrors exactly. A unit with no real serial on file can still be
+-- entered more than once per customer; two rows with the SAME real serial
+-- for the same customer cannot. Indexed expression trims before lowercasing
+-- (matching the WHERE clause) so "ABC123" and " ABC123 " collide as the
+-- same serial rather than silently being treated as two different ones.
+create unique index units_customer_identifying_serial_key on public.units (customer_id, lower(trim(serial_number)))
   where lower(trim(serial_number)) not in ('unknown', 'n/a', 'na', 'none', 'unk', 'tbd', '-', '--', '?');

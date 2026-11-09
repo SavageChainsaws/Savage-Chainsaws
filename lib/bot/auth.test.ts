@@ -35,7 +35,12 @@ describe('verifyBotToken', () => {
 
   async function setup(row: { bot_name: string; revoked_at: string | null } | null) {
     const { createAdminClient } = await import('@/lib/supabase/admin')
-    const maybeSingle = vi.fn().mockResolvedValue({ data: row })
+    // .is('revoked_at', null) is simulated for real here (not just stubbed
+    // through) - a row with revoked_at set comes back as "not found", the
+    // same as the real query's filter would do, so a revoked-token test
+    // actually exercises that filtering rather than just asserting on a
+    // hand-picked null.
+    const maybeSingle = vi.fn().mockResolvedValue({ data: row && row.revoked_at === null ? row : null })
     const is = vi.fn().mockReturnValue({ maybeSingle })
     const eq = vi.fn().mockReturnValue({ is })
     const select = vi.fn().mockReturnValue({ eq })
@@ -67,5 +72,11 @@ describe('verifyBotToken', () => {
     const verifyBotToken = await setup({ bot_name: 'app_bot', revoked_at: null })
     const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer appbot_x' } }), 'app_bot')
     expect(result?.botName).toBe('app_bot')
+  })
+
+  it('rejects a revoked token even though its row still exists', async () => {
+    const verifyBotToken = await setup({ bot_name: 'app_bot', revoked_at: '2026-01-01T00:00:00Z' })
+    const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer appbot_x' } }), 'app_bot')
+    expect(result).toBeNull()
   })
 })

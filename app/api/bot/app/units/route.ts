@@ -9,7 +9,7 @@ import { toTitleCase } from '@/lib/text'
 const ENDPOINT = 'POST /api/bot/app/units'
 
 export async function GET(request: NextRequest) {
-  return withBotAuth(request, 'app_bot', 'GET /api/bot/app/units', async ({ admin }) => {
+  return withBotAuth(request, 'app_bot', 'GET /api/bot/app/units', async ({ admin, botName }) => {
     const { searchParams } = request.nextUrl
     const customerId = searchParams.get('customer_id')
     const id = searchParams.get('id')
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query
     if (error) return jsonError(500, error.message)
+    await logBotAction(admin, { botName, action: 'units_read', endpoint: 'GET /api/bot/app/units', outcome: 'success', detail: { count: data?.length ?? 0 } })
     return NextResponse.json({ units: data || [] })
   })
 }
@@ -73,11 +74,16 @@ export async function POST(request: NextRequest) {
         return { status: 409, body: { error: 'Ambiguous match - needs review before this unit can be created or linked.', candidates: match.candidates } }
       }
 
+      // serial_number is NOT NULL on this table - an empty string (never
+      // null) is the existing app-wide convention for "no real serial on
+      // file yet" (see app/actions/fleetCheckIn.ts's addUnit/addFleetUnit),
+      // and isIdentifyingSerial() already treats an empty string as
+      // non-identifying, same as a placeholder.
       const { data: created, error } = await admin
         .from('units')
         .insert({
           customer_id: customerId,
-          serial_number: serialRaw || null,
+          serial_number: serialRaw,
           model: model ? toTitleCase(model) : null,
           equipment_type: equipmentType,
           nickname,
@@ -86,6 +92,22 @@ export async function POST(request: NextRequest) {
         .select('*')
         .single()
       if (error) {
+        // 23505 = unique_violation on units_customer_identifying_serial_key -
+        // a concurrent request won the race to create this exact serial for
+        // this customer first. Re-select and return that row instead of
+        // erroring or creating a duplicate.
+        if (error.code === '23505' && isIdentifyingSerial(serialRaw)) {
+          const { data: raceWinner } = await admin
+            .from('units')
+            .select('*')
+            .eq('customer_id', customerId)
+            .ilike('serial_number', escapeLikePattern(serialRaw))
+            .maybeSingle()
+          if (raceWinner) {
+            await logBotAction(admin, { botName, action: 'unit_match', endpoint: ENDPOINT, targetTable: 'units', targetId: raceWinner.id, outcome: 'success', detail: { created: false, via: 'unique_violation_race' } })
+            return { status: 200, body: { unit: raceWinner, created: false } }
+          }
+        }
         await logBotAction(admin, { botName, action: 'unit_create', endpoint: ENDPOINT, outcome: 'error', detail: { message: error.message } })
         return { status: 500, body: { error: error.message } }
       }

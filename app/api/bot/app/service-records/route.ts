@@ -6,13 +6,14 @@ import { logBotAction } from '@/lib/bot/audit'
 const ENDPOINT = 'POST /api/bot/app/service-records'
 
 export async function GET(request: NextRequest) {
-  return withBotAuth(request, 'app_bot', 'GET /api/bot/app/service-records', async ({ admin }) => {
+  return withBotAuth(request, 'app_bot', 'GET /api/bot/app/service-records', async ({ admin, botName }) => {
     const { searchParams } = request.nextUrl
     const unitId = searchParams.get('unit_id')
     let query = admin.from('service_history').select('*').order('service_date', { ascending: false }).limit(200)
     if (unitId) query = query.eq('unit_id', unitId)
     const { data, error } = await query
     if (error) return jsonError(500, error.message)
+    await logBotAction(admin, { botName, action: 'service_records_read', endpoint: 'GET /api/bot/app/service-records', outcome: 'success', detail: { count: data?.length ?? 0 } })
     return NextResponse.json({ service_records: data || [] })
   })
 }

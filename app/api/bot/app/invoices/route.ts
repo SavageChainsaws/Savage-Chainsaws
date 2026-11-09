@@ -9,7 +9,7 @@ import { toTitleCase } from '@/lib/text'
 const ENDPOINT = 'POST /api/bot/app/invoices'
 
 export async function GET(request: NextRequest) {
-  return withBotAuth(request, 'app_bot', 'GET /api/bot/app/invoices', async ({ admin }) => {
+  return withBotAuth(request, 'app_bot', 'GET /api/bot/app/invoices', async ({ admin, botName }) => {
     const { searchParams } = request.nextUrl
     const id = searchParams.get('id')
     const customerId = searchParams.get('customer_id')
@@ -24,18 +24,20 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query
     if (error) return jsonError(500, error.message)
+    await logBotAction(admin, { botName, action: 'invoices_read', endpoint: 'GET /api/bot/app/invoices', outcome: 'success', detail: { count: data?.length ?? 0 } })
     return NextResponse.json({ invoices: data || [] })
   })
 }
 
 // Creates a draft invoice only - reuses the exact same billing math, PDF
-// renderer, and shared invoice-number sequence as the admin flows (see
-// app/api/invoice/custom/route.ts), but always saves status: 'draft'.
-// There is no bot endpoint that flips a draft to 'sent' - the first real
-// send of a brand-new invoice is Jesse's call, made through the normal
-// admin UI (see docs/HANDOFF.md). due_date is never defaulted/assumed
-// (no NET 30) - if the caller doesn't pass one, it's left null and the
-// response flags it so Jesse knows to confirm payment terms.
+// renderer, shared invoice-number sequence, and first-service referral
+// discount as the admin flows (see app/api/invoice/custom/route.ts), but
+// always saves status: 'draft'. There is no bot endpoint that flips a
+// draft to 'sent' - the first real send of a brand-new invoice is Jesse's
+// call, made through the normal admin UI (see docs/HANDOFF.md). due_date
+// is never written here - it's admin-only (Jesse confirms payment terms
+// at /invoices after reviewing the draft); any due_date in the request
+// body is ignored.
 export async function POST(request: NextRequest) {
   return withBotAuth(request, 'app_bot', ENDPOINT, async ({ admin, botName }) => {
     const idempotencyKey = requireIdempotencyKey(request)
@@ -51,13 +53,12 @@ export async function POST(request: NextRequest) {
       const taxRatePercentRaw = body.tax_rate_percent
       const includeCardSurcharge = body.include_card_surcharge === true
       const notes = (body.notes || '').trim() || null
-      const dueDate = (body.due_date || '').trim() || null
 
       if (!customerId) return { status: 400, body: { error: 'customer_id is required.' } }
 
       const { data: customer } = await admin
         .from('customers')
-        .select('id, name, email, phone, logo_url, brand_color')
+        .select('id, name, email, phone, logo_url, brand_color, referral_source_id, referral_discount_used')
         .eq('id', customerId)
         .maybeSingle()
       if (!customer) return { status: 404, body: { error: 'customer_id does not match an existing customer.' } }
@@ -94,20 +95,32 @@ export async function POST(request: NextRequest) {
         : await getDefaultTaxRatePercent(admin)
       const taxableSubtotal = [...partsLineItems, ...laborLineItems].reduce((sum: number, li: { amount: number }) => sum + li.amount, 0)
 
+      // First-service referral discount - 10% off the itemized parts+labor
+      // subtotal, applied automatically exactly once per referred customer,
+      // same as the admin creation routes (app/api/invoice/route.ts /
+      // custom/route.ts). Flipping referral_discount_used happens only
+      // after the invoice row below is successfully saved.
+      const applyReferralDiscount = !!customer.referral_source_id && !customer.referral_discount_used
+      const referralDiscountAmount = applyReferralDiscount ? Math.round(taxableSubtotal * 0.1 * 100) / 100 : 0
+
       const billing = computeInvoiceBilling({
         taxableSubtotal,
-        otherCharges: 0,
+        otherCharges: -referralDiscountAmount,
         hasParts,
         taxRatePercent,
         includeCardSurcharge,
       })
 
       const otherLineItems = [
+        ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
         ...(billing.taxLine ? [billing.taxLine] : []),
         ...(billing.surchargeLine ? [billing.surchargeLine] : []),
       ]
       const lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
       const invoiceTotal = lineItems.reduce((sum, li) => sum + li.amount, 0)
+      if (invoiceTotal < 0) {
+        return { status: 400, body: { error: 'Line items add up to a negative total - check the amounts.' } }
+      }
 
       const { data: invoiceNumber, error: numberError } = await admin.rpc('next_invoice_number')
       if (numberError || !invoiceNumber) {
@@ -148,7 +161,6 @@ export async function POST(request: NextRequest) {
           amount: invoiceTotal,
           description: `Invoice ${invoiceNumber}`,
           status: 'draft',
-          due_date: dueDate,
           sales_tax_rate: taxRatePercent,
           sales_tax_amount: billing.taxAmount,
           card_surcharge_amount: billing.surchargeAmount,
@@ -162,6 +174,10 @@ export async function POST(request: NextRequest) {
         return { status: 500, body: { error: insertError?.message || 'Could not save the invoice.' } }
       }
 
+      if (applyReferralDiscount) {
+        await admin.from('customers').update({ referral_discount_used: true }).eq('id', customerId)
+      }
+
       const fileName = `${invoiceRow.id}.pdf`
       const { error: uploadError } = await admin.storage.from('invoices').upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true })
       if (!uploadError) {
@@ -170,8 +186,8 @@ export async function POST(request: NextRequest) {
         invoiceRow.pdf_url = publicUrl
       }
 
-      await logBotAction(admin, { botName, action: 'invoice_create', endpoint: ENDPOINT, targetTable: 'invoices', targetId: invoiceRow.id, outcome: 'success', detail: { due_date_missing: !dueDate } })
-      return { status: 201, body: { invoice: invoiceRow, due_date_missing: !dueDate } }
+      await logBotAction(admin, { botName, action: 'invoice_create', endpoint: ENDPOINT, targetTable: 'invoices', targetId: invoiceRow.id, outcome: 'success' })
+      return { status: 201, body: { invoice: invoiceRow, due_date_missing: true } }
     })
 
     return NextResponse.json(result.body, { status: result.status, headers: result.replayed ? { 'Idempotent-Replay': 'true' } : undefined })

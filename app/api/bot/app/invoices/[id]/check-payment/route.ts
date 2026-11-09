@@ -38,6 +38,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     if (result.paid) {
+      // Never mark paid on the boolean alone - confirm the provider's own
+      // paid amount actually matches this invoice's current total first.
+      // A mismatch (e.g. the invoice was edited after the link was
+      // generated, or the link belongs to a different amount entirely)
+      // fails closed: nothing is written, and the mismatch is surfaced
+      // rather than silently accepted.
+      const invoiceAmountCents = Math.round(Number(invoice.amount) * 100)
+      const paidAmountCents = 'amountTotalCents' in result ? result.amountTotalCents : 'paidAmountCents' in result ? result.paidAmountCents : null
+      if (paidAmountCents != null && paidAmountCents !== invoiceAmountCents) {
+        await logBotAction(admin, { botName, action: 'invoice_check_payment', endpoint, targetTable: 'invoices', targetId: id, outcome: 'denied', detail: { reason: 'amount_mismatch', invoiceAmountCents, paidAmountCents } })
+        return NextResponse.json({ paid: false, reason: 'amount_mismatch' }, { status: 409 })
+      }
+
       const paidVia = invoice.stripe_checkout_session_id ? 'stripe' : 'square'
       const { error } = await admin.from('invoices').update({ paid_at: new Date().toISOString(), paid_via: paidVia }).eq('id', id)
       if (error) return jsonError(500, error.message)
