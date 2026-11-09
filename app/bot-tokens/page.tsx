@@ -14,7 +14,7 @@ export default async function BotTokensPage() {
     .select('id, bot_name, label, created_at, revoked_at, last_used_at')
     .order('created_at', { ascending: false })
 
-  const botLabel = (botName: string) => (botName === 'app_bot' ? 'App Bot' : 'Financial Bot')
+  const botLabel = (botName: string) => (botName === 'app_bot' ? 'App Bot' : botName === 'financial_bot' ? 'Financial Bot' : 'Unit Bot')
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-4 sm:p-8 max-w-3xl mx-auto">
@@ -26,7 +26,7 @@ export default async function BotTokensPage() {
       </div>
 
       <p className="text-sm text-gray-500 mb-6">
-        App Bot and Financial Bot each authenticate with their own bearer token against the <code className="text-gray-400">/api/bot/*</code> routes.
+        App Bot, Financial Bot, and Unit Bot each authenticate with their own bearer token against the <code className="text-gray-400">/api/bot/*</code> routes.
         A token is shown here exactly once, at the moment it&apos;s generated - copy it immediately and hand it to the bot through a private channel
         (e.g. a secret in Grok Bot&apos;s own config), never in chat, never committed to the repo. Revoking a token takes effect immediately.
       </p>

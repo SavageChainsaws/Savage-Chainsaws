@@ -19,7 +19,7 @@ export async function generateBotTokenAction(_prevState: GenerateState, formData
 
   const botName = formData.get('bot_name') as string
   const label = ((formData.get('label') as string) || '').trim() || null
-  if (botName !== 'app_bot' && botName !== 'financial_bot') {
+  if (botName !== 'app_bot' && botName !== 'financial_bot' && botName !== 'unit_bot') {
     return { success: false, message: 'Invalid bot name.' }
   }
 

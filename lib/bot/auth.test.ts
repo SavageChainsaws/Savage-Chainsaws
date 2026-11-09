@@ -5,6 +5,7 @@ describe('generateBotToken', () => {
   it('prefixes the plaintext token with the bot name so it is recognizable at a glance', () => {
     expect(generateBotToken('app_bot').token.startsWith('appbot_')).toBe(true)
     expect(generateBotToken('financial_bot').token.startsWith('finbot_')).toBe(true)
+    expect(generateBotToken('unit_bot').token.startsWith('unitbot_')).toBe(true)
   })
 
   it('never returns the hash as the token or vice versa', () => {
@@ -78,5 +79,37 @@ describe('verifyBotToken', () => {
     const verifyBotToken = await setup({ bot_name: 'app_bot', revoked_at: '2026-01-01T00:00:00Z' })
     const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer appbot_x' } }), 'app_bot')
     expect(result).toBeNull()
+  })
+
+  // Unit Bot is a third, equally-isolated scope - none of the three bots'
+  // tokens may ever authenticate a route scoped to a different one.
+  it('rejects a valid Unit Bot token presented to an App Bot route', async () => {
+    const verifyBotToken = await setup({ bot_name: 'unit_bot', revoked_at: null })
+    const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer unitbot_x' } }), 'app_bot')
+    expect(result).toBeNull()
+  })
+
+  it('rejects a valid Unit Bot token presented to a Financial Bot route', async () => {
+    const verifyBotToken = await setup({ bot_name: 'unit_bot', revoked_at: null })
+    const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer unitbot_x' } }), 'financial_bot')
+    expect(result).toBeNull()
+  })
+
+  it('rejects a valid App Bot token presented to a Unit Bot route', async () => {
+    const verifyBotToken = await setup({ bot_name: 'app_bot', revoked_at: null })
+    const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer appbot_x' } }), 'unit_bot')
+    expect(result).toBeNull()
+  })
+
+  it('rejects a valid Financial Bot token presented to a Unit Bot route', async () => {
+    const verifyBotToken = await setup({ bot_name: 'financial_bot', revoked_at: null })
+    const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer finbot_x' } }), 'unit_bot')
+    expect(result).toBeNull()
+  })
+
+  it('accepts a valid Unit Bot token for a Unit Bot route', async () => {
+    const verifyBotToken = await setup({ bot_name: 'unit_bot', revoked_at: null })
+    const result = await verifyBotToken(new Request('http://x', { headers: { authorization: 'Bearer unitbot_x' } }), 'unit_bot')
+    expect(result?.botName).toBe('unit_bot')
   })
 })

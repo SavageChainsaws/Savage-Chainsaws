@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyBotToken, type BotName } from './auth'
-import { logBotAction } from './audit'
+import { logBotAction, ANONYMOUS_BOT_LABEL } from './audit'
+import { checkRateLimit, RATE_LIMIT_WINDOW_SECONDS } from './rateLimit'
 
 type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
 
@@ -26,14 +27,44 @@ export async function withBotAuth(
 
   const identity = await verifyBotToken(request, requiredBot)
   if (!identity) {
+    // Logged under ANONYMOUS_BOT_LABEL, never requiredBot - the caller has
+    // no verified identity at this point (missing/unknown/revoked/wrong-
+    // scope token), so attributing the row to the real bot_name would mean
+    // every one of these counts toward THAT bot's own rate limit (see
+    // checkRateLimit below, which counts all bot_audit_log rows for a
+    // bot_name regardless of outcome). That previously let anyone lock out
+    // the real App Bot/Financial Bot/Unit Bot token just by sending 120+
+    // bad-token requests - a flood of invalid auth attempts must never be
+    // able to rate-limit the bot those attempts were impersonating.
     await logBotAction(admin, {
-      botName: requiredBot,
+      botName: ANONYMOUS_BOT_LABEL,
       action: 'auth',
       endpoint,
       outcome: 'denied',
-      detail: { reason: 'invalid_missing_or_wrong_bot_token' },
+      detail: { reason: 'invalid_missing_or_wrong_bot_token', attempted_bot_name: requiredBot },
     })
     return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
+  }
+
+  // Applies to every bot, every call - a simple per-bot-scope fixed-
+  // lookback count against bot_audit_log (see lib/bot/rateLimit.ts), to
+  // catch a runaway or misbehaving bot before it can do real damage. This
+  // check itself is also audited (outcome: 'denied'), same as every other
+  // rejection here - correctly counted against identity.botName, since
+  // this IS a real, successfully-authenticated bot (unlike the anonymous
+  // case above).
+  if (await checkRateLimit(admin, identity.botName)) {
+    await logBotAction(admin, {
+      botName: identity.botName,
+      action: 'rate_limit',
+      endpoint,
+      outcome: 'denied',
+      detail: { reason: 'rate_limited' },
+    })
+    return NextResponse.json(
+      { error: 'Rate limited - slow down and retry shortly.' },
+      { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_SECONDS) } }
+    )
   }
 
   try {

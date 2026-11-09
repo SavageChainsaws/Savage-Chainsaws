@@ -17,6 +17,7 @@ export default function GenerateBotTokenForm({
         <select name="bot_name" required className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
           <option value="app_bot">App Bot</option>
           <option value="financial_bot">Financial Bot</option>
+          <option value="unit_bot">Unit Bot</option>
         </select>
         <input
           name="label"

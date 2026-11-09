@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export type BotName = 'app_bot' | 'financial_bot'
+export type BotName = 'app_bot' | 'financial_bot' | 'unit_bot'
 
 export type BotIdentity = { botName: BotName; tokenId: string }
 
@@ -21,7 +21,7 @@ function hashToken(token: string): string {
 // a glance if it ever shows up somewhere it shouldn't (e.g. truncated in a
 // third-party tool's own logs) - the prefix carries no security weight.
 export function generateBotToken(botName: BotName): { token: string; tokenHash: string } {
-  const prefix = botName === 'app_bot' ? 'appbot' : 'finbot'
+  const prefix = botName === 'app_bot' ? 'appbot' : botName === 'financial_bot' ? 'finbot' : 'unitbot'
   const secret = randomBytes(32).toString('base64url')
   const token = `${prefix}_${secret}`
   return { token, tokenHash: hashToken(token) }
