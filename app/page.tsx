@@ -584,6 +584,12 @@ export default async function Home({
             >
               Specs
             </Link>
+            <Link
+              href="/bot-tokens"
+              className="border border-zinc-600 hover:border-orange-500 text-xs px-3 py-1.5 rounded-lg"
+            >
+              Bot Tokens
+            </Link>
             <ContactLinksBar />
             <PushToggle label="Push" />
             <AdminLogout />

@@ -92,7 +92,7 @@ export async function getStripeSessionPaidStatus(sessionId: string): Promise<Ses
 }
 
 type SessionStatusSnapshot =
-  | { ok: true; paid: boolean; open: boolean }
+  | { ok: true; paid: boolean; open: boolean; amountTotalCents: number | null }
   | { ok: false; error: string }
 
 // Checkout Sessions in payment mode always expire - Stripe caps it at 24h
@@ -102,6 +102,11 @@ type SessionStatusSnapshot =
 // `paid` alongside it lets a caller tell "still open, waiting on the
 // customer" apart from "expired/cancelled with nothing paid" in one round
 // trip, rather than treating every non-paid status as reusable.
+// `amountTotalCents` is Stripe's own record of what the session actually
+// charged - a caller marking an invoice paid should compare this against
+// the invoice's own amount rather than trusting `paid` alone, in case the
+// stored session doesn't actually correspond to the current invoice total
+// (e.g. the invoice was edited after the link was generated).
 export async function getStripeSessionStatus(sessionId: string): Promise<SessionStatusSnapshot> {
   const stripe = client()
   if (!stripe) {
@@ -109,7 +114,12 @@ export async function getStripeSessionStatus(sessionId: string): Promise<Session
   }
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId)
-    return { ok: true, paid: session.payment_status === 'paid', open: session.status === 'open' }
+    return {
+      ok: true,
+      paid: session.payment_status === 'paid',
+      open: session.status === 'open',
+      amountTotalCents: session.amount_total ?? null,
+    }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Unknown Stripe API error' }
   }

@@ -7,6 +7,8 @@ import { unitLabel } from '@/lib/units'
 import CreateInvoiceButton from '../components/CreateInvoiceButton'
 import InvoiceActionButtons from '../components/InvoiceActionButtons'
 import PaymentPlanSection from '../components/PaymentPlanSection'
+import DueDateForm from '../components/DueDateForm'
+import { setInvoiceDueDate } from '../actions/invoiceDueDate'
 import {
   startPaymentPlan,
   offerPaymentPlan,
@@ -41,7 +43,7 @@ export default async function InvoicesPage({
   const { data: invoices } = await supabase
     .from('invoices')
     .select(
-      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, unit_model, unit_serial, line_items, sales_tax_rate, card_surcharge_amount, labor_type, payment_plan_offered, notes, zelle_claim_reference, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
+      'id, customer_id, customer_name, customer_email, invoice_number, amount, description, status, due_date, pdf_url, created_at, sent_at, sent_to, square_payment_link_url, stripe_payment_link_url, paid_at, paid_via, archived_at, unit_id, unit_model, unit_serial, line_items, sales_tax_rate, card_surcharge_amount, labor_type, payment_plan_offered, notes, zelle_claim_reference, units(invoice_url, status, model, equipment_type, serial_number, nickname, customers(name, email)), customers(name, email, payment_plans_enabled), invoice_payment_plans(id, installment_count, frequency, status, invoice_installments(id, sequence, amount, due_date, paid_at, paid_via, square_payment_link_url, stripe_payment_link_url))'
     )
     .order('created_at', { ascending: false })
 
@@ -92,6 +94,7 @@ export default async function InvoicesPage({
       defaultEmail,
       amount: Number(inv.amount) || 0,
       status: (inv.status as string) || 'sent',
+      dueDate: inv.due_date as string | null,
       pdfUrl,
       sentAt: inv.sent_at as string | null,
       sentTo: inv.sent_to as string | null,
@@ -376,6 +379,14 @@ export default async function InvoicesPage({
                             Plan Offered
                           </span>
                         )}
+                        {!r.paidAt && (
+                          <DueDateForm
+                            invoiceId={r.id}
+                            dueDate={r.dueDate}
+                            flagMissing={r.status === 'sent'}
+                            action={setInvoiceDueDate}
+                          />
+                        )}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -486,6 +497,14 @@ export default async function InvoicesPage({
                     >
                       Plan Offered
                     </span>
+                  )}
+                  {!r.paidAt && (
+                    <DueDateForm
+                      invoiceId={r.id}
+                      dueDate={r.dueDate}
+                      flagMissing={r.status === 'sent'}
+                      action={setInvoiceDueDate}
+                    />
                   )}
                 </div>
 

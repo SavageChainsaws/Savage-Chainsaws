@@ -138,9 +138,17 @@ export async function sendInvoiceEmail(_prevState: SendInvoiceState, formData: F
     return { success: false, message: `Could not send invoice: ${result.error}` }
   }
 
+  // status is also flipped to 'sent' here, not just sent_at - a bot-created
+  // draft invoice (see app/api/bot/app/invoices/route.ts) otherwise stays
+  // status='draft' forever even once actually emailed, which silently
+  // dropped it out of every query that filters drafts out (e.g. the
+  // Financial Bot summary's "outstanding" aggregate). sent_at remains the
+  // real "was this actually emailed" signal everywhere else (status alone
+  // is set at PDF-creation time for the admin flows, before any email) -
+  // this update just keeps status consistent with it going forward too.
   await supabase
     .from('invoices')
-    .update({ sent_at: new Date().toISOString(), sent_to: recipientEmail })
+    .update({ status: 'sent', sent_at: new Date().toISOString(), sent_to: recipientEmail })
     .eq('id', invoiceId)
   revalidatePath('/invoices')
 
