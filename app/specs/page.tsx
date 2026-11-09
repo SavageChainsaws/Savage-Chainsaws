@@ -12,5 +12,12 @@ export default async function SpecsPage() {
     .order('category')
     .order('page_number')
 
-  return <SpecsBrowser sheets={sheets || []} />
+  const { data: guides } = await supabase
+    .from('reference_guides')
+    .select('id, title, description, category, source, reference_guide_pages(page_number, section_label, image_url)')
+    .order('category')
+    .order('title')
+    .order('page_number', { foreignTable: 'reference_guide_pages' })
+
+  return <SpecsBrowser sheets={sheets || []} guides={guides || []} />
 }
