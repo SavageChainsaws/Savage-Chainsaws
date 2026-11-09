@@ -4,6 +4,11 @@ Owned by Stem. One line per change: date, who, what, and why if it's not obvious
 
 Only Claude writes code or runs migrations (see `docs/HANDOFF.md` §7) — an entry here from a bot describes data it entered or an action it took through an existing API route, never a code or schema change.
 
+## 2026-11-09
+
+- **[Claude]** Built App Bot and Financial Bot access: individually-revocable bearer tokens (never stored/logged/committed as plaintext — see `/bot-tokens`), scoped `/api/bot/app/*` and `/api/bot/financial/*` routes, server-side permission enforcement (RLS can't gate a tokenless bot), full audit log (`bot_audit_log`), idempotency-key protection on every mutating endpoint, and duplicate-match safeguards for bot-created customers/units (`lib/bot/rules.ts`'s `resolveMatch()` — ambiguous matches need Jesse's review, never auto-created). Added `invoices.due_date` (no backfill, no assumed NET 30 — Jesse confirms per-invoice at `/invoices`), `service_history.hour_meter`/`.parts_used` (kept separate from labor hours), and a partial unique index on `units(customer_id, serial_number)` excluding placeholder values. Added Vitest and unit tests for the new `lib/bot/*` rules (forbidden actions, duplicate-reminder throttling, idempotent retries, dedup matching). **Migration not yet applied to the live database; routes not yet deployed — pending Jesse's go-ahead (see the PR).**
+- **[Claude]** Updated `docs/HANDOFF.md` (§2, §3, §4, §5, §6, §7, §8, quick-start) to describe the above.
+
 ## 2026-11-08
 
 - **[Claude]** Added `docs/HANDOFF.md` and this file, for the new multi-bot team (Stem, App Bot, New Bot, Financial Bot) to stay in sync with Claude and each other.
