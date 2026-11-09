@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }))
 // with a real in-memory audit log, so the rate-limit count this test
 // exercises is the real counting logic, not a stubbed-out number.
 function makeFakeAdmin() {
-  const auditRows: { bot_name: string }[] = []
+  const auditRows: { bot_name: string; action?: string }[] = []
   const tokens = new Map<string, { id: string; bot_name: string; revoked_at: string | null }>()
 
   const admin = {
@@ -30,13 +30,19 @@ function makeFakeAdmin() {
       }
       if (table === 'bot_audit_log') {
         return {
-          insert: vi.fn(async (row: { bot_name: string }) => {
-            auditRows.push({ bot_name: row.bot_name })
+          insert: vi.fn(async (row: { bot_name: string; action?: string }) => {
+            auditRows.push({ bot_name: row.bot_name, action: row.action })
             return { error: null }
           }),
+          // Matches checkRateLimit's real query shape - eq(bot_name) then
+          // neq(action, 'rate_limit') (see lib/bot/rateLimit.ts) then
+          // gte(created_at) - a 429 denial row must never count toward the
+          // same bot's own lockout.
           select: vi.fn(() => ({
             eq: vi.fn((_col: string, botName: string) => ({
-              gte: vi.fn(async () => ({ count: auditRows.filter(r => r.bot_name === botName).length })),
+              neq: vi.fn((_col2: string, excludedAction: string) => ({
+                gte: vi.fn(async () => ({ count: auditRows.filter(r => r.bot_name === botName && r.action !== excludedAction).length })),
+              })),
             })),
           })),
         }

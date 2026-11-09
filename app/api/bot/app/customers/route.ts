@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withBotAuth, jsonError } from '@/lib/bot/respond'
 import { withIdempotency, requireIdempotencyKey } from '@/lib/bot/idempotency'
 import { logBotAction } from '@/lib/bot/audit'
-import { resolveMatch } from '@/lib/bot/rules'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
 import { escapeLikePattern } from '@/lib/units'
 
 const ENDPOINT = 'POST /api/bot/app/customers'
-const CUSTOMER_COLUMNS = 'id, name, email, secondary_email, phone, referral_source_id, referral_discount_used, payment_plans_enabled, created_at'
+// address/business_name/notes added here alongside the three they were
+// added to the table for (see the migration) - a bot that can write them
+// via create/PATCH but never read them back through this same route would
+// otherwise be a pointless gap. created_by_bot_name is deliberately left
+// out - that's internal bookkeeping for the PATCH route's own gate, not
+// business data App Bot has any use for.
+const CUSTOMER_COLUMNS =
+  'id, name, email, secondary_email, phone, address, business_name, notes, referral_source_id, referral_discount_used, payment_plans_enabled, created_at'
 
 // App Bot may read customers freely. Optional filters narrow the result;
 // with none given, returns a bounded recent list rather than the whole
@@ -57,11 +63,20 @@ export async function GET(request: NextRequest) {
   })
 }
 
-// Creates a customer only when no existing one plausibly matches; returns
-// the existing row instead of creating a duplicate when one does. An
-// ambiguous match (anything short of a confirmed email match) is never
-// auto-linked or auto-created past - it comes back as 409 for Jesse to
-// resolve by hand.
+// Creates a customer, after a literal duplicate-contact-info guard: an
+// existing customer with the same email (case-insensitive, same rule the
+// customers_lower_email_key index enforces at the DB level) or the same
+// phone (compared as typed - no digits-only normalization, matching how
+// phone is stored/compared everywhere else in this app, i.e. nowhere else)
+// is returned as a 409 instead of creating a second record. Unlike the
+// name-similarity "ambiguous match" review flow this endpoint used to have
+// (fuzzy name matches, multi-candidate 409s), this is deliberately a
+// narrower, literal check - Jesse's spec for this endpoint only ever
+// mentioned email/phone, never name, as a duplicate signal. Never creates
+// a customer portal login (customer_users), sends a welcome email/SMS, or
+// triggers any other notification - this route touches customers and the
+// bot-infrastructure tables only; the portal login stays Jesse's own,
+// separate step through the admin UI.
 export async function POST(request: NextRequest) {
   return withBotAuth(request, 'app_bot', ENDPOINT, async ({ admin, botName }) => {
     const idempotencyKey = requireIdempotencyKey(request)
@@ -70,69 +85,60 @@ export async function POST(request: NextRequest) {
     const result = await withIdempotency(admin, { botName, endpoint: ENDPOINT, idempotencyKey }, async () => {
       const body = await request.json().catch(() => ({}))
       const nameRaw = (body.name || '').trim()
-      const emailRaw = (body.email || '').trim()
-      const phone = (body.phone || '').trim() || null
       if (!nameRaw) return { status: 400, body: { error: 'name is required.' } }
-
       const name = toTitleCase(nameRaw)
+
+      const emailRaw = (body.email || '').trim()
       const email = emailRaw ? normalizeEmail(emailRaw) : null
+      const phone = (body.phone || '').trim() || null
+      const address = (body.address || '').trim() || null
+      const businessName = (body.business_name || '').trim() || null
+      const notes = (body.notes || '').trim() || null
 
-      const emailPattern = email ? escapeLikePattern(email) : null
-      const [byPrimaryEmail, bySecondaryEmail, byName] = await Promise.all([
-        emailPattern
-          ? admin.from('customers').select('id, name').ilike('email', emailPattern).then(r => r.data || [])
+      const [byEmail, byPhone] = await Promise.all([
+        email
+          ? admin.from('customers').select('id, name').ilike('email', escapeLikePattern(email)).limit(1).then(r => r.data || [])
           : Promise.resolve([]),
-        emailPattern
-          ? admin.from('customers').select('id, name').ilike('secondary_email', emailPattern).then(r => r.data || [])
+        phone
+          ? admin.from('customers').select('id, name').eq('phone', phone).limit(1).then(r => r.data || [])
           : Promise.resolve([]),
-        admin.from('customers').select('id, name').ilike('name', escapeLikePattern(name)).then(r => r.data || []),
       ])
-      const seenEmailMatch = new Set<string>()
-      const byEmail = [...byPrimaryEmail, ...bySecondaryEmail].filter(c => (seenEmailMatch.has(c.id) ? false : (seenEmailMatch.add(c.id), true)))
-
-      const match = resolveMatch(
-        byEmail.map(c => ({ id: c.id, label: c.name })),
-        byName.map(c => ({ id: c.id, label: c.name }))
-      )
-
-      if (match.confidence === 'exact') {
-        await logBotAction(admin, { botName, action: 'customer_match', endpoint: ENDPOINT, targetTable: 'customers', targetId: match.id, outcome: 'success', detail: { created: false } })
-        const { data: existing } = await admin.from('customers').select(CUSTOMER_COLUMNS).eq('id', match.id).maybeSingle()
-        return { status: 200, body: { customer: existing, created: false } }
-      }
-      if (match.confidence === 'ambiguous') {
-        await logBotAction(admin, { botName, action: 'customer_match', endpoint: ENDPOINT, outcome: 'denied', detail: { reason: 'ambiguous_match', candidates: match.candidates } })
-        return { status: 409, body: { error: 'Ambiguous match - needs review before this customer can be created or linked.', candidates: match.candidates } }
+      const duplicate = byEmail[0] || byPhone[0]
+      if (duplicate) {
+        await logBotAction(admin, { botName, action: 'customer_create', endpoint: ENDPOINT, targetTable: 'customers', targetId: duplicate.id, outcome: 'denied', detail: { reason: 'duplicate_email_or_phone' } })
+        return { status: 409, body: { error: 'A customer with this email or phone already exists.', customer: { id: duplicate.id, name: duplicate.name } } }
       }
 
       const { data: created, error } = await admin
         .from('customers')
-        .insert({ name, email, phone })
-        .select(CUSTOMER_COLUMNS)
+        .insert({ name, email, phone, address, business_name: businessName, notes, created_by_bot_name: botName })
+        .select('id, name, email, phone, address, business_name, notes, created_at')
         .single()
       if (error) {
-        // 23505 = unique_violation - a concurrent request (or a match our
-        // own ilike-based lookup above missed, e.g. differing only in a
-        // trailing space normalizeEmail doesn't strip) won the race to
-        // create this same email first. Treat it as a found match rather
-        // than an error: re-select and return the row that's actually
-        // there instead of creating a duplicate or failing the request.
+        // 23505 = unique_violation on customers_lower_email_key - a
+        // concurrent request won the race to create this exact email
+        // first (our own lookup above missed it only because it ran a
+        // moment too early). Treat it as the duplicate it actually is:
+        // return the row that's really there as a 409, same shape as the
+        // pre-insert duplicate check above, rather than creating a second
+        // row or failing the request outright.
         if (error.code === '23505' && email) {
-          const { data: raceWinner } = await admin
-            .from('customers')
-            .select(CUSTOMER_COLUMNS)
-            .ilike('email', escapeLikePattern(email))
-            .maybeSingle()
+          const { data: raceWinners } = await admin.from('customers').select('id, name').ilike('email', escapeLikePattern(email)).limit(1)
+          const raceWinner = (raceWinners || [])[0]
           if (raceWinner) {
-            await logBotAction(admin, { botName, action: 'customer_match', endpoint: ENDPOINT, targetTable: 'customers', targetId: raceWinner.id, outcome: 'success', detail: { created: false, via: 'unique_violation_race' } })
-            return { status: 200, body: { customer: raceWinner, created: false } }
+            await logBotAction(admin, { botName, action: 'customer_create', endpoint: ENDPOINT, targetTable: 'customers', targetId: raceWinner.id, outcome: 'denied', detail: { reason: 'duplicate_email_or_phone', via: 'unique_violation_race' } })
+            return { status: 409, body: { error: 'A customer with this email or phone already exists.', customer: raceWinner } }
           }
         }
         await logBotAction(admin, { botName, action: 'customer_create', endpoint: ENDPOINT, outcome: 'error', detail: { message: error.message } })
         return { status: 500, body: { error: error.message } }
       }
-      await logBotAction(admin, { botName, action: 'customer_create', endpoint: ENDPOINT, targetTable: 'customers', targetId: created.id, outcome: 'success', detail: { created: true } })
-      return { status: 201, body: { customer: created, created: true } }
+      // The created row (full contact fields) is the audit "after" value -
+      // the API response itself stays narrow (id/name only), matching
+      // every other bot's "contact info beyond id/name is never handed
+      // back more widely than it has to be" convention.
+      await logBotAction(admin, { botName, action: 'customer_create', endpoint: ENDPOINT, targetTable: 'customers', targetId: created.id, outcome: 'success', detail: { after: created } })
+      return { status: 201, body: { customer: { id: created.id, name: created.name } } }
     })
 
     return NextResponse.json(result.body, { status: result.status, headers: result.replayed ? { 'Idempotent-Replay': 'true' } : undefined })

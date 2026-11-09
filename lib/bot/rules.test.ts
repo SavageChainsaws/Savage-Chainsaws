@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
-import { canSendReminder, forbiddenInvoicePatchReason, resolveMatch, customerExists, forbiddenUnitPatchReason, REMINDER_MIN_INTERVAL_DAYS } from './rules'
+import {
+  canSendReminder,
+  forbiddenInvoicePatchReason,
+  resolveMatch,
+  customerExists,
+  forbiddenUnitPatchReason,
+  forbiddenCustomerPatchReason,
+  REMINDER_MIN_INTERVAL_DAYS,
+} from './rules'
 
 describe('canSendReminder', () => {
   const base = {
@@ -156,5 +164,27 @@ describe('forbiddenUnitPatchReason', () => {
 
   it('rejects an empty-looking patch mixed with one bad field', () => {
     expect(forbiddenUnitPatchReason({ model: 'MS271', contractor_id: 'x' })).toBe('cannot_set_field_contractor_id')
+  })
+})
+
+describe('forbiddenCustomerPatchReason', () => {
+  it('allows every field in the contact allowlist', () => {
+    expect(forbiddenCustomerPatchReason({
+      phone: '555-0001', email: 'a@b.com', address: '1 Main St', business_name: 'Acme LLC', notes: 'called',
+    })).toBeNull()
+  })
+
+  it('rejects name - that stays part of create/match, never a PATCH field', () => {
+    expect(forbiddenCustomerPatchReason({ name: 'New Name' })).toBe('cannot_set_field_name')
+  })
+
+  it('rejects anything admin-managed - a portal login, referral/payment-plan flags, etc', () => {
+    expect(forbiddenCustomerPatchReason({ auth_user_id: 'x' })).toBe('cannot_set_field_auth_user_id')
+    expect(forbiddenCustomerPatchReason({ payment_plans_enabled: true })).toBe('cannot_set_field_payment_plans_enabled')
+    expect(forbiddenCustomerPatchReason({ referral_discount_used: true })).toBe('cannot_set_field_referral_discount_used')
+  })
+
+  it('rejects an empty-looking patch mixed with one bad field', () => {
+    expect(forbiddenCustomerPatchReason({ phone: '555-0001', created_by_bot_name: 'app_bot' })).toBe('cannot_set_field_created_by_bot_name')
   })
 })
