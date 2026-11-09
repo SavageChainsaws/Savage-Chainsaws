@@ -1,9 +1,16 @@
-// Pure, DB-free business rules shared by the /api/bot/app/* routes - kept
-// separate from the route handlers (which do the actual Supabase I/O) so
-// the rules that matter most for safety - the reminder throttle, what
-// App Bot is forbidden to change on an invoice, and how a dedup match is
-// scored - are unit-testable without a live database. A route calls these
-// with data it already fetched; nothing here reaches the network.
+import type { createAdminClient } from '@/lib/supabase/admin'
+
+type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
+
+// Pure, DB-free business rules shared by the /api/bot/app/* and
+// /api/bot/unit/* routes - kept separate from the route handlers (which do
+// the actual Supabase I/O) so the rules that matter most for safety - the
+// reminder throttle, what App Bot is forbidden to change on an invoice, and
+// how a dedup match is scored - are unit-testable without a live database.
+// A route calls these with data it already fetched; nothing here reaches
+// the network, except the two small DB-lookup helpers near the bottom,
+// which are kept here anyway because they're shared, reused building
+// blocks for the real rules above them, not full route logic themselves.
 
 export const REMINDER_MIN_INTERVAL_DAYS = 3
 
@@ -125,4 +132,41 @@ export function resolveMatch(byStrongSignal: MatchCandidate[], byWeakSignal: Mat
   if (byStrongSignal.length > 1) return { confidence: 'ambiguous', candidates: byStrongSignal }
   if (byWeakSignal.length > 0) return { confidence: 'ambiguous', candidates: byWeakSignal }
   return { confidence: 'none' }
+}
+
+// Unit Bot may reassign a unit to a DIFFERENT customer, but only an
+// EXISTING one - it must never create a customer as a side effect of a
+// unit update (that's App Bot's job, via its own resolveMatch()-gated
+// endpoint, with Jesse's review on anything ambiguous). A trivial lookup,
+// but kept here (rather than inlined per-route) so it's one tested,
+// reused building block instead of several slightly-different copies.
+export async function customerExists(admin: AdminClient, customerId: string): Promise<boolean> {
+  const { data } = await admin.from('customers').select('id').eq('id', customerId).maybeSingle()
+  return !!data
+}
+
+// The exact set of fields Unit Bot may change on an existing unit via
+// PATCH /api/bot/unit/units/:id - everything else in the request body is
+// rejected outright rather than silently ignored, so a typo'd or
+// unexpected key fails loudly instead of quietly doing nothing.
+// customer_id reassigns to an existing customer only - see customerExists.
+export const UNIT_BOT_PATCH_FIELDS = [
+  'model',
+  'serial_number',
+  'equipment_type',
+  'hour_meter',
+  'part_number',
+  'part_numbers',
+  'nickname',
+  'fleet_notes',
+  'notes',
+  'purchase_date',
+  'last_service_date',
+  'customer_id',
+] as const
+
+export function forbiddenUnitPatchReason(patch: Record<string, unknown>): string | null {
+  const allowed = new Set<string>(UNIT_BOT_PATCH_FIELDS)
+  const badKey = Object.keys(patch).find(key => !allowed.has(key))
+  return badKey ? `cannot_set_field_${badKey}` : null
 }

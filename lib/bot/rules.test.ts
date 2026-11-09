@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { canSendReminder, forbiddenInvoicePatchReason, resolveMatch, REMINDER_MIN_INTERVAL_DAYS } from './rules'
+import { describe, it, expect, vi } from 'vitest'
+import { canSendReminder, forbiddenInvoicePatchReason, resolveMatch, customerExists, forbiddenUnitPatchReason, REMINDER_MIN_INTERVAL_DAYS } from './rules'
 
 describe('canSendReminder', () => {
   const base = {
@@ -116,5 +116,41 @@ describe('resolveMatch', () => {
     const strong = [{ id: 'a', label: 'x' }]
     const weak = [{ id: 'b', label: 'y' }]
     expect(resolveMatch(strong, weak)).toEqual({ confidence: 'exact', id: 'a' })
+  })
+})
+
+describe('customerExists', () => {
+  function makeFakeAdmin(row: { id: string } | null) {
+    return { from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: row })) })) })) })) }
+  }
+
+  it('returns true when the customer_id matches an existing row - Unit Bot may only reassign to a real customer', async () => {
+    const admin = makeFakeAdmin({ id: 'cust-1' })
+    expect(await customerExists(admin as never, 'cust-1')).toBe(true)
+  })
+
+  it('returns false when customer_id matches nothing - never silently treated as valid', async () => {
+    const admin = makeFakeAdmin(null)
+    expect(await customerExists(admin as never, 'does-not-exist')).toBe(false)
+  })
+})
+
+describe('forbiddenUnitPatchReason', () => {
+  it('allows every field in the real allowlist', () => {
+    expect(forbiddenUnitPatchReason({
+      model: 'MS271', serial_number: '123', equipment_type: 'Chainsaw', hour_meter: '10',
+      part_number: 'a', part_numbers: 'a,b', nickname: 'Big Red', fleet_notes: 'note',
+      notes: 'note', purchase_date: '2026-01-01', last_service_date: '2026-01-01', customer_id: 'cust-1',
+    })).toBeNull()
+  })
+
+  it('rejects any field outside the allowlist - Unit Bot can never touch invoices/payments/contact info through this route', () => {
+    expect(forbiddenUnitPatchReason({ status: 'Ready for Pickup' })).toBe('cannot_set_field_status')
+    expect(forbiddenUnitPatchReason({ invoice_url: 'x' })).toBe('cannot_set_field_invoice_url')
+    expect(forbiddenUnitPatchReason({ archived: true })).toBe('cannot_set_field_archived')
+  })
+
+  it('rejects an empty-looking patch mixed with one bad field', () => {
+    expect(forbiddenUnitPatchReason({ model: 'MS271', contractor_id: 'x' })).toBe('cannot_set_field_contractor_id')
   })
 })

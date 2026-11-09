@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyBotToken, type BotName } from './auth'
 import { logBotAction } from './audit'
+import { checkRateLimit, RATE_LIMIT_WINDOW_SECONDS } from './rateLimit'
 
 type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
 
@@ -34,6 +35,25 @@ export async function withBotAuth(
       detail: { reason: 'invalid_missing_or_wrong_bot_token' },
     })
     return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
+  }
+
+  // Applies to every bot, every call - a simple per-bot-scope fixed-
+  // lookback count against bot_audit_log (see lib/bot/rateLimit.ts), to
+  // catch a runaway or misbehaving bot before it can do real damage. This
+  // check itself is also audited (outcome: 'denied'), same as every other
+  // rejection here.
+  if (await checkRateLimit(admin, identity.botName)) {
+    await logBotAction(admin, {
+      botName: identity.botName,
+      action: 'rate_limit',
+      endpoint,
+      outcome: 'denied',
+      detail: { reason: 'rate_limited' },
+    })
+    return NextResponse.json(
+      { error: 'Rate limited - slow down and retry shortly.' },
+      { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_SECONDS) } }
+    )
   }
 
   try {
