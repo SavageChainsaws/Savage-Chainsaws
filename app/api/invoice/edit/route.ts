@@ -5,6 +5,7 @@ import { resolveUnitParts, type ResolvedPart } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
+import { invoiceNotSavedResponse } from '@/lib/invoiceSaveFailure'
 
 function matchPartSku(description: string, parts: ResolvedPart[]): string | undefined {
   const descWords = new Set((description.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length >= 4))
@@ -234,56 +235,80 @@ export async function POST(request: NextRequest) {
   const clearStalePaymentLink =
     !existingInvoice.paid_at && !!(existingInvoice.square_payment_link_url || existingInvoice.stripe_payment_link_url)
 
-  await supabase
-    .from('invoices')
-    .update({
-      line_items: lineItems,
-      amount: invoiceTotal,
-      sales_tax_rate: taxRatePercent,
-      sales_tax_amount: billing.taxAmount,
-      card_surcharge_amount: billing.surchargeAmount,
-      labor_type: laborType,
-      notes,
-      // Only ever touched for a standalone invoice - a unit-linked one's
-      // customer identity is never stored on the invoice row itself.
-      ...(!unitId
-        ? {
-            customer_id: customerIdToSave,
-            customer_name: customerNameToSave,
-            customer_email: customerEmailToSave,
-            unit_model: unitModelToSave,
-            unit_serial: unitSerialToSave,
-          }
-        : {}),
-      ...(clearStalePaymentLink
-        ? {
-            square_payment_link_id: null,
-            square_order_id: null,
-            square_payment_link_url: null,
-            stripe_checkout_session_id: null,
-            stripe_payment_link_url: null,
-          }
-        : {}),
-    })
-    .eq('id', invoiceId)
+  // savedOk only ever becomes true once both the edited line items/total
+  // AND the regenerated PDF are actually saved - anything short of that
+  // used to still return this same rendered PDF with a plain 200,
+  // indistinguishable from a real save (see invoiceNotSavedResponse for
+  // the real incident that came from exactly this gap on the create
+  // routes - the same silent-failure shape applies here on edit).
+  let savedOk = false
+  let saveFailureReason = 'An unexpected error occurred while saving your changes.'
+  try {
+    const { error: updateError } = await supabase
+      .from('invoices')
+      .update({
+        line_items: lineItems,
+        amount: invoiceTotal,
+        sales_tax_rate: taxRatePercent,
+        sales_tax_amount: billing.taxAmount,
+        card_surcharge_amount: billing.surchargeAmount,
+        labor_type: laborType,
+        notes,
+        // Only ever touched for a standalone invoice - a unit-linked one's
+        // customer identity is never stored on the invoice row itself.
+        ...(!unitId
+          ? {
+              customer_id: customerIdToSave,
+              customer_name: customerNameToSave,
+              customer_email: customerEmailToSave,
+              unit_model: unitModelToSave,
+              unit_serial: unitSerialToSave,
+            }
+          : {}),
+        ...(clearStalePaymentLink
+          ? {
+              square_payment_link_id: null,
+              square_order_id: null,
+              square_payment_link_url: null,
+              stripe_checkout_session_id: null,
+              stripe_payment_link_url: null,
+            }
+          : {}),
+      })
+      .eq('id', invoiceId)
 
-  const fileName = `${invoiceId}.pdf`
-  const { error: uploadError } = await supabase.storage
-    .from('invoices')
-    .upload(fileName, pdfBuffer, {
-      contentType: 'application/pdf',
-      upsert: true,
-    })
-  if (!uploadError) {
-    const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-    if (unitId) {
-      await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
+    if (updateError) {
+      saveFailureReason = `The updated line items/total could not be saved (${updateError.message}) - the invoice still shows its PREVIOUS amount/line items. Try again.`
+    } else {
+      const fileName = `${invoiceId}.pdf`
+      const { error: uploadError } = await supabase.storage
+        .from('invoices')
+        .upload(fileName, pdfBuffer, {
+          contentType: 'application/pdf',
+          upsert: true,
+        })
+      if (uploadError) {
+        saveFailureReason = `The updated line items/total were saved, but the new PDF failed to upload (${uploadError.message}). Whatever PDF was on file before (if any) is still what the Invoices list/customer portal will show until you try Edit again.`
+      } else {
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+        if (unitId) {
+          await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
+        }
+        await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceId)
+        savedOk = true
+      }
     }
-    await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceId)
+  } catch (err) {
+    console.error('Failed to save edited invoice:', err)
+    saveFailureReason = err instanceof Error ? err.message : saveFailureReason
   }
 
   revalidatePath('/')
   revalidatePath('/invoices')
+
+  if (!savedOk) {
+    return invoiceNotSavedResponse({ pdfBuffer, invoiceNumber: existingInvoice.invoice_number, reason: saveFailureReason })
+  }
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     headers: {
