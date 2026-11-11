@@ -169,8 +169,29 @@ export const UNIT_BOT_PATCH_FIELDS = [
   'customer_id',
 ] as const
 
-export function forbiddenUnitPatchReason(patch: Record<string, unknown>): string | null {
-  const allowed = new Set<string>(UNIT_BOT_PATCH_FIELDS)
+// Shared by every allowlist-based PATCH gate (Unit Bot's units, App Bot's
+// customer contact fields below) - anything outside the given allowlist is
+// rejected outright rather than silently ignored, so a typo'd or
+// unexpected key fails loudly instead of quietly doing nothing.
+function forbiddenFieldReason(allowedFields: readonly string[], patch: Record<string, unknown>): string | null {
+  const allowed = new Set<string>(allowedFields)
   const badKey = Object.keys(patch).find(key => !allowed.has(key))
   return badKey ? `cannot_set_field_${badKey}` : null
+}
+
+export function forbiddenUnitPatchReason(patch: Record<string, unknown>): string | null {
+  return forbiddenFieldReason(UNIT_BOT_PATCH_FIELDS, patch)
+}
+
+// The exact set of fields App Bot may change on an existing customer via
+// PATCH /api/bot/app/customers/:id - contact info only, never `name` (that
+// stays part of create/match) and never anything admin-managed (a portal
+// login, referral/payment-plan flags, etc). Also gated per-row in the
+// route itself: App Bot may only PATCH a customer it created in the first
+// place (customers.created_by_bot_name = 'app_bot'), never one Jesse
+// entered by hand - this allowlist alone does not express that part.
+export const APP_BOT_CUSTOMER_PATCH_FIELDS = ['phone', 'email', 'address', 'business_name', 'notes'] as const
+
+export function forbiddenCustomerPatchReason(patch: Record<string, unknown>): string | null {
+  return forbiddenFieldReason(APP_BOT_CUSTOMER_PATCH_FIELDS, patch)
 }

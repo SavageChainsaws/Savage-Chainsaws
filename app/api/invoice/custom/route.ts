@@ -3,6 +3,7 @@ import { getSessionInfo } from '@/lib/supabase/server'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { toTitleCase, normalizeEmail } from '@/lib/text'
 import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
+import { invoiceNotSavedResponse } from '@/lib/invoiceSaveFailure'
 
 // Admin-only. Builds a free-form, itemized PDF invoice from whatever the
 // admin submitted - whether those fields came from selecting a customer
@@ -140,12 +141,22 @@ export async function POST(request: NextRequest) {
     notes,
   })
 
-  // Best-effort record for the admin's own bookkeeping (see /invoices) -
-  // standalone invoices didn't save anything at all before this. No
-  // unit_id, since "unit info" here is free-typed text, not a real
-  // tracked unit to link to.
+  // Saves this as a full itemized record in the invoices table for the
+  // admin's own bookkeeping (see /invoices) - standalone invoices didn't
+  // save anything at all before this. No unit_id, since "unit info" here
+  // is free-typed text, not a real tracked unit to link to.
+  //
+  // savedOk only ever becomes true once the invoice row exists AND its PDF
+  // is uploaded AND pdf_url is set - anything short of that used to still
+  // return this same rendered PDF with a plain 200, indistinguishable from
+  // a real save. That's exactly what happened to a real invoice (SC-0055,
+  // Reliable Lawn Services, 2026-11): it rendered fine and got texted to
+  // the customer as a screenshot, but never got a pdf_url, so the customer
+  // could never open it from their own portal - see invoiceNotSavedResponse.
+  let savedOk = false
+  let saveFailureReason = 'An unexpected error occurred while saving.'
   try {
-    const { data: invoiceRow } = await supabase
+    const { data: invoiceRow, error: insertError } = await supabase
       .from('invoices')
       .insert({
         customer_id: customerId,
@@ -168,22 +179,32 @@ export async function POST(request: NextRequest) {
       .select('id')
       .single()
 
-    if (applyReferralDiscount && invoiceRow?.id && customerId) {
-      await supabase.from('customers').update({ referral_discount_used: true }).eq('id', customerId)
-    }
+    if (insertError || !invoiceRow?.id) {
+      saveFailureReason = `The invoice record itself could not be created${insertError ? ` (${insertError.message})` : ''} - nothing was saved, so this invoice number went unused. Try again.`
+    } else {
+      if (applyReferralDiscount && customerId) {
+        await supabase.from('customers').update({ referral_discount_used: true }).eq('id', customerId)
+      }
 
-    if (invoiceRow?.id) {
       const fileName = `${invoiceRow.id}.pdf`
       const { error: uploadError } = await supabase.storage
         .from('invoices')
         .upload(fileName, pdfBuffer, { contentType: 'application/pdf', upsert: true })
-      if (!uploadError) {
+      if (uploadError) {
+        saveFailureReason = `The invoice record was saved (it's in the Invoices list as ${invoiceNumber}), but its PDF failed to upload (${uploadError.message}). Open it from the Invoices list and use Edit to regenerate the PDF - don't create this invoice again from scratch.`
+      } else {
         const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
         await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceRow.id)
+        savedOk = true
       }
     }
   } catch (err) {
     console.error('Failed to save generated custom invoice:', err)
+    saveFailureReason = err instanceof Error ? err.message : saveFailureReason
+  }
+
+  if (!savedOk) {
+    return invoiceNotSavedResponse({ pdfBuffer, invoiceNumber, reason: saveFailureReason })
   }
 
   return new NextResponse(new Uint8Array(pdfBuffer), {

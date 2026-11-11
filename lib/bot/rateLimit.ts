@@ -20,12 +20,21 @@ export function isRateLimited(recentCount: number, limit: number = RATE_LIMIT_MA
 // one token and minting another doesn't reset the window - the limit is
 // per bot scope, matching how every other bot-wide rule in this codebase
 // (the reminder throttle, the audit log itself) is scoped.
+//
+// action = 'rate_limit' rows are excluded from the count - those are the
+// denial withBotAuth itself logs every time THIS check trips. Without the
+// exclusion, each 429 a bot gets while waiting out its own window would add
+// another "recent" row this same query then counts, pushing the window
+// forward again on every retry - a client that politely retries after a
+// 429 would keep re-triggering one, forever, instead of the lockout
+// actually expiring after RATE_LIMIT_WINDOW_SECONDS of real inactivity.
 export async function checkRateLimit(admin: AdminClient, botName: BotName): Promise<boolean> {
   const since = new Date(Date.now() - RATE_LIMIT_WINDOW_SECONDS * 1000).toISOString()
   const { count } = await admin
     .from('bot_audit_log')
     .select('id', { count: 'exact', head: true })
     .eq('bot_name', botName)
+    .neq('action', 'rate_limit')
     .gte('created_at', since)
   return isRateLimited(count ?? 0)
 }
