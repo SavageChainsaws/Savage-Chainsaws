@@ -254,7 +254,17 @@ function LineItemTable({ items, showHeader = true }: { items: InvoiceLineItem[];
         </View>
       )}
       {items.map((li, i) => (
-        <View key={i} style={styles.tableRow}>
+        // wrap={false} - without it, a long enough invoice (one that
+        // actually spans a page break) can silently DROP a row that falls
+        // near the boundary instead of just moving it whole to the next
+        // page - confirmed by regenerating a real 26-line invoice
+        // (SC-0055, Reliable Lawn Services) that was missing its "10%
+        // parts discount" line from the rendered PDF, even though the
+        // exact same data produced a correct page when the invoice was
+        // short enough to fit on one page. wrap={false} tells the PDF
+        // renderer this row is atomic - push the whole thing to the next
+        // page rather than ever splitting (or, apparently, dropping) it.
+        <View key={i} style={styles.tableRow} wrap={false}>
           <View style={styles.colDescription}>
             <Text style={styles.descriptionText}>{li.description}</Text>
             {li.sku && <Text style={styles.skuLine}>SKU: {li.sku}</Text>}

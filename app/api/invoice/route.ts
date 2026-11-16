@@ -4,6 +4,7 @@ import { resolveUnitParts, type ResolvedPart } from '@/lib/parts'
 import { renderInvoicePdf } from '@/lib/invoicePdf'
 import { computeInvoiceBilling, getDefaultTaxRatePercent, type LaborType } from '@/lib/billing'
 import { toTitleCase } from '@/lib/text'
+import { invoiceNotSavedResponse } from '@/lib/invoiceSaveFailure'
 
 // Admin types a free-text Parts line item (e.g. "Replacement chain") with
 // no dropdown tying it to a specific catalog part, so there's no exact key
@@ -188,19 +189,26 @@ export async function POST(request: NextRequest) {
     notes,
   })
 
-  // Best-effort: save this as the unit's current invoice/quote so it shows
-  // up for the customer (e.g. alongside diagnosis notes, before they
-  // decide), and as a full itemized record in the invoices table for the
-  // admin's own bookkeeping (see /invoices). A storage/DB hiccup here
-  // shouldn't block handing the admin back the PDF they just generated.
+  // Saves this as the unit's current invoice/quote so it shows up for the
+  // customer (e.g. alongside diagnosis notes, before they decide), and as
+  // a full itemized record in the invoices table for the admin's own
+  // bookkeeping (see /invoices).
   //
   // The invoices row is inserted BEFORE the storage upload so the upload
   // path can key off the row's own id, which is always unique - the
   // previous `${unitId}-${invoiceNumber}` filename collided (same day +
   // same unit = same name) whenever a unit was re-invoiced more than once
   // in one day, silently failing the re-upload since it used upsert:false.
+  //
+  // savedOk only ever becomes true once the invoice row exists AND its PDF
+  // is uploaded AND pdf_url is set - anything short of that used to still
+  // return this same rendered PDF with a plain 200, indistinguishable from
+  // a real save (see invoiceNotSavedResponse for the real incident that
+  // came from exactly this gap, on the standalone/custom invoice route).
+  let savedOk = false
+  let saveFailureReason = 'An unexpected error occurred while saving.'
   try {
-    const { data: invoiceRow } = await supabase
+    const { data: invoiceRow, error: insertError } = await supabase
       .from('invoices')
       .insert({
         unit_id: unitId,
@@ -226,26 +234,36 @@ export async function POST(request: NextRequest) {
       .select('id')
       .single()
 
-    if (applyReferralDiscount && invoiceRow?.id && unit.customer_id) {
-      await supabase.from('customers').update({ referral_discount_used: true }).eq('id', unit.customer_id)
-    }
+    if (insertError || !invoiceRow?.id) {
+      saveFailureReason = `The invoice record itself could not be created${insertError ? ` (${insertError.message})` : ''} - nothing was saved, so this invoice number went unused. Try again.`
+    } else {
+      if (applyReferralDiscount && unit.customer_id) {
+        await supabase.from('customers').update({ referral_discount_used: true }).eq('id', unit.customer_id)
+      }
 
-    const fileName = `${invoiceRow?.id || `${unitId}-${invoiceNumber}`}.pdf`
-    const { error: uploadError } = await supabase.storage
-      .from('invoices')
-      .upload(fileName, pdfBuffer, {
-        contentType: 'application/pdf',
-        upsert: true,
-      })
-    if (!uploadError) {
-      const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
-      await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
-      if (invoiceRow?.id) {
+      const fileName = `${invoiceRow.id}.pdf`
+      const { error: uploadError } = await supabase.storage
+        .from('invoices')
+        .upload(fileName, pdfBuffer, {
+          contentType: 'application/pdf',
+          upsert: true,
+        })
+      if (uploadError) {
+        saveFailureReason = `The invoice record was saved (it's in the Invoices list as ${invoiceNumber}), but its PDF failed to upload (${uploadError.message}). Open it from the Invoices list and use Edit to regenerate the PDF - don't create this invoice again from scratch.`
+      } else {
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(fileName)
+        await supabase.from('units').update({ invoice_url: publicUrl }).eq('id', unitId)
         await supabase.from('invoices').update({ pdf_url: publicUrl }).eq('id', invoiceRow.id)
+        savedOk = true
       }
     }
   } catch (err) {
     console.error('Failed to save generated invoice to unit:', err)
+    saveFailureReason = err instanceof Error ? err.message : saveFailureReason
+  }
+
+  if (!savedOk) {
+    return invoiceNotSavedResponse({ pdfBuffer, invoiceNumber, reason: saveFailureReason })
   }
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
