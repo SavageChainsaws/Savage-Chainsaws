@@ -144,6 +144,8 @@ Supabase project `swoddrotqrdjirminnni` ("Savage CHainsaws"). 34 tables. Grouped
 
 **Reminder/follow-up emails** (added 2026-11-09, revised twice after Stem's review caught real races/gaps): `POST /api/bot/app/invoices/:id/send-reminder` — App Bot only, and only for an invoice with `sent_at` actually set (never `status`, see above). Fails closed throughout: a Stripe/Square check error aborts with nothing sent (never "send anyway"); "paid" is only trusted once a CONFIRMED paid amount matches the invoice's own total (Square can report `state: 'COMPLETED'` with zero tenders, leaving the paid amount unknown rather than merely unequal - an unknown amount fails closed exactly like a mismatched one, never "no problem found"); an expired Stripe Checkout Session link (always expires within 24h) is refreshed or the send is refused, never emailed dead; an invoice that's archived, has an unresolved Zelle claim, or is on an active installment plan is skipped; every interpolated value in the email HTML is escaped. The 1-per-3-days throttle itself is enforced atomically in Postgres (`claim_invoice_reminder`, with a transaction-scoped advisory lock keyed on the invoice id) rather than check-then-insert in app code, so two concurrent calls for the same invoice can never both get through. `sendInvoiceEmail` (`app/actions/sendInvoiceEmail.ts`) remains the separate, one-shot, admin-triggered *first* send — it now also flips `status` to `'sent'` (not just `sent_at`), so a bot-created draft that gets emailed doesn't stay `status='draft'` forever and silently fall out of every query that filters drafts out. Still no cron anywhere in this codebase; reminders are called on demand by App Bot, not on a schedule the app itself runs.
 
+**Parts SKU autofill on invoice line items** (`/api/parts-catalog/lookup`, used by `InvoiceItemGroup`'s Parts rows): checks `parts_catalog` (STIHL) first, then `rotary_parts` as a fallback - until 2026-11-16 it only ever checked `parts_catalog`, so a real Rotary SKU (reported live: `9212114`, a 14" guide bar) silently matched nothing and left the line at its $0.00 placeholder, with no error - it just looked like the SKU "didn't pop up." `app/api/bot/unit/parts/catalog/route.ts`'s own SKU lookup already checked both tables (plus `oem_cross_references`) - this route's old comment claimed the two mirrored each other, which wasn't actually true until now.
+
 ## 6. API routes, server actions, functions
 
 **API routes** (`app/api/**/route.ts`):
@@ -152,7 +154,7 @@ Supabase project `swoddrotqrdjirminnni` ("Savage CHainsaws"). 34 tables. Grouped
 | `invoice/route.ts` | Create per-unit invoice + PDF | admin |
 | `invoice/custom/route.ts` | Create standalone invoice + PDF | admin |
 | `invoice/edit/route.ts` | Re-save invoice, regenerate PDF | admin |
-| `parts-catalog/lookup/route.ts` | SKU→description/price autofill | admin |
+| `parts-catalog/lookup/route.ts` | SKU→description/price autofill (`parts_catalog` first, `rotary_parts` as a fallback - see §5) | admin |
 | `payment-plan/create/route.ts` | Customer self-selects installment plan | customer (own invoice only) |
 | `push/notify-admin/route.ts` | Push notification to Jesse's device | internal |
 | `rental/route.ts`, `rental/sign/route.ts`, `rental/return/route.ts` | Create/sign/return a rental | admin (sign also accepts customer context) |
