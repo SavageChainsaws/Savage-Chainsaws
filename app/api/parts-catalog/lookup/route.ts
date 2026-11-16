@@ -15,6 +15,20 @@ import { getSessionInfo } from '@/lib/supabase/server'
 // catalog/route.ts already checked both tables for Unit Bot's own SKU
 // lookup - this route just never matched it, despite its own old comment
 // claiming the two mirrored each other.
+//
+// Querying either table as the signed-in admin's own session (not
+// service-role) depends on BOTH an RLS policy (admins full access,
+// keyed on is_admin() - already existed) AND a table-level GRANT for the
+// `authenticated` role - Postgres checks GRANTs before RLS, so missing
+// either one alone is enough to deny the read. rotary_parts/
+// oem_cross_references had the RLS policy but never the GRANT (unlike
+// parts_catalog, which had both) - that's the actual reason adding the
+// rotary_parts fallback above didn't fix the real-world report by
+// itself: the query wasn't missing a match, it was being denied outright.
+// Fixed directly on the database (see CHANGELOG.md). Logging every
+// Supabase error here (never swallowing it into a silent `null`) is what
+// would have caught that gap immediately instead of looking identical to
+// "no match found."
 export async function GET(request: NextRequest) {
   const { supabase, isAdmin } = await getSessionInfo()
   if (!isAdmin) {
@@ -26,20 +40,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ match: null })
   }
 
-  const { data: stihlMatch } = await supabase
+  const { data: stihlMatch, error: stihlError } = await supabase
     .from('parts_catalog')
     .select('sku, description, cost, retail_price')
     .ilike('sku', sku)
     .maybeSingle()
+  if (stihlError) console.error('[parts-catalog/lookup] parts_catalog query failed:', stihlError.message)
   if (stihlMatch) {
     return NextResponse.json({ match: stihlMatch })
   }
 
-  const { data: rotaryMatch } = await supabase
+  const { data: rotaryMatch, error: rotaryError } = await supabase
     .from('rotary_parts')
     .select('sku, description, cost, retail_price')
     .ilike('sku', sku)
     .maybeSingle()
+  if (rotaryError) console.error('[parts-catalog/lookup] rotary_parts query failed:', rotaryError.message)
 
   return NextResponse.json({ match: rotaryMatch || null })
 }
