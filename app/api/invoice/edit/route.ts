@@ -189,10 +189,14 @@ export async function POST(request: NextRequest) {
     includeCardSurcharge,
   })
 
+  // Order requested by a customer reading the PDF: tax, then discount,
+  // then the combined Grand Total below both - priority fee/surcharge
+  // aren't part of that ask, so they keep their existing relative spots
+  // (priority fee before tax, surcharge last).
   const otherLineItems = [
-    ...(referralDiscountAmount > 0 ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(priorityFeeRaw ? [{ description: 'Priority Fee', amount: priorityFee }] : []),
     ...(billing.taxLine ? [billing.taxLine] : []),
+    ...(referralDiscountAmount > 0 ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
   const lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
