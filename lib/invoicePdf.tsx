@@ -152,6 +152,14 @@ const styles = StyleSheet.create({
   grandTotalLabel: { fontSize: 10.5, fontWeight: 700, color: BRAND.dark },
   grandTotalValue: { fontSize: 15, fontWeight: 700, color: BRAND.orange },
 
+  // Printed right under each of Parts/Labor's own table, right-aligned
+  // under the Amount column above it (same 80pt width) - requested by a
+  // customer who wanted to see materials vs. labor broken out before the
+  // combined Grand Total, not just the itemized rows.
+  subtotalRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 8, paddingTop: 3, paddingBottom: 6 },
+  subtotalLabel: { fontSize: 9, fontWeight: 700, color: BRAND.dark, marginRight: 12 },
+  subtotalValue: { fontSize: 9.5, fontWeight: 700, color: BRAND.dark, width: 80, textAlign: 'right' },
+
   // Printed as its own boxed section near the bottom, same treatment as
   // Bill To/the unit box - this is a documented record (e.g. "customer
   // told bearings are shot, unit still usable but for how long is
@@ -276,6 +284,20 @@ function LineItemTable({ items, showHeader = true }: { items: InvoiceLineItem[];
   )
 }
 
+// Materials/Labor subtotal, printed right under that section's own table -
+// just a sum of that one group's items, never tax/discount/surcharge
+// (those stay in the unheadered "other charges" list below both tables,
+// exactly as before).
+function SubtotalRow({ label, items }: { label: string; items: InvoiceLineItem[] }) {
+  const total = items.reduce((sum, li) => sum + li.amount, 0)
+  return (
+    <View style={styles.subtotalRow} wrap={false}>
+      <Text style={styles.subtotalLabel}>{label}</Text>
+      <Text style={styles.subtotalValue}>{money(total)}</Text>
+    </View>
+  )
+}
+
 function InvoiceDocument({
   invoiceNumber,
   invoiceDate,
@@ -370,6 +392,7 @@ function InvoiceDocument({
                 <View style={styles.sectionRule} />
               </View>
               <LineItemTable items={partsLineItems} />
+              <SubtotalRow label="Materials Subtotal" items={partsLineItems} />
             </>
           )}
 
@@ -380,6 +403,7 @@ function InvoiceDocument({
                 <View style={styles.sectionRule} />
               </View>
               <LineItemTable items={laborLineItems} />
+              <SubtotalRow label="Labor Subtotal" items={laborLineItems} />
             </>
           )}
 

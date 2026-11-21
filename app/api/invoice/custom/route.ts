@@ -102,9 +102,11 @@ export async function POST(request: NextRequest) {
     includeCardSurcharge,
   })
 
+  // Order requested by a customer reading the PDF: tax, then discount,
+  // then the combined Grand Total below both.
   const otherLineItems = [
-    ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(billing.taxLine ? [billing.taxLine] : []),
+    ...(applyReferralDiscount ? [{ description: 'Referral Discount (10%)', amount: -referralDiscountAmount }] : []),
     ...(billing.surchargeLine ? [billing.surchargeLine] : []),
   ]
   const lineItems = [...partsLineItems, ...laborLineItems, ...otherLineItems]
